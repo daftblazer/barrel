@@ -54,6 +54,9 @@ pub struct Renderer {
     pub outline_pipeline: vk::Pipeline,
     pub shadow_fs: vk::ShaderModule,
     pub shadow_pipeline: vk::Pipeline,
+    /// The same writing a cascade's depth with the game's bias (`shadow::Bias`).
+    pub shadow_cascade_pipeline: vk::Pipeline,
+    pub shadow_cascade_fs: vk::ShaderModule,
     pub post_vs: vk::ShaderModule,
     pub post_fs: vk::ShaderModule,
     pub post_layout: vk::PipelineLayout,
@@ -61,8 +64,8 @@ pub struct Renderer {
     pub terrain_gpu: TerrainGpu,
     pub settings: RenderSettings,
     pub show_motion: bool,
-    /// The far shadow square's layers (`shadow::Far`): a game asks `far_shadow` each frame
-    /// before writing its look block.
+    /// The static shadow layer (`shadow::Far`): a game asks `far_shadow` each frame before
+    /// writing its look block.
     pub far_shadow: std::cell::RefCell<shadow::Far>,
     /// The sky clouds' strip (cloud_strip.*): its pipeline reads the cloud map as set 0 and the
     /// look block as set 1.
@@ -140,6 +143,12 @@ pub struct Frame<'a> {
     pub draw_vp: Mat4,
     pub view_planes: [glam::Vec4; 6],
     pub shadow_vp: Mat4,
+    /// The next two cascades' view-projections (layers 1 and 2), drawn every frame; none for a
+    /// game with the one near square.
+    pub shadow_cascades: [Option<Mat4>; 2],
+    /// How the three cascades' depth is written (`shadow::Bias`); none: the fixed bias of the
+    /// near square (Escha).
+    pub shadow_bias: Option<[shadow::Bias; 3]>,
     pub alpha_cutoff: f32,
     /// The alpha test's reference for swaying draws (the plants), where a game holds another.
     pub sway_cutoff: f32,
@@ -185,9 +194,9 @@ pub struct Frame<'a> {
 }
 
 impl Renderer {
-    /// This frame's far shadow square (`shadow::Far::plan`): `want` where the game would have
-    /// it (in steps: a moved square is drawn over `FAR_FRAMES` frames); gives the
-    /// view-projection and layer for the look block's far slots, None while there is none.
+    /// This frame's static shadow layer (`shadow::Far::plan`): `want` where the game has it
+    /// (drawn whole when it changes); gives the view-projection and layer for the look
+    /// block's static slots, None while there is none.
     pub fn far_shadow(&self, want: Option<Mat4>) -> Option<(Mat4, usize)> {
         self.far_shadow.borrow_mut().plan(want)
     }
@@ -648,6 +657,12 @@ impl Renderer {
             .multisample_state(&msaa)
             .render_pass(shadow_target.pass);
         let shadow_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[shadow_info], None).map_err(|(_, e)| e)?[0] };
+        // The cascades': the game's own bias written in the shader, none in the raster state.
+        let shadow_cascade_fs = module(SHADOW_CASCADE_FRAG)?;
+        let cascade_stages = [shadow_stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(shadow_cascade_fs).name(c"main")];
+        let cascade_raster = raster.cull_mode(vk::CullModeFlags::NONE);
+        let cascade_info = shadow_info.stages(&cascade_stages).rasterization_state(&cascade_raster);
+        let shadow_cascade_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[cascade_info], None).map_err(|(_, e)| e)?[0] };
 
         // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
         let (post_vs, post_fs) = (module(POST_VERT)?, module(POST_FRAG)?);
@@ -692,7 +707,7 @@ impl Renderer {
         };
 
 
-        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -703,9 +718,9 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces } = *frame;
         let upto = self.upto.get();
-        let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
+        let Renderer { ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
         let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
         let (scene_width, scene_height) = targets.scene_size;
@@ -740,16 +755,21 @@ impl Renderer {
                 barrier(d, cb, targets.frozen, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
             }
             // The sun's shadow map: every caster but the distant view, from the sun, into the
-            // near layer; the far layers cleared once, and a slice of a moved far square's
-            // casters into its layer (`shadow::Far`).
+            // cascades' layers each frame; the unused layers cleared once, and the casters of
+            // a moved static layer (`shadow::Far`) drawn whole.
             let mut far = self.far_shadow.borrow_mut();
             let mut jobs: Vec<(usize, Option<Mat4>, bool)> = vec![(0, Some(shadow_vp), false)];
+            for (k, cascade) in shadow_cascades.iter().enumerate() {
+                if cascade.is_some() {
+                    jobs.push((k + 1, *cascade, false));
+                }
+            }
             if !far.cleared {
                 far.cleared = true;
-                jobs.extend((1..shadow::CASCADES).map(|l| (l, None, false)));
+                jobs.extend((1..shadow::CASCADES).filter(|l| *l == shadow::STATIC_LAYER || shadow_cascades[l - 1].is_none()).map(|l| (l, None, false)));
             }
             if let Some(b) = &far.build {
-                jobs.push((b.layer, Some(b.vp), b.next > 0));
+                jobs.push((b.layer, Some(b.vp), false));
             }
             for (layer, cascade, load) in jobs {
                 let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
@@ -768,12 +788,17 @@ impl Renderer {
                 d.cmd_set_scissor(cb, 0, &[full]);
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
                 d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
-                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, shadow_pipeline);
+                // A cascade is written with the game's bias where the game gave one.
+                let bias = shadow_bias.filter(|_| layer < shadow::STATIC_LAYER).map(|b| b[layer]);
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if bias.is_some() { shadow_cascade_pipeline } else { shadow_pipeline });
                 let mut push = [0f32; 32];
                 // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
                 push[31] = f32::from_bits(FULL_LIGHT);
                 push[..16].copy_from_slice(&shadow_vp.to_cols_array());
-                push[16] = alpha_cutoff;
+                push[16] = bias.map_or(alpha_cutoff, |b| b.alpha_ref);
+                if let Some(b) = bias {
+                    (push[17], push[18]) = (b.slope, b.constant);
+                }
                 let stages_pc = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, PUSH_SIZE as usize));
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
@@ -783,28 +808,10 @@ impl Renderer {
                 let least = if layer > 0 { 4.0 * 2.0 / (shadow_vp.x_axis.x.hypot(shadow_vp.y_axis.x).hypot(shadow_vp.z_axis.x) * shadow_target.size as f32) } else { 0.0 };
                 let big = |d: &Draw| least == 0.0 || d.bounds.is_none_or(|b| b.extent(&instances[d.instance as usize].model) >= least);
                 let casts = |d: &Draw| big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d);
-                // A far slice: from the build's next draw, about `budget` indices (a
-                // FAR_FRAMES-th of its casters' when spread, all of them otherwise).
-                let (start, budget) = match (layer, &mut far.build) {
-                    (0, _) | (_, None) => (0, u64::MAX),
-                    (_, Some(b)) => {
-                        if b.budget.is_none() {
-                            let total: u64 = draws.iter().filter(|d| casts(d)).map(|d| u64::from(d.index_count)).sum();
-                            b.budget = Some(if b.spread { total.div_ceil(shadow::FAR_FRAMES).max(1) } else { u64::MAX });
-                        }
-                        (b.next, b.budget.unwrap_or(u64::MAX))
-                    }
-                };
-                let (mut spent, mut stop) = (0u64, draws.len());
-                for (k, draw) in draws.iter().enumerate().skip(start) {
-                    if spent >= budget {
-                        stop = k;
-                        break;
-                    }
+                for draw in draws.iter() {
                     if !casts(draw) {
                         continue;
                     }
-                    spent += u64::from(draw.index_count);
                     // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
                     // 32: their texture on their vertex colour, as the distant view's clouds.
                     let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1;
@@ -820,12 +827,8 @@ impl Renderer {
                     drawn[1] += 1;
                 }
                 d.cmd_end_render_pass(cb);
-                if layer > 0 && let Some(b) = far.build.take() {
-                    if stop >= draws.len() {
-                        far.shown = Some((b.vp, b.layer));
-                    } else {
-                        far.build = Some(shadow::FarBuild { next: stop, ..b });
-                    }
+                if layer == shadow::STATIC_LAYER && let Some(b) = far.build.take() {
+                    far.shown = Some((b.vp, b.layer));
                 }
             }
             drop(far);
@@ -993,7 +996,8 @@ impl Renderer {
             // the exposure it was baked with).
             let baked = meter.as_ref().map_or(1.0, |m| m.baked);
             if let Some(dump) = &self.dump {
-                let scene_scale = 1.0 / (HDR_RANGE_INV * baked);
+                // The sun's share is written as it is, times the storage's half.
+                let scene_scale = if upto == dump::Stop::Shadow { 1.0 / HDR_RANGE_INV } else { 1.0 / (HDR_RANGE_INV * baked) };
                 dump.grab(gpu, cb, upto.name(), targets.scene, targets.scene_size, dump::Texels::of(self.settings.scene_format()), scene_scale);
             }
             trace3d.finish(gpu.frame.get(), &draw_vp, &shadow_vp);
@@ -1124,6 +1128,8 @@ impl Renderer {
             d.destroy_render_pass(self.post_pass, None);
             d.destroy_pipeline(self.outline_pipeline, None);
             d.destroy_pipeline(self.shadow_pipeline, None);
+            d.destroy_pipeline(self.shadow_cascade_pipeline, None);
+            d.destroy_shader_module(self.shadow_cascade_fs, None);
             d.destroy_shader_module(self.shadow_fs, None);
             d.destroy_pipeline(self.sky_pipeline, None);
             d.destroy_pipeline(self.sky_plane_pipeline, None);

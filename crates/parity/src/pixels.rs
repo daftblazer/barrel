@@ -129,6 +129,42 @@ struct Stage {
     game: &'static str,
     barrel: &'static str,
     scale: f64,
+    /// The game's alpha is the value (the sun's share), taken as grey; its colour is not.
+    alpha: bool,
+    /// The mean of the regions below is printed, the game's and Barrel's.
+    regions: bool,
+}
+
+/// Regions of the 1920 by 1080 pictures (x0, y0, x1, y1) where the picture is judged by eye:
+/// the trees' canopy, the trunk, the grass, the sand, the far hills and field.
+const REGIONS: &[(&str, [usize; 4])] = &[
+    ("canopy left", [100, 40, 600, 260]),
+    ("mid tree", [960, 150, 1250, 330]),
+    ("trunk", [560, 150, 680, 420]),
+    ("grass", [100, 800, 500, 900]),
+    ("sand", [1100, 950, 1500, 1050]),
+    ("hills right", [1500, 330, 1800, 350]),
+    ("far field", [700, 380, 820, 410]),
+];
+
+/// The mean of a region's three channels, per channel, over the pixels the game drew before the
+/// sky (depth under the far plane) when it has `masks`.
+fn region_mean(im: &Image, masks: Option<&Image>, [x0, y0, x1, y1]: [usize; 4]) -> [f64; 3] {
+    let mut sum = [0f64; 3];
+    let mut n = 0f64;
+    for y in y0..y1.min(im.h) {
+        for x in x0..x1.min(im.w) {
+            if masks.is_some_and(|m| m.at(x, y)[0] >= 1.0) {
+                continue;
+            }
+            let p = im.at(x, y);
+            for c in 0..3 {
+                sum[c] += f64::from(p[c]);
+            }
+            n += 1.0;
+        }
+    }
+    sum.map(|v| if n > 0.0 { v / n } else { 0.0 })
 }
 
 /// In the frame's order. Where Barrel has no pass of its own, the game's later stage is the
@@ -136,14 +172,15 @@ struct Stage {
 /// with the game's after the fog (`lit`: the game's lit scene without it, kept for the
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
-    Stage { name: "cloud_map", game: "1911-1911_rt1024x1024.27#4", barrel: "cloud_map", scale: 1.0 },
-    Stage { name: "lit", game: "1895-1898_rt1920x1080.26#4", barrel: "lit", scale: 1.0 },
-    Stage { name: "lit_fogged", game: "1919-1919_rt1920x1080.26#4", barrel: "sky", scale: 1.0 },
-    Stage { name: "sky", game: "1912-1916_rt1920x1080.26#4", barrel: "sky", scale: 1.0 },
-    Stage { name: "scene", game: "2037-2037_rt1920x1080.26#4", barrel: "scene", scale: 1.0 },
-    Stage { name: "bright", game: "2052-2052_rt482x272.26#1", barrel: "bright", scale: 1.0 },
-    Stage { name: "bloom", game: "2057-2057_rt240x135.26#1", barrel: "bloom", scale: 1.0 },
-    Stage { name: "tone", game: "2078-2078_rt1920x1080.90#7", barrel: "tone", scale: 255.0 },
+    Stage { name: "cloud_map", game: "1911-1911_rt1024x1024.27#4", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "shadow", game: "1892-1894_rt1920x1080.9#15", barrel: "shadow", scale: 1.0, alpha: true, regions: true },
+    Stage { name: "lit", game: "1895-1898_rt1920x1080.26#4", barrel: "lit", scale: 1.0, alpha: false, regions: true },
+    Stage { name: "lit_fogged", game: "1919-1919_rt1920x1080.26#4", barrel: "sky", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "sky", game: "1912-1916_rt1920x1080.26#4", barrel: "sky", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "scene", game: "2037-2037_rt1920x1080.26#4", barrel: "scene", scale: 1.0, alpha: false, regions: true },
+    Stage { name: "bright", game: "2052-2052_rt482x272.26#1", barrel: "bright", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "bloom", game: "2057-2057_rt240x135.26#1", barrel: "bloom", scale: 1.0, alpha: false, regions: false },
+    Stage { name: "tone", game: "2078-2078_rt1920x1080.90#7", barrel: "tone", scale: 255.0, alpha: false, regions: false },
 ];
 
 /// The game's depth and stencil before the sky, for the masks.
@@ -234,6 +271,7 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
                 continue;
             }
         };
+        let g = if stage.alpha { Image { px: g.px.chunks_exact(4).flat_map(|p| [p[3], p[3], p[3], 1.0]).collect(), ..g } } else { g };
         // The game's bloom targets carry a border round the quarter-size picture's own.
         let g = if g.w > b.w || g.h > b.h { g.crop((g.w - b.w) / 2, (g.h - b.h) / 2, b.w, b.h) } else { g };
         if (g.w, g.h) != (b.w, b.h) {
@@ -263,6 +301,12 @@ pub fn run(game: &Path, barrel: &Path, pictures: Option<&Path>) -> Result<()> {
         if full.is_some() {
             for (name, s) in ["sky", "characters", "stage"].iter().zip(by_mask) {
                 println!("  {name}: mean abs {:.4}, rel {:.4}", s.mean_abs(stage.scale), s.rel());
+            }
+        }
+        if stage.regions && (g.w, g.h) == (1920, 1080) {
+            for (name, r) in REGIONS {
+                let (gm, bm) = (region_mean(&g, full, *r), region_mean(&b, full, *r));
+                println!("  region {name}: game {:.3} {:.3} {:.3}, barrel {:.3} {:.3} {:.3}", gm[0], gm[1], gm[2], bm[0], bm[1], bm[2]);
             }
         }
         if stage.name == "tone" {

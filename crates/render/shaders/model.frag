@@ -73,6 +73,14 @@ layout(std140, set = 1, binding = 4) uniform Look {
     vec4 cloud_pad[12];
     vec4 spec_amb;
     vec4 spec_tint;
+    // Slots 111 to 191: the water's. Then the cascades' (lib.rs SHADOW_CASCADE_SLOT): the
+    // second and third view-projections, the cascades' ends along the view and the fade width
+    // into the static layer, the view's forward.
+    vec4 water_pad[81];
+    mat4 shadow_c1;
+    mat4 shadow_c2;
+    vec4 shadow_ends;
+    vec4 shadow_fwd;
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
@@ -156,8 +164,11 @@ float shadow_layer(mat4 vp, float layer, float t, vec3 p) {
     return lit / 16.0;
 }
 
+#include "shadow_cascades.glsl"
+
 float sun_shadow(vec3 p) {
     if (look.shadow_info.y < 0.5) return 1.0;
+    if (look.shadow_info.z > 0.5) return sun_shadow_cascades(p);
     float near = shadow_layer(look.shadow_vp, 0.0, look.shadow_info.x, p);
     if (near >= 0.0) return near;
     // Past the near square: the far layer, if on, fading to lit with the distance.
@@ -178,6 +189,12 @@ void specular_surface(vec3 albedo, out vec3 f0, out float gloss) {
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     vec4 c = texture(tex, uv);
+    // The stage dump of the sun's share (`dump::Stop::Shadow`): what the shading multiplies the sun by.
+    if (look.shadow_info.w > 0.5 && (pc.flags & 4096u) == 0u && ((pc.flags & 8u) == 0u || (pc.flags & 16u) != 0u)) {
+        if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
+        color = vec4(vec3(sun_shadow(world) * cloud_light(world)) * pc.params.w, 1.0);
+        return;
+    }
     if ((pc.flags & 8u) != 0u) {
         // The distant view, blended by its alpha (clouds over the dome); its solid pieces
         // (flag 16: ground, stones, trees, cliffs) alpha-tested like the field's models.

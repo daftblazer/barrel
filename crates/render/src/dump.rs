@@ -20,6 +20,9 @@ pub enum Stop {
     /// The field's terrain, models and water (the game's lit scene before the sky; the fog
     /// is part of each fragment's light here).
     Lit,
+    /// The terrain and the models drawn as the sun's share at each pixel (the shadow and the
+    /// cloud pattern, 0 to 1 in all three channels), the game's ambient-and-shadow pass's alpha.
+    Shadow,
     /// And the sky plane and the dome, without the clouds' strip.
     Dome,
     /// And the clouds' strip: the sky as it ends.
@@ -32,6 +35,7 @@ impl Stop {
         match self {
             Stop::Full => "scene",
             Stop::Lit => "lit",
+            Stop::Shadow => "shadow",
             Stop::Dome => "dome",
             Stop::Sky => "sky",
         }
@@ -39,7 +43,7 @@ impl Stop {
 
     /// Whether the second pass (the sky's) is drawn, and its clouds, and the outlines.
     pub fn sky(self) -> bool {
-        self != Stop::Lit
+        !matches!(self, Stop::Lit | Stop::Shadow)
     }
     pub fn clouds(self) -> bool {
         matches!(self, Stop::Sky | Stop::Full)

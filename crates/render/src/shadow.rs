@@ -1,6 +1,6 @@
-//! The sun's shadow map: a depth image of `CASCADES` layers (the near square over the
-//! camera's target; two for a wider square when the game asks for one, `Far`: one read while
-//! the other is drawn) the field's casters are drawn into from the sun, and a comparison
+//! The sun's shadow map: a depth image of `CASCADES` layers (the cascades, each a box fitted
+//! to a slice of the view, and the static layer over the whole field) the field's casters
+//! are drawn into from the sun, and a comparison
 //! sampler the field's receivers read it through (`model.frag`, `terrain.frag`;
 //! `docs/renderer.md`, "Shadows").
 
@@ -21,34 +21,40 @@ impl Shadows {
     pub const HANDHELD: Shadows = Shadows { size: 1024, format: vk::Format::D16_UNORM };
 }
 
-/// The map's layers: the near square, then the far square's two.
-pub const CASCADES: usize = 3;
-/// Over how many frames a moved far square is drawn (the old one read meanwhile).
-pub const FAR_FRAMES: u64 = 8;
+/// The map's layers: three cascades (layer 0 the near square every game has; Ryza adds the
+/// next two, `Frame::shadow_cascades`), then the static layer (`Far`).
+pub const CASCADES: usize = 4;
+/// The static layer: the casters of the whole field, drawn once (the game's semi-static map).
+pub const STATIC_LAYER: usize = 3;
 
-/// The far square's layers (1 and 2): the one the receivers read, with its view-projection,
-/// and the one being drawn, a slice of the casters a frame, until it takes over.
+/// How the game writes a cascade's depth (its shadow pass's `sbias`): the depth stored is the
+/// depth plus `slope` times its change over a texel (`|dz/dx| + |dz/dy|`) plus `constant` (a
+/// fraction of the cascade's depth range), and a texel under `alpha_ref` of alpha casts nothing.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Bias {
+    pub slope: f32,
+    pub constant: f32,
+    pub alpha_ref: f32,
+}
+
+/// The static layer: the view-projection it was drawn with, which the receivers read, and the
+/// one being drawn. A game asking for another has it drawn whole in that frame.
 #[derive(Default)]
 pub struct Far {
     pub shown: Option<(glam::Mat4, usize)>,
     pub build: Option<FarBuild>,
-    /// Both layers cleared once (a game without a far square never reads them).
+    /// The layer cleared once (a game without one never reads it).
     pub cleared: bool,
 }
 
 pub struct FarBuild {
     pub vp: glam::Mat4,
     pub layer: usize,
-    /// The next draw (by index in the frame's draws) to draw, and the indices a frame
-    /// (None: all at once, when nothing is shown yet).
-    pub next: usize,
-    pub budget: Option<u64>,
-    pub spread: bool,
 }
 
 impl Far {
-    /// This frame's far square: `want` is where the game would have it. Gives what the
-    /// receivers read (its view-projection and layer; None: nothing yet) and plans the drawing.
+    /// This frame's static layer: `want` is where the game has it. Gives what the receivers
+    /// read (its view-projection and layer; None: none) and plans the drawing, before the scene.
     pub fn plan(&mut self, want: Option<glam::Mat4>) -> Option<(glam::Mat4, usize)> {
         let Some(vp) = want else {
             self.build = None;
@@ -58,15 +64,8 @@ impl Far {
             self.build = None;
             return self.shown;
         }
-        if !self.build.as_ref().is_some_and(|b| b.vp == vp) {
-            let layer = if self.shown.is_some_and(|(_, l)| l == 1) { 2 } else { 1 };
-            self.build = Some(FarBuild { vp, layer, next: 0, budget: None, spread: self.shown.is_some() });
-        }
-        // With nothing shown, the new square is drawn whole this frame, before the scene.
-        match (self.shown, &self.build) {
-            (None, Some(b)) => Some((b.vp, b.layer)),
-            _ => self.shown,
-        }
+        self.build = Some(FarBuild { vp, layer: STATIC_LAYER });
+        Some((vp, STATIC_LAYER))
     }
 }
 
@@ -186,4 +185,22 @@ pub fn sun_view_proj(centre: glam::Vec3, dir: glam::Vec3, half: f32, depth: f32)
     let view = glam::Mat4::look_at_rh(centre - d * depth, centre, up);
     let proj = glam::Mat4::orthographic_rh(-half, half, -half, half, 0.0, 2.0 * depth);
     proj * view
+}
+
+/// The sun's view and projection over the smallest box around `points` (render space) in the
+/// sun's view (up the way of +Y), its depth starting at `plane` (a point's distance along the
+/// sun's way, `p . dir`; the box starts there unless the points begin sooner) so casters up
+/// the sun's rays are inside: one cascade over a slice of the view's frustum.
+#[allow(deprecated)] // glam's older names, as above
+pub fn fit_view_proj(points: &[glam::Vec3], dir: glam::Vec3, plane: f32) -> glam::Mat4 {
+    let d = dir.normalize_or(glam::Vec3::NEG_Y);
+    let up = if d.y.abs() > 0.95 { glam::Vec3::Z } else { glam::Vec3::Y };
+    let view = glam::Mat4::look_to_rh(glam::Vec3::ZERO, d, up);
+    let (mut lo, mut hi) = (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
+    for p in points {
+        let q = view.transform_point3(*p);
+        (lo, hi) = (lo.min(q), hi.max(q));
+    }
+    // The sun looks down -z of its view: the nearest point to the sun has the largest z.
+    glam::Mat4::orthographic_rh(lo.x, hi.x, lo.y, hi.y, (-hi.z).min(plane), -lo.z) * view
 }

@@ -370,6 +370,15 @@ fn from_light(elevation: f32, azimuth: f32) -> Vec3 {
 /// The glow's rate over the set's `fBloomWeight`: the glow is stored at half its range, as the
 /// scene is.
 const GLOW_RANGE: f32 = 2.0;
+// STAND-IN: The cascades' ends along the view are the game's ambient-and-shadow pass's at Rasenboden's gate (`vS2VZ` and `vSMDF`: the second cascade from 1600, the third from 1600 + 2000, the static layer from 10000) and the fade into it its `sdplane`'s 3500; the real thing is how the game sets them each frame, not found (the set's `shadowMap_ShadowCascadeStart` words hold other numbers).
+const CASCADE_ENDS: [f32; 3] = [1600.0, 3600.0, 10000.0];
+const CASCADE_BLEND: f32 = 3500.0;
+// STAND-IN: The cascades' depth begins this far from the camera toward the sun, one plane for all three (the pass's `mW2S` at the gate: 36755); the real thing is where the game takes that plane from (the field's bounds?), not found.
+const CASTER_PLANE: f32 = 36_755.0;
+/// How the game writes the cascades' depth (its shadow passes' `sbias` at the gate): slope
+/// scale, constant (of the cascade's depth), and the alpha under which a texel casts nothing.
+const CASCADE_BIAS: [(f32, f32); 3] = [(1.0, 0.0001), (0.5, 0.0003), (0.05, 0.001)];
+const CASCADE_ALPHA_REF: f32 = 100.0 / 255.0;
 
 // STAND-IN: The cloud map's threshold is the game's first frame at Rasenboden's noon; the real thing is the set's density moved by its height noise (`CloudHeightNoiseChangeSpeed`, `CloudHeightNoiseScale`), not found.
 const CLOUD_THRESHOLD: f32 = 0.6413691;
@@ -1418,7 +1427,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         };
         // The field's clock for the sky (the clouds' wind): a window's own, 60 Hz offscreen.
         let sky_clock = phase_override("BARREL_SKY_CLOCK").unwrap_or(if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 });
-        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, title_clip, sky_clock);
+        let mut view = look_for(center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, (lo, hi), title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1563,6 +1572,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             draw_vp: view.vp,
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
+            shadow_cascades: view.shadow_cascades,
+            shadow_bias: view.shadow_cascades[0].map(|_| CASCADE_BIAS.map(|(slope, constant)| shadow::Bias { slope, constant, alpha_ref: CASCADE_ALPHA_REF })),
             alpha_cutoff: MODEL_ALPHA_REF,
             sway_cutoff: PLANT_ALPHA_REF,
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
@@ -1615,8 +1626,11 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // scene written; the last, full frame below adds the rest.
         if renderer.dump.is_some() && readback.is_some() && presenter.is_none() && frame_no + 1 >= a.frames.unwrap_or(1) {
             use barrel_render::dump::Stop;
-            for stage in [Stop::Lit, Stop::Dome, Stop::Sky] {
+            for stage in [Stop::Lit, Stop::Shadow, Stop::Dome, Stop::Sky] {
                 renderer.upto.set(stage);
+                // The shadow stage's look: the shaders write the sun's share (slot 31's w).
+                view.look[31][3] = if stage == Stop::Shadow { 1.0 } else { 0.0 };
+                renderer.look_ring.write(&gpu, 0, unsafe { std::slice::from_raw_parts(view.look.as_ptr() as *const u8, LOOK_SIZE as usize) });
                 let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(renderer.pool).command_buffer_count(1))?[0] };
                 unsafe { d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT))? };
                 renderer.record(&gpu, cb, &frame);
@@ -1724,7 +1738,9 @@ struct View {
     look: [[f32; 4]; LOOK_SLOTS],
     vp: Mat4,
     shadow_vp: Mat4,
-    /// The far shadow square wanted and its look slot (texel, layer to fill, fades).
+    /// The cascades past the first.
+    shadow_cascades: [Option<Mat4>; 2],
+    /// The static shadow layer wanted and its look slot (texel, layer to fill).
     shadow_far: Option<(Mat4, [f32; 4])>,
     sky_plane: bool,
     /// The sky's large clouds, when the set has them: what their maps are made from.
@@ -1759,7 +1775,7 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, clip: Option<(f32, f32)>, seconds: f32) -> View {
+fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, world: (Vec3, Vec3), clip: Option<(f32, f32)>, seconds: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -1771,6 +1787,8 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
     let mut look = [[0f32; 4]; LOOK_SLOTS];
     let mut shadow_vp = vp;
     let mut shadow_far = None;
+    let mut shadow_cascades = [None; 2];
+    let eye_point = eye;
     for (k, (now, before)) in vp.to_cols_array_2d().into_iter().zip(prev_vp.unwrap_or(vp).to_cols_array_2d()).enumerate() {
         look[40 + k] = before;
         look[44 + k] = now;
@@ -1907,32 +1925,47 @@ fn look_for(center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, hei
                 },
             });
         }
-        // STAND-IN: The sun's shadow is one square over the camera's target; the real thing is the game's cascades.
-        // The sun's shadow map: one square over the camera's target, wide enough for the
-        // view (the game's cascades, `shadowMap_`, are not read), unless --no-shadows.
+        // The sun's shadow as the game's pass sets it (docs/shading.md, "The ambient-and-shadow
+        // pass"): three cascades, each the smallest box in the sun's view around a slice of the
+        // view's frustum (along the view: from 0 to the first end, to the second, to the last),
+        // then the static layer over the whole field past them; unless --no-shadows.
         if let Some(size) = shadow_size {
             let sun = from_light(light.parallel[0].elevation, light.parallel[0].azimuth);
-            shadow_vp = shadow::sun_view_proj(center, sun, (dist * 1.5).clamp(SHADOW_HALF, 6000.0), 8000.0);
+            let forward = (center - eye).normalize_or(Vec3::NEG_Z);
+            let inverse = vp.inverse();
+            // The point at `z` along the view on the ray through the screen's (nx, ny).
+            let at = |nx: f32, ny: f32, z: f32| {
+                let near_point = inverse.project_point3(Vec3::new(nx, ny, 0.0));
+                let way = (inverse.project_point3(Vec3::new(nx, ny, 1.0)) - near_point).normalize_or(forward);
+                eye_point + way * (z / way.dot(forward))
+            };
+            let ends = CASCADE_ENDS.map(|e| e * shadow_reach);
+            let plane = eye_point.dot(sun) - CASTER_PLANE;
+            let slice = |from: f32, to: f32| {
+                let mut points = [Vec3::ZERO; 8];
+                for (k, point) in points.iter_mut().enumerate() {
+                    *point = at((k & 1) as f32 * 2.0 - 1.0, (k >> 1 & 1) as f32 * 2.0 - 1.0, if k < 4 { from } else { to });
+                }
+                shadow::fit_view_proj(&points, sun, plane)
+            };
+            shadow_vp = slice(0.0, ends[0]);
+            shadow_cascades = [Some(slice(ends[0], ends[1])), Some(slice(ends[1], ends[2]))];
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
-            look[31] = [1.0 / size as f32, 1.0, 0.0, 0.0];
-            // Past it, the far layer: a square out to where the game's shadows end
-            // (`shadowMap_ShadowEraseFarEnd`), fading to lit from `ShadowEraseFarStart` (the
-            // default override's 20000 and 30000; its three near cascades, 1200 / 6000 /
-            // 13000, are the near square here), scaled by the general preset's shadow distance
-            // (`shadow_reach`: 1 on High, 0.7 on Middle; how the game applies it to its
-            // cascades is not known, docs/ryza/open.md).
-            let (fade_start, fade_end) = (20000.0 * shadow_reach, 30000.0 * shadow_reach);
-            // Its centre steps on a 2000-unit grid: the layer is drawn again only when it
-            // moves (`Renderer::far_shadow`; a whole-field draw, about 10 ms at 1080p), so
-            // far swaying trees' shadows hold still between steps.
-            let step = 2000.0;
-            let snapped = Vec3::new((center.x / step).round() * step, (center.y / step).round() * step, (center.z / step).round() * step);
-            // The renderer says which far square the receivers read (`Renderer::far_shadow`).
-            shadow_far = Some((shadow::sun_view_proj(snapped, sun, fade_end, 20000.0), [1.0 / size as f32, 0.0, fade_start, fade_end]));
+            look[31] = [1.0 / size as f32, 1.0, 1.0, 0.0];
+            for (c, m) in shadow_cascades.iter().enumerate() {
+                for (k, col) in m.unwrap_or_default().to_cols_array_2d().into_iter().enumerate() {
+                    look[SHADOW_CASCADE_SLOT + 4 * c + k] = col;
+                }
+            }
+            look[SHADOW_CASCADE_SLOT + 8] = [ends[0], ends[1], ends[2], CASCADE_BLEND * shadow_reach];
+            look[SHADOW_CASCADE_SLOT + 9] = [forward.x, forward.y, forward.z, 0.0];
+            // The static layer: the whole field's box in the sun's view, drawn once.
+            let corners: [Vec3; 8] = std::array::from_fn(|k| Vec3::new(if k & 1 == 0 { world.0.x } else { world.1.x }, if k & 2 == 0 { world.0.y } else { world.1.y }, if k & 4 == 0 { world.0.z } else { world.1.z }));
+            shadow_far = Some((shadow::fit_view_proj(&corners, sun, f32::MAX), [1.0 / size as f32, 0.0, 0.0, 0.0]));
         }
         exposure_k = Some(k);
     }
-    View { look, vp, shadow_vp, shadow_far, sky_plane, clouds, near, far, exposure: exposure_k }
+    View { look, vp, shadow_vp, shadow_cascades, shadow_far, sky_plane, clouds, near, far, exposure: exposure_k }
 }

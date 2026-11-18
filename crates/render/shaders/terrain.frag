@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Field terrain, as the field's own terrain programs draw it (docs/formats.md, "Patches and
 // their draws"): each triangle belongs to one draw that mixes one or two tiled layers by a pair
 // of one blend map's channels, each divided by their sum.
@@ -71,6 +72,15 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // 109: the specular ambient's (model.frag); z: the game's per-pixel lighting of the
     // ground (its normal maps and direct specular) on, for the Ryza games' fields.
     vec4 spec_amb;
+    vec4 spec_tint;
+    // Slots 111 to 191: the water's. Then the cascades' (lib.rs SHADOW_CASCADE_SLOT): the
+    // second and third view-projections, the cascades' ends along the view and the fade width
+    // into the static layer, the view's forward.
+    vec4 water_pad[81];
+    mat4 shadow_c1;
+    mat4 shadow_c2;
+    vec4 shadow_ends;
+    vec4 shadow_fwd;
 } look;
 layout(set = 1, binding = 5) uniform sampler2DArrayShadow shadow_map;
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
@@ -111,8 +121,11 @@ float shadow_layer(mat4 vp, float layer, float t, vec3 p) {
     return lit / 16.0;
 }
 
+#include "shadow_cascades.glsl"
+
 float sun_shadow(vec3 p) {
     if (look.shadow_info.y < 0.5) return 1.0;
+    if (look.shadow_info.z > 0.5) return sun_shadow_cascades(p);
     float near = shadow_layer(look.shadow_vp, 0.0, look.shadow_info.x, p);
     if (near >= 0.0) return near;
     // Past the near square: the far layer, if on, fading to lit with the distance.
@@ -208,6 +221,11 @@ void main() {
         nm = bake_n / max(bake_w + wa, 1.0 / 1024.0) + na * wa;
     }
     float sun_lit = sun_shadow(world) * cloud_light(world);
+    // The stage dump of the sun's share (`dump::Stop::Shadow`).
+    if (look.shadow_info.w > 0.5) {
+        color = vec4(vec3(sun_lit) * pc.params.w, 1.0);
+        return;
+    }
     if (per_pixel) {
         // The ground as the game's passes light it (docs/shading.md): the normal from the
         // blended normal maps in the frame of the vertex normal (the game's space, x not

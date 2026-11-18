@@ -45,6 +45,7 @@ pub const WATER_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.ve
 pub const WATER_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.frag.spv"));
 pub const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 pub const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
+pub const SHADOW_CASCADE_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow_cascade.frag.spv"));
 /// Push constants: mvp, params (alpha cutoff, field size), two vec4 of layer tile scales.
 /// view_proj (64), params, scale_a, scale_b (48), then the draw's instance number (4).
 pub const PUSH_SIZE: u32 = 128;
@@ -57,15 +58,20 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// the field's sun, fill and ambient (5 vec4s).
 /// The look block's slots (vec4s; model.vert's `Look`, then the sky plane's 11 from
 /// `SKY_SLOT`, sky.frag).
-/// Then the far shadow square: its view-projection (87 to 90) and {texel, layer (0: none),
-/// fade start, fade end} (91; the fade by distance from the eye, to lit).
+/// Then the static shadow layer: its view-projection (87 to 90) and {texel, layer (0: none)}
+/// (91). The cascades' last slots follow the water's (`SHADOW_CASCADE_SLOT`).
 /// Then a sky dome's ambient light ({rgb}, 92: `model.vert`'s flag 4096).
 /// Then where billboards shrink away ({begin, end} from the eye, `model.vert`'s flag 16384: a
 /// field's plants).
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
 /// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
-pub const LOOK_SLOTS: usize = WATER_SLOT + 1 + 5 * MAX_WATER_PIECES;
+pub const LOOK_SLOTS: usize = SHADOW_CASCADE_SLOT + 10;
+/// The shadow cascades past the first (`model.frag`, `terrain.frag`): the second's and the
+/// third's view-projections (4 slots each), then {the cascades' ends along the view, three,
+/// and the width of the fade into the static layer before the last end}, then {the view's
+/// forward, xyz}. Used when slot 31's `z` is on.
+pub const SHADOW_CASCADE_SLOT: usize = WATER_SLOT + 1 + 5 * MAX_WATER_PIECES;
 /// The water's look slots (`water.vert`): {pieces, seconds}, then five a piece (its centre line
 /// and widths, the look of its body). Zero pieces: no water.
 pub const WATER_SLOT: usize = 111;
@@ -85,7 +91,7 @@ pub const DOME_SUN_SLOT: usize = 95;
 pub const EMISSION_SLOT: usize = 94;
 pub const DOME_LIGHT_SLOT: usize = 92;
 pub const FADE_SLOT: usize = 93;
-/// The far shadow layer's first look slot.
+/// The static shadow layer's first look slot.
 pub const SHADOW_FAR_SLOT: usize = 87;
 /// The first of the sky plane's look slots (sky.frag): {on}, Scat[4], skyPos, fog, the sun's
 /// way, the glow's direction, colour and parameters.
