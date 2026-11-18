@@ -209,9 +209,18 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   five planes accounts for 45 of the 53 parts the game hides, but 3 the game draws would be
   hidden (`S06-HOUSE-01`, `COMMON-STUMP-01`, `S09-STAIR-02`) and 11 it hides are not
   (cliff blocks, `CLIFF-15M-01`, `CLIFF-30M-02`, a mountain). A bounding sphere fits worse (12).
-  Next: the per-object query that reads these records (not in `0x140a3cac0`; find a reader of
-  the count `+0xc8` among the field object's draw, near `0x14072a300`, which makes the pool),
-  for its shape (box, sphere, or the 2D extents) before Barrel uses it. What got it here from 809: objects are
+  The per-object query (`0x140a39fc0`, from `0x1407282ce`) and Barrel's version of it:
+  docs/renderer.md, "Ryza DX: objects behind the field's occluders" (99fe8e5): at the gate
+  Barrel's draws 975 -> 934, field parts the game does not draw 78 -> 38, matched 859 -> 858.
+  Left: (1) the stump `obj-A21-COMMON-STUMP-01` (object 1147) is wholly inside kept quads 7
+  and 13 by 213 units yet the game draws it. The query is skipped for an object whose byte
+  `+0x249` is set or whose list has no occlusion object (`[r14+0x10]`): likely the stump is
+  in such a list (a gathering spot?), not checked. (2) Of the 38, some 28 are
+  `event_titleback`-named parts (Rasenboden's cliffs sharing the title's texture names);
+  the mountain (8), cliff blocks 78, 95, 96, 586, 587 and the stair and kudzu (828, 972)
+  lie partly outside every single kept quad (the game may join quads, not read), and 6 to 7
+  far trees (785 to 1183). (3) Occluders are off on the title (`a.title`): the title's field
+  has a `_le.koc` too; whether the game uses it there is not checked. What got it here from 809: objects are
   in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
   drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
   game's code and capture say ("Ryza DX: object draw ranges"). The story's progress decides
