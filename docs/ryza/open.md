@@ -161,12 +161,13 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
-- **The post constants Barrel does not dump** (P2; `rasen-constants`: 738 compared, 0 differ,
-  172 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 762 compared, 0 differ,
+  170 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
   lists them by pass). They split three ways:
   - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
-    shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `vSMDF`,
-    `sdplane`...), the lighting pass's other draws (`litDir`/`litCol` 1 and 2, `emScl`,
+    shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `scSMD`,
+    `scSM2D`, `vSMOf`; `vS2VZ` and `sdplane` are dumped, the planes of the first cascade's
+    map), the lighting pass's other draws (`litDir`/`litCol` 1 and 2, `emScl`,
     `vAmbOccRat`), the water's own ambient and lighting (passes 14 to 16), the reflections
     (pass 21). The height fog (`cHFog`, `hFogParam`, `hFogFlucPrms`, sky pass 17 and fog pass
     18) is off: the fog shader (`sh09135ab09a4edc1e`) weights both layers by `cHFog`'s w, and

@@ -938,7 +938,12 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   max 9415). Ruled out: a crop to the casters' bounds (the game's map is covered to all four
   borders, the terrain casting everywhere), an older frame's camera (the box is the same
   over frames 1728 to 1751 with the camera still), a far cap that is a sphere about the eye
-  (3% off at best). Not found. The boxes are not
+  (3% off at best). Not found.
+- **The pick and the fade.** The shader takes a point's place in the first cascade's map (u, v,
+  depth, 1) and dots it with two planes: `vS2VZ` gives the view depth minus 1600 (past 0: the
+  second cascade; minus `vSMDF.x` 2000 past 0: the third) and `sdplane`, saturated, gives
+  (10000 - depth) / 3500, the weight the cascades keep before the static map takes over
+  (Barrel's `shadow_ends` and `CASCADE_BLEND`; both planes agree to 1e-5). The boxes are not
   snapped to texels. The maps are 2000 × 2400, 2000 × 2400 and 1600 × 1600 (the texels
   1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024².
 - **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box

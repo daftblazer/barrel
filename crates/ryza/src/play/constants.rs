@@ -213,6 +213,15 @@ pub(super) fn json(i: &Inputs) -> String {
     let ends = look[SHADOW_CASCADE_SLOT + 8];
     if ends[0] > 0.0 {
         ambient.insert("vSMDF", vec![Some(ends[1] - ends[0]), Some(ends[2] - ends[0]), None, None]);
+        // The cascade pick and the far fade as planes in the first cascade's map (u, v, depth,
+        // 1): `vS2VZ` gives the view depth past the first cascade's end, `sdplane` the weight
+        // (10000 - depth) / 3500 that fades the cascades out (Barrel's `shadow_ends.z`, `.w`).
+        let cascade = glam::Mat4::from_cols_array_2d(&[look[27], look[28], look[29], look[30]]);
+        let forward = glam::Vec3::from_slice(&look[SHADOW_CASCADE_SLOT + 9][..3]);
+        let eye = glam::Vec3::from_slice(&eye[..3]);
+        let pick = shadow_planes(cascade, forward, eye, ends[0], ends[2], ends[3]);
+        ambient.insert("vS2VZ", some(&pick[0]));
+        ambient.insert("sdplane", some(&pick[1]));
     }
     put("ambient.stage", ambient.clone());
     // The second kind of surface (its `ambLit` is the sky dome's own ambient): lit by the dome's
@@ -222,8 +231,10 @@ pub(super) fn json(i: &Inputs) -> String {
     second.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
     second.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     second.insert("ambLit", some(&[dome_ambient[0], dome_ambient[1], dome_ambient[2], 1.0]));
-    if let Some(v) = ambient.get("vSMDF") {
-        second.insert("vSMDF", v.clone());
+    for name in ["vSMDF", "vS2VZ", "sdplane"] {
+        if let Some(v) = ambient.get(name) {
+            second.insert(name, v.clone());
+        }
     }
     put("ambient.second", second);
     // The characters' flat ambient: the set's ambient at the characters' scale; their light map
@@ -233,8 +244,10 @@ pub(super) fn json(i: &Inputs) -> String {
     ch.insert("vAmbParam", vec![Some(chara.diffuse_map), Some(0.0), None, None]);
     ch.insert("vAmbDifScl", vec![Some(chara.diffuse_map_color[0]), Some(chara.diffuse_map_color[1]), Some(chara.diffuse_map_color[2]), None]);
     ch.insert("ambLit", some(&[chara_ambient[0], chara_ambient[1], chara_ambient[2], 1.0]));
-    if let Some(v) = ambient.get("vSMDF") {
-        ch.insert("vSMDF", v.clone());
+    for name in ["vSMDF", "vS2VZ", "sdplane"] {
+        if let Some(v) = ambient.get(name) {
+            ch.insert(name, v.clone());
+        }
     }
     put("ambient.chara", ch);
 
@@ -568,4 +581,18 @@ mod tests {
         assert_eq!(c[4], Some(10.0));
         assert_eq!(d[7], Some(0.0));
     }
+}
+
+/// The planes `vS2VZ` (view depth minus `first_end`) and `sdplane` ((`last_end` - depth) /
+/// `blend`) over the first cascade's map coordinates as the game's shader takes them (u, v,
+/// depth, 1), `cascade` the map's view-projection in render space, `forward` and `eye` the
+/// view's. The game's map is Barrel's mirrored: u = 0.5 - x / 2, v = 0.5 - y / 2.
+pub fn shadow_planes(cascade: glam::Mat4, forward: glam::Vec3, eye: glam::Vec3, first_end: f32, last_end: f32, blend: f32) -> [[f32; 4]; 2] {
+    let to_map = glam::Mat4::from_cols_array_2d(&[[-0.5, 0.0, 0.0, 0.0], [0.0, -0.5, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.5, 0.5, 0.0, 1.0]]);
+    // A plane w over render space (w . (p, 1)) is s . (map(p), 1) with s = map^-T w.
+    let back = (to_map * cascade).inverse().transpose();
+    let depth = glam::Vec4::new(forward.x, forward.y, forward.z, -forward.dot(eye));
+    let pick = back * (depth - glam::Vec4::W * first_end);
+    let fade = back * ((glam::Vec4::W * last_end - depth) / blend);
+    [pick.to_array(), fade.to_array()]
 }
