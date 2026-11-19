@@ -161,8 +161,17 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
-- **The post constants Barrel does not dump** (P2; `rasen-constants`: 762 compared, 0 differ,
-  170 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+- **The characters' map's box is narrow in u** (P2; `mSubW2S`, left out of the dump). At the
+  gate it is 123.5 units across in u against the game's 144.5; v (221.0 against 220.8), its
+  direction and the depth agree (the matrix in the cascades' mirrored map convention, as
+  constants.rs `game_map`, which `mSemiStaticW2S` matches to 1e-5). `SUB_BOX_PAD` (17.3) was
+  fitted to the game's 144.5 when it went in (bcfe208); the box of her draws has shrunk in u
+  since. Tried: her position from the flare's reference point (32520.0, 6180.6, 30334.0:
+  the offset barely moves); her facing (`--turn` 45 to 315: no turn gives the game's u at its
+  v, 0 and 180 give v exactly). Next: what left her box in u since bcfe208 (the cloth's
+  bounds 7b45286, the gimmicks 1570551?), or her pose at the capture (`--motion-time`).
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 888 compared, 0 differ,
+  165 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
   lists them by pass). They split three ways:
   - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
     shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `scSMD`,

@@ -229,6 +229,20 @@ pub(super) fn json(i: &Inputs) -> String {
         // its second half is never read by the game's shader.
         let start: Vec<Option<f32>> = (0..3).flat_map(|k| { let [_, _, tu, tv] = look[SHADOW_SIDES_SLOT + k]; [Some(-1.5 * tu), Some(-1.5 * tv), None, None] }).collect();
         ambient.insert("scSM2D", start);
+        // The characters' map's size, and the static layer as the game's `mSemiStaticW2S` (game
+        // space to the map's u, v and depth, row vectors) and its size.
+        // `mSubW2S` itself is left out: its box is 123.5 across in u at the gate against the
+        // game's 144.5 (v and depth agree; docs/ryza/open.md).
+        if look[SHADOW_SUB_SLOT + 4][2] > 0.5 {
+            let t = look[SHADOW_SUB_SLOT + 4][0];
+            ambient.insert("scSubSM", some(&[t, t, 1.0 / t, 1.0 / t]));
+        }
+        let fixed = glam::Mat4::from_cols_array_2d(&[look[SHADOW_FAR_SLOT], look[SHADOW_FAR_SLOT + 1], look[SHADOW_FAR_SLOT + 2], look[SHADOW_FAR_SLOT + 3]]);
+        if look[SHADOW_FAR_SLOT + 4][1] > 0.5 {
+            ambient.insert("mSemiStaticW2S", some(&game_map(fixed)));
+            let [_, _, tu, tv] = look[SHADOW_SIDES_SLOT + 3];
+            ambient.insert("scSemiStaticSM", some(&[tu, tv, 1.0 / tu, 1.0 / tv]));
+        }
     }
     put("ambient.stage", ambient.clone());
     // The second kind of surface (its `ambLit` is the sky dome's own ambient): lit by the dome's
@@ -238,7 +252,7 @@ pub(super) fn json(i: &Inputs) -> String {
     second.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
     second.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     second.insert("ambLit", some(&[dome_ambient[0], dome_ambient[1], dome_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D"] {
+    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D", "scSubSM", "mSemiStaticW2S", "scSemiStaticSM"] {
         if let Some(v) = ambient.get(name) {
             second.insert(name, v.clone());
         }
@@ -251,7 +265,7 @@ pub(super) fn json(i: &Inputs) -> String {
     ch.insert("vAmbParam", vec![Some(chara.diffuse_map), Some(0.0), None, None]);
     ch.insert("vAmbDifScl", vec![Some(chara.diffuse_map_color[0]), Some(chara.diffuse_map_color[1]), Some(chara.diffuse_map_color[2]), None]);
     ch.insert("ambLit", some(&[chara_ambient[0], chara_ambient[1], chara_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D"] {
+    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D", "scSubSM", "mSemiStaticW2S", "scSemiStaticSM"] {
         if let Some(v) = ambient.get(name) {
             ch.insert(name, v.clone());
         }
@@ -602,4 +616,12 @@ pub fn shadow_planes(cascade: glam::Mat4, forward: glam::Vec3, eye: glam::Vec3, 
     let pick = back * (depth - glam::Vec4::W * first_end);
     let fade = back * ((glam::Vec4::W * last_end - depth) / blend);
     [pick.to_array(), fade.to_array()]
+}
+
+/// A shadow map's view-projection (render space to clip) as the game's matrix: game space (x
+/// negated) to the map's u, v (mirrored, as the cascades': `shadow_planes`) and depth, stored
+/// for row vectors.
+fn game_map(vp: glam::Mat4) -> [f32; 16] {
+    let to_map = glam::Mat4::from_cols_array_2d(&[[-0.5, 0.0, 0.0, 0.0], [0.0, -0.5, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.5, 0.5, 0.0, 1.0]]);
+    (to_map * vp * glam::Mat4::from_diagonal(glam::Vec4::new(-1.0, 1.0, 1.0, 1.0))).to_cols_array()
 }
