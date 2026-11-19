@@ -234,6 +234,11 @@ fn palette_diff(game: &[f32], barrel: &[M], simulated: &[usize]) -> ((f32, usize
             continue;
         }
         let (dt, dr) = bone_diff(&mirrored(&g), b);
+        // `DIFF3D_POSES=root`: where the game and Barrel have the root bone (Barrel's space).
+        if k == 0 && std::env::var("DIFF3D_POSES").is_ok_and(|v| v == "root") {
+            let g = mirrored(&g);
+            println!("    root: game {:.1} {:.1} {:.1}, Barrel {:.1} {:.1} {:.1}", g[12], g[13], g[14], b[12], b[13], b[14]);
+        }
         if dt > t.0 {
             t = (dt, k);
         }

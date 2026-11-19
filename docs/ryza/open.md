@@ -244,7 +244,11 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   `s06_move_data_005`) and under 9 for those standing; walkers now stand on the
   ground under their path (the field's heightmap and floors, as Ryza's; `WALKER_STEP`, a
   stand-in, though 50 to 1,000 give the same): `npc22a/b` 41 and 40 -> 11 and 6. Left:
-  `npc29a` stays 55 off (not height: its place along the path or its pace), the game's own
+  `npc29a` stays 55 off (not height: `DIFF3D_POSES=root` has its root 28 and 50 off in x
+  and z, along its path: at clock 13.5 instead of 13.7166 it is 7.6 off, but `npc22a` is
+  then 40; no one clock fits all three, so its pace, its pauses' lengths (random between
+  `interval_min` and `interval_max`) or its start differ; one frame cannot tell, the game's
+  root over several frames would), the game's own
   rule for its walkers' ground (not read), and walkers on the title (no ground without
   Ryza's rig), and the pace of their motions. The story comes from a save with `--save` (`docs/formats.md`,
   "Ryza DX saves"). Left: the object ranges' own measure and classes below
