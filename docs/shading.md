@@ -960,7 +960,11 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   `fSHBlendRegion` 0.3 only shape it), `fOverallShadow` 0 (the shadow is cut by it: lit only
   where the shadow term is above it; 0 takes the shadow whole) and `ilaScale` 0 (two terms
   1 + depth x scale on the output). `nNumCascadeLevels` (0) is never read; `nSubSdw` is 1 (an
-  int: the `draws` listing prints ints as floats, 0.0000).
+  int: the `draws` listing prints ints as floats, 0.0000). `vAmdLerpParam` (0, 0, -0.1) picks how the light volume and
+  the light map make the ambient: z below 0 adds them (the volume's 0 plus the light map x
+  `vAmbParam.x` x `vAmbDifScl`, what Barrel draws), below 1 blends them by sat(x * distance - y),
+  below 2 the light map's share alone by that weight. Not dumped: Barrel holds only the mode
+  (adding), not the game's numbers.
 - **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box
   in the sun's view (u horizontal, v up the slope, the cascades' way) spans exactly the
   heightmap's square (0 to 64,000 in x and z on Rasenboden) at heights 0 to 5,000 (not the
