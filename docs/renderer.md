@@ -680,6 +680,24 @@ pass: to all the diffuse light, tinted by the colour, and to the direct and ambi
 (`--timings`: "occlusion"): the normal pass 0.3 ms for 950 draws and 680,000 triangles at half
 size, the full-screen pass 0.2.
 
+**Depth of field.** Ryza's frames (`RenderSettings::depth_of_field`, on in `ryza`'s settings;
+like the reflections it needs the occlusion's depth and single-sampled drawing) soften the far
+view as the game's type 0 does (`dof.rs`; docs/shading.md, "The depth of field (type 0)"). After
+the scene (before the glow) three passes run: the weight (`dof_weight.frag`: the occlusion's
+view depth turned to the game's raw depth and looked up in the curve, at the scene's size), the
+two quarter-size layers (`dof_down.frag`: four bilinear taps of the scene and the weight, split
+by the weight) and the blur (`dof_blur.frag`: 16 taps of the layers, into two more
+quarter-size targets). The post pass reads the weight and the two blurs (bindings 7 to 9;
+`screen.z` is 1 for a frame that made them) and, on the scene at its exposure, mixes the far
+view's blur by the weight's ramp where the weight is 1/2 or more, then the near view's by its
+own alpha (`post.frag`'s `soften`). The layers are kept in the scene's units; the game's carry
+its adapted luminance (0.9 at the gate), which the post pass applies to the scene and the
+layers alike. `BARREL_DUMP_STAGES` writes `dof_weight`, `dof_layers` (near view) and
+`dof_layers_back`, the board's `dof_weight`, `dof_layers` and `dof_layers_back` (and their
+`_alpha`s; the board brings Barrel's layers to the game's exposure). At the gate the weight
+agrees to 0.0004 (alpha 0 to 1), the layers to 0.008 (their colour is the scene's, which
+agrees to 0.016), the tone to 3.67 from 3.89 (turn 4.39 from 4.57, left 4.50 from 4.74).
+
 **Screen-space reflections.** Ryza's frames (the game's choice in `RenderSettings::reflections`,
 on in `ryza`'s settings; it needs the occlusion's pass and single-sampled drawing, so MSAA
 leaves it out) add the game's reflections to the specular ambient (`reflect.rs`; docs/shading.md,

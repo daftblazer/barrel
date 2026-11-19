@@ -197,7 +197,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     (`vLightShaftPower` 0, 63 to 68), the lens flare (`fLensFlareWeight` 0), the vignette
     (`fLimbDarkeningWeight` 0). Their values sit in the set's `trueHDR_` block and its
     neighbours (`docs/formats.md`, the environment table).
-  - On at the gate, missing from Barrel: the depth of field's softening. The tone pass
+  - On at the gate, and now drawn (docs/renderer.md, "Depth of field"): the depth of field's
+    softening. The tone pass
     (`sh54b7a1dac8c7a203`) has three branches on `fKIDSDOFType`; the distant blur
     (`fDistantBlurIntensity` past `fDistantBlurZThreshold`) is only type 2's, and the gate is
     type 0: it mixes in pass 31's quarter-size blurs by the weight in alpha, a ramp
@@ -218,6 +219,14 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     plane and the sky, 0.619). The capture's runtime ignores texture uploads
     (`UpdateSubresource` writes buffers only, `Dispatch` is a no-op), so the CPU or a compute
     pass fills it out of sight.
+    Built: the weight, the two layers, the blur and the tone pass's mix (`dof.rs`, `dof_*.frag`,
+    `post.frag`); the board's `dof_weight` agrees to 0.0004 at the gate (0.002 turn, 0.004 left),
+    the blurred layers to 0.008 to 0.013 (colour, at the game's exposure), the tone 3.89 to 3.67
+    (turn 4.57 to 4.39, left 4.74 to 4.50). Left: the curve is a stand-in (`dof::CURVE_*`): its
+    source (what the CPU builds it from, so what other fields and cameras give) is not read;
+    the weight takes the occlusion's half-size depth (no full-size depth on every setting); the
+    hexagonal blur (type 1, passes 32 to 37) and the distant blur (type 2) are not built, no
+    field the board knows uses them.
   - Also on, and now drawn: the sun flare and paraffin wash (docs/renderer.md, "The sun flare").
     Its numbers come from the environment template's `flare_paraffin` block (a row per time
     and weather; the noon, sunny row gives the gate's constants, all 738 compared agree). The

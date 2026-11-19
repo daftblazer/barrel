@@ -653,6 +653,13 @@ mistake for a day). `u46` in the events does not play its movie yet.
   to the plain acceleration against the smoothed velocity) and, for now, every cloth but the
   player's (the title's and the townsfolk's characters hang at rest). The wind's strength is
   the plants' `Gust::at` stand-in times `clothWindScale`.
+- **Depth of field: stand-ins** (Ryza, `docs/renderer.md`, "Depth of field"). The weight's
+  curve is a table read off the capture (`dof::CURVE_BASE`, `CURVE_TAIL`), not what the game's
+  CPU builds, so a field with other focus settings softens as the gate's. The weight is made at
+  the scene's size from the occlusion's half-size depth (nearest, no full-size depth), so its
+  steps follow the half-size depth's edges. With MSAA above 1, or a frame whose stage dump
+  stops before the finished scene, there is none. The weight, layers and blur are half-float
+  at the scene's size and a quarter of it (the game's: the same at 1920 by 1080).
 - **Reflections: stand-ins** (Ryza, `docs/renderer.md`, "Screen-space reflections"). The game's
   scene colour the march reads has no specular ambient; Barrel's holds the cube light (the
   models add it before the reflections exist), so a reflected surface is a little brighter.

@@ -1217,6 +1217,35 @@ frame's stages as the game wrote them):
   leaf cards' vertex normals, the game's on its normal maps); the ground came 4% down (sand
   1.169 against 1.274, grass 0.552 against 0.570), as its occlusion (0.92) matches the game's.
 
+**The depth of field (type 0)** (passes 29 to 31 and the tone pass at the gate, draws 2038 to 2040
+and 2078; `fKIDSDOFType` 0; passes 32 to 37, the hexagonal blur, feed type 1 only, and the
+distant blur is type 2's). All the targets are half-float RGBA.
+- *Pass 29* (`sh7b41f1dd6f2b7f36`) copies the scene (`smplScene`) and writes in its alpha `w`: the
+  512 x 1 curve `smplWeight`, sampled linearly at u = the raw depth of `smplZ` (v 0.5). The raw
+  depth is 0 at the near plane (50) and 1 at the far (300000): `1 / z = d (1 / far - 1 / near) +
+  1 / near`. The CPU fills the curve out of sight (see docs/ryza/open.md for its values: 127/255
+  to texel 495, then 129 to 158 over the last 16 texels).
+- *Pass 30* (`shc599ea50082a7f1c`, 480 by 270, two targets) takes four bilinear taps one
+  full-size pixel from the centre (a 4 x 4 block's box) of colour and `w`. A tap's weight is
+  `min(1 / (max(1 - 2|w - 1/2|, 0) + 1e-5) - 0.99218, 1)` on layer 0 where `w` < 1/2 and 1e-5 on
+  layer 1, and the other way round for `w` of 1/2 or more. Each layer is the weighted mean (alpha
+  too, the layer 0's kept at most 1/2, the layer 1's at least 1/2) and the colour is scaled by the
+  adapted luminance (`smplAdaptedLumCur` at (0.25, 0.5): 0.9 at the gate).
+- *Pass 31* (`sh6fd63a69633ce602`, into `#3` and `#4`) takes 16 taps of both layers (eight pairs
+  of the vertex program's offsets in texels: (+-2/3, +-2/3), (+-2.4, 0), (0, +-2.4), then
+  (+-1.3, +-2.4) and (+-2.4, +-1.3) with their mirrors) with a weight of
+  `saturate((1 / min(c0, c1) - 1 + b - a) k) h` on layer 0 and the same on `c1` alone for layer
+  1, where `c` is `max(1 - 2|alpha - 1/2|, 0) + 1e-5` of each layer's tap and `a`, `h`, `b`, `k`
+  come from a table of four rows, one per four taps ({3.7712, 3, 4, 0.25}, {10, 2, 4.5, 0.2222},
+  {10.918, 2.5, 5.5, 0.1818} twice). The colours are weighted means; the alpha accumulates
+  `1 / c`: layer 0's alpha is `min(1 / mean, 1) / 2` if any tap's alpha was under 127/255 (else
+  1/2) and layer 1's `(1 - min(1 / mean, 1)) / 2 + 1/2`.
+- *The tone pass* (`sh54b7a1dac8c7a203`) mixes by the ramp `r(w) = saturate((1 / (max(1 - 2|w -
+  1/2|, 0) + 1e-5) - 1) / 4)`, on `scene x E`: where `w` (pass 29's alpha) is 1/2 or more, `c +=
+  r(w) (back - c)` with `back` = `smplBlurBack` (`#4`); then `c += r(a) (front - c)` with `a` the
+  alpha of `smplBlurFront` (`#3`). At the gate `w` is at most 0.62 (the far plane and the sky),
+  so the back blur reaches 0.079 and the front 0.001 or less.
+
 **The tone pass** (the last full-screen pass): `c = scene × E` (the metered exposure), the
 depth of field and distant blur, the 2D effects taken back through the curve and laid over,
 `+ bloom × fBloomWeight` (0.4) `+ star + flare + light shafts`, `× vColorScale` (the set's
