@@ -1242,12 +1242,14 @@ mod tests {
     }
 
     /// The game's own save of one moment of play against Barrel's text save of the same moment
-    /// (made from it earlier, by another route). Skipped without the files:
+    /// (made from it earlier, by another route). Skipped without the files, all three under
+    /// `BARREL_ESCHA_RECOMP` (escha-recomp's work folder) or each named:
     /// `BARREL_GAME_SAVE` (a `GAMEDATA<NN>.pcsave`), `BARREL_TEXT_SAVE` (the text) and
     /// `BARREL_EXE` (the game's executable).
     #[test]
     fn a_game_save_loads_as_the_text_save_of_it() {
-        let root = "../escha-recomp/work";
+        // BARREL_ESCHA_RECOMP: escha-recomp's work folder, holding all three (or name each).
+        let root = std::env::var("BARREL_ESCHA_RECOMP").unwrap_or_default();
         let var = |name: &str, default: String| std::env::var(name).unwrap_or(default);
         let game = var("BARREL_GAME_SAVE", format!("{root}/drive_c/users/player/Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/GAMEDATA00.pcsave"));
         let text = var("BARREL_TEXT_SAVE", format!("{root}/saves/barrel-user.save"));

@@ -1624,8 +1624,7 @@ tops by stand-in values (docs/ryza/open.md).
 ### Ryza DX: the plants' constants as the game sets them (measured)
 
 Read from the running game at Rasenboden's garden gate, 10 AM, the High preset (2026-11-14,
-`<reference>/ryza-gate-constants-60hz.mkv`; a 32 MB snapshot of the
-constant ring is kept locally). The plants draw with `objectgrasspbs`'s 656-byte vertex block,
+a 60 Hz recording; a 32 MB snapshot of the constant ring is kept locally). The plants draw with `objectgrasspbs`'s 656-byte vertex block,
 the variant without `g_vFieldRange`: no pigment map is sampled at the gate. Per draw:
 
 - `g_vAttCache0` = (a, a, a/2, −a/2) with a, the sway's strength, 5 sqrt(2 p) for the wind's

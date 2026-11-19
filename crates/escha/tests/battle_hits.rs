@@ -117,8 +117,9 @@ fn parse(s: &[u8], at: &mut usize) -> J {
 
 /// The install folder, the scenario folder and the save inside it, when all are there.
 fn locate() -> Option<(PathBuf, PathBuf, PathBuf)> {
-    let root = std::env::var_os("BARREL_ESCHA_ROOT").map(PathBuf::from).unwrap_or_else(|| "<steam>/steamapps/common/Atelier Escha and Logy DX".into());
-    let scenario = std::env::var_os("BARREL_HITS").map(PathBuf::from).unwrap_or_else(|| "../escha-recomp/work/scenarios/battle-hits".into());
+    // BARREL_ESCHA_ROOT: the game's folder; BARREL_HITS: the recorded scenario's folder.
+    let root = PathBuf::from(std::env::var_os("BARREL_ESCHA_ROOT")?);
+    let scenario = PathBuf::from(std::env::var_os("BARREL_HITS")?);
     let save = scenario.join("drive_c/users/player/Documents/KoeiTecmo/Atelier Escha and Logy DX/SAVEDATA/GAMEDATA00.pcsave");
     (root.join("Atelier_Escha_and_Logy_EN.exe").exists() && scenario.join("hits.jsonl").exists() && save.exists()).then_some((root, scenario, save))
 }
