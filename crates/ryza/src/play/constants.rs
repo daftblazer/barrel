@@ -225,6 +225,10 @@ pub(super) fn json(i: &Inputs) -> String {
         // `scSMD`: each cascade's map, its texel and its size ({1/w, 1/h, w, h}).
         let maps: Vec<f32> = (0..3).flat_map(|k| { let [_, _, tu, tv] = look[SHADOW_SIDES_SLOT + k]; [tu, tv, 1.0 / tu, 1.0 / tv] }).collect();
         ambient.insert("scSMD", some(&maps));
+        // `scSM2D`: where the sixteen taps start, 1.5 texels before the point (`cascade_light`);
+        // its second half is never read by the game's shader.
+        let start: Vec<Option<f32>> = (0..3).flat_map(|k| { let [_, _, tu, tv] = look[SHADOW_SIDES_SLOT + k]; [Some(-1.5 * tu), Some(-1.5 * tv), None, None] }).collect();
+        ambient.insert("scSM2D", start);
     }
     put("ambient.stage", ambient.clone());
     // The second kind of surface (its `ambLit` is the sky dome's own ambient): lit by the dome's
@@ -234,7 +238,7 @@ pub(super) fn json(i: &Inputs) -> String {
     second.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
     second.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     second.insert("ambLit", some(&[dome_ambient[0], dome_ambient[1], dome_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD"] {
+    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D"] {
         if let Some(v) = ambient.get(name) {
             second.insert(name, v.clone());
         }
@@ -247,7 +251,7 @@ pub(super) fn json(i: &Inputs) -> String {
     ch.insert("vAmbParam", vec![Some(chara.diffuse_map), Some(0.0), None, None]);
     ch.insert("vAmbDifScl", vec![Some(chara.diffuse_map_color[0]), Some(chara.diffuse_map_color[1]), Some(chara.diffuse_map_color[2]), None]);
     ch.insert("ambLit", some(&[chara_ambient[0], chara_ambient[1], chara_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD"] {
+    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D"] {
         if let Some(v) = ambient.get(name) {
             ch.insert(name, v.clone());
         }

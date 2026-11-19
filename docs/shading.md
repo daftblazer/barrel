@@ -948,6 +948,12 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024². Barrel draws each at its size in
   the corner of a 2400² layer (`SHADOW_MAPS`, ryza play/mod.rs; `scSMD` agrees); the turn's
   and the left view's pixels moved 4.73 to 4.69 and 4.82 to 4.79 with it.
+- **The taps** (sh6da4fafff7c32ee5's cascade loop): sixteen points a texel apart (`scSMD`'s
+  texel) from `scSM2D.xy`, 1.5 texels before the point; each is a bilinear comparison done by
+  hand (four point samples at the texel corners, each saturated then scaled and offset by
+  `vSMOf`, 1, 1, 0, 0: the map's own uv), as Barrel's comparison sampler does. `scSM2D.zw`
+  (2 texels) is never read. `vSMOf` is not dumped: Barrel's maps sit in a larger layer, its
+  scale is the layer share (`shadow_sides`), not the game's 1.
 - **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box
   in the sun's view (u horizontal, v up the slope, the cascades' way) spans exactly the
   heightmap's square (0 to 64,000 in x and z on Rasenboden) at heights 0 to 5,000 (not the
