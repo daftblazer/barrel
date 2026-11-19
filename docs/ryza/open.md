@@ -211,6 +211,13 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     of the screen (the far view), 0 below the middle. The curve is written by the CPU at load
     (no draw writes it in frames 1700 to 2600; the capture logs no texture uploads): what
     builds it (the field's or camera's focus settings) is not read.
+    Its values, read off the capture (pixels-rasen frame 2550: draw 2038's alpha against the
+    raw depth of `1927-2031 rt1920x1080.19#15`, at the texel centres `u = (k + ½) / 512`): 127/255
+    for texels 0 to 495 (depth to about 1,550 units), then 129, 132, 134, 136, 139, 141, 143,
+    145, 147, 148, 150, 152, 154, 155, 157, 158 for texels 496 to 511 (the last, the far
+    plane and the sky, 0.619). The capture's runtime ignores texture uploads
+    (`UpdateSubresource` writes buffers only, `Dispatch` is a no-op), so the CPU or a compute
+    pass fills it out of sight.
   - Also on, and now drawn: the sun flare and paraffin wash (docs/renderer.md, "The sun flare").
     Its numbers come from the environment template's `flare_paraffin` block (a row per time
     and weather; the noon, sunny row gives the gate's constants, all 738 compared agree). The
