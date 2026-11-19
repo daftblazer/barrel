@@ -9,6 +9,7 @@ pub mod face;
 pub mod flare;
 pub mod gimmick;
 pub mod grass;
+pub mod graphics;
 pub mod presets;
 pub mod river;
 pub mod horizon;

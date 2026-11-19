@@ -501,8 +501,8 @@ impl Renderer {
         // of the pass. A frame with water draws it in two parts, the opaque scene first and the
         // rest after a copy of it (the water's refraction), which the same attachments carry on
         // through (`ScenePart`).
-        // The reflections need the occlusion's normals and depth and single-sampled drawing.
-        let reflect_on = settings.reflections && settings.occlusion && samples == vk::SampleCountFlags::TYPE_1;
+        // The reflections need the normals and depth pre-pass and single-sampled drawing.
+        let reflect_on = settings.reflections && samples == vk::SampleCountFlags::TYPE_1;
         let render_pass = scene_render_pass(d, &settings, samples, ScenePart::Whole, reflect_on)?;
         let water_passes = [scene_render_pass(d, &settings, samples, ScenePart::First, reflect_on)?, scene_render_pass(d, &settings, samples, ScenePart::Second, reflect_on)?];
         // Colour locations: the scene, the motion vectors, the reflections' two.
@@ -828,8 +828,10 @@ impl Renderer {
         // fragment programs, specialised to write the pixel's normal and depth in place of its
         // light (`AO_PASS`), into a half-size target of one sample, back faces culled as the
         // scene's (the terrain's heightmap both ways).
-        let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion, targets.scene_size)?;
-        let dof_on = settings.depth_of_field && settings.occlusion && samples == vk::SampleCountFlags::TYPE_1;
+        // The pre-pass runs when the occlusion, the reflections or the depth of field read its
+        // normals and depth; the occlusion program itself only with the occlusion.
+        let dof_on = settings.depth_of_field && samples == vk::SampleCountFlags::TYPE_1;
+        let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion || reflect_on || dof_on, targets.scene_size)?;
         let dof = if dof_on {
             let mut dof = dof::DepthOfField::new(&gpu)?;
             dof.rebind(&gpu, &ao, &targets, &post_sets, post_sampler)?;
@@ -838,7 +840,7 @@ impl Renderer {
             None
         };
         let reflect = if reflect_on {
-            let mut r = reflect::Reflections::new(&gpu, settings.scene_format())?;
+            let mut r = reflect::Reflections::new(&gpu, settings.scene_format(), settings.rlr)?;
             r.rebind(&gpu, &ao, &targets)?;
             Some(r)
         } else {
@@ -1107,7 +1109,7 @@ impl Renderer {
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 }
                 d.cmd_end_render_pass(cb);
-                self.ao.shade(gpu, cb, Some(&ao::View::of(&draw_vp)));
+                self.ao.shade(gpu, cb, self.settings.occlusion.then(|| ao::View::of(&draw_vp)).as_ref());
             } else {
                 self.ao.shade(gpu, cb, None);
             }

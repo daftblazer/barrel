@@ -667,6 +667,16 @@ mistake for a day). `u46` in the events does not play its movie yet.
   and the plants take no reflections (their specular ambient is the cube light alone). With
   MSAA above 1 the reflections are left out (the extra targets are single-sampled), and a
   frame whose stage dump stops before the finished scene has none.
+- **FXAA: a stand-in** (Ryza). The game's Middle preset (and a Custom setting with
+  `GRAPHICS_ANTIAILIASING=1`) uses FXAA; Barrel has none and draws no anti-aliasing there
+  (`presets::Graphics::apply`). The Low preset's none and High's TAA are as the game's.
+- **Ryza's graphics settings** (`docs/formats.md`, "Ryza DX: the graphics presets"): the
+  shadow quality item is stored and changes nothing (the PC game's maps are the same size at
+  every level, and Barrel keeps those); light shafts are not built (so the item switches
+  nothing); point lights, water quality and effects quality are stored only. The config's old
+  `foliage` key no longer picks Ryza's plants (the game's grass items do). Without any of the
+  game's settings given, Barrel's own `--preset` and config choices (TAA, anisotropy, and the
+  occlusion, reflections and depth of field switches) stand, and everything else is High.
 
 ## Sound
 

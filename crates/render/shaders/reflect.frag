@@ -17,10 +17,13 @@ layout(push_constant) uniform Push {
     vec4 view;
     // The target's size and its inverse.
     vec4 res;
+    // The quality level (rlrpreset.xml): MaxRaySamples, PixelsPerStep.
+    vec4 level;
 } pc;
 layout(location = 0) out vec4 reflection;
 
-// The constants of the captured frame (Rasenboden at noon, its 960 by 540 target).
+// The constants of the captured frame at the game's High level (Rasenboden at noon, its 960 by 540 target);
+// the lower levels scale the step and the steps' fade by pc.level (reflect.rs, `Rlr`).
 const int MAX_STEPS = 256;                                      // nMaxRaySmpl
 const vec4 REFL = vec4(0.0037037037, 1.7777778, 1.0, 0.5);     // vReflParam: a half-size pixel's step (2 / 540), the aspect, the direction's scale and bias
 const vec2 DEPTH_PARAM = vec2(-0.02, 0.02);                     // vDepthParam.xy: linear depth = 1 / (d * x + y)
@@ -67,10 +70,12 @@ void main() {
     vec2 end_uv = (q.xy / end_depth - pc.view.zw) / pc.view.xy;
     vec3 step_ndc = vec3(end_uv.x * 2.0 - 1.0, 1.0 - end_uv.y * 2.0, depth_of(end_depth)) - vec3(uv0.x * 2.0 - 1.0, 1.0 - uv0.y * 2.0, d0);
     // One half-size pixel along the longer screen axis, as a step in (uv, depth).
-    vec3 s = step_ndc * (REFL.x / max(abs(step_ndc.y), abs(step_ndc.x) * REFL.y)) * vec3(0.5, -0.5, 1.0);
+    vec3 s = step_ndc * (REFL.x * pc.level.y / max(abs(step_ndc.y), abs(step_ndc.x) * REFL.y)) * vec3(0.5, -0.5, 1.0);
     vec3 ray = vec3(uv0, d0) + 2.0 * s;
     float prev = d0;
-    for (int i = 0; i < MAX_STEPS; i++) {
+    int steps = int(pc.level.x);
+    float fade_rate = EDGE_FADE.x * float(MAX_STEPS) / pc.level.x;
+    for (int i = 0; i < steps; i++) {
         if (max(abs(ray.x - 0.5), abs(ray.y - 0.5)) > 0.5 || ray.z > 1.0) return;
         float sd = depth_at(ray.xy);
         if (ray.z >= sd) {
@@ -85,7 +90,7 @@ void main() {
             }
             if (thick < DEPTH_FADE.x) {
                 float edge = max(abs(hit.x - 0.5), abs(hit.y - 0.5)) * EDGE_FADE.z + EDGE_FADE.w;
-                float fade = max(max(clamp(thick * DEPTH_FADE.y, 0.0, 1.0), clamp(float(i) * EDGE_FADE.x + EDGE_FADE.y, 0.0, 1.0)), max(clamp(edge, 0.0, 1.0), clamp(f_dir, 0.0, 1.0)));
+                float fade = max(max(clamp(thick * DEPTH_FADE.y, 0.0, 1.0), clamp(float(i) * fade_rate + EDGE_FADE.y, 0.0, 1.0)), max(clamp(edge, 0.0, 1.0), clamp(f_dir, 0.0, 1.0)));
                 reflection = vec4(texture(scene, hit).rgb, 1.0 - fade);
                 return;
             }

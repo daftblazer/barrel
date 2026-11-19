@@ -681,7 +681,7 @@ pass: to all the diffuse light, tinted by the colour, and to the direct and ambi
 size, the full-screen pass 0.2.
 
 **Depth of field.** Ryza's frames (`RenderSettings::depth_of_field`, on in `ryza`'s settings;
-like the reflections it needs the occlusion's depth and single-sampled drawing) soften the far
+like the reflections it needs the normals and depth pre-pass and single-sampled drawing) soften the far
 view as the game's type 0 does (`dof.rs`; docs/shading.md, "The depth of field (type 0)"). After
 the scene (before the glow) three passes run: the weight (`dof_weight.frag`: the occlusion's
 view depth turned to the game's raw depth and looked up in the curve, at the scene's size), the
@@ -699,8 +699,8 @@ agrees to 0.0004 (alpha 0 to 1), the layers to 0.008 (their colour is the scene'
 agrees to 0.016), the tone to 3.67 from 3.89 (turn 4.39 from 4.57, left 4.50 from 4.74).
 
 **Screen-space reflections.** Ryza's frames (the game's choice in `RenderSettings::reflections`,
-on in `ryza`'s settings; it needs the occlusion's pass and single-sampled drawing, so MSAA
-leaves it out) add the game's reflections to the specular ambient (`reflect.rs`; docs/shading.md,
+on in `ryza`'s settings; it needs the normals and depth pre-pass and single-sampled drawing, so
+MSAA leaves it out) add the game's reflections to the specular ambient (`reflect.rs`; docs/shading.md,
 "The screen-space reflections"). The scene pass has two more colour targets (`Targets::spec`,
 rgba16f at the scene's size, written by `model.frag` and cleared to nothing): the specular
 ambient's per-pixel factor (`o' F (o' + specOcc (1 - o'))` times the fog's extinction; the gloss
@@ -1306,6 +1306,18 @@ A character's vertex colour alpha (0.4 on her) is kept for it; the rest of her v
 white as the field models'. Her specular ambient (the sheen on her metal) is in the main pass:
 flag 1 << 24 with 128, her specular map in set 4 and `look.chara_spec` (the cube map's scale
 times its tint from the set's `indirectChara_` block, and the exposure in w).
+
+**Which passes run (Ryza's graphics settings).** The normals and depth pre-pass (`ao.rs`,
+`Occlusion::on`) is drawn when the ambient occlusion, the reflections or the depth of field is on
+(the game runs reflections and depth of field with SSAO off); the occlusion program itself
+(`RenderSettings::occlusion`) only with the occlusion, else the map reads 1. The reflections'
+march takes the game's level (`reflect::Rlr`, `rlrpreset.xml`: 256 / 128 / 64 steps of 1 / 2 / 4
+half-size pixels, push constants of the march; the game's `vReflParam.x` is the step times the
+pixels and `vSampleEdgeFadeParam.x` two over the steps, as `gs-q2`, `gs-q1`, `gs-q0` show). Bloom off
+sends the glow's rate 0 (the game's Low draws no bloom or star passes). The game's shafts are
+not built. TAA follows the game's `Taa`; texture quality is `texture_bias`; Linear filtering is
+anisotropy 1, Anisotropic 16. These apply when the player gave any of the game's settings
+(`barrel_ryza::graphics::Settings::given`).
 
 ## Foliage
 

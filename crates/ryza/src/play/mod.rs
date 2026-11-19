@@ -5,7 +5,7 @@
 //!                 [--look-at X,Y,Z] [--distance D] [--time morning|noon|evening|night]
 //!                 [--weather sunny|cloudy|foggy] [--done EVENT[,EVENT...]] [--hide NAME]...
 //!                 [--ryza X,Y,Z [--turn DEG] [--motion N] [--motion-time S]] [--no-shadows]
-//!                 [--window [--fullscreen]] [--preset NAME] [--fov DEG] [--draw-ranges auto|pc|nx|off]
+//!                 [--window [--fullscreen]] [--preset NAME] [--setting-ini FILE] [--fov DEG] [--draw-ranges auto|pc|nx|off]
 //! ```
 //!
 //! FIELD is a field's folder name in the archives (`s01_i_attic`). The camera frames the field's
@@ -106,6 +106,8 @@ struct Args {
     window: bool,
     /// Graphics: a preset by name (`RenderSettings::preset`), and fullscreen.
     preset: Option<RenderSettings>,
+    /// The original's `Setting.ini` (`--setting-ini`): its `[Graphics]` items over the config's.
+    setting_ini: Option<String>,
     fullscreen: bool,
     /// Frames to draw: in a window, quit after this many; offscreen, the same frame this many
     /// times, the last written (for `--timings`). And a lean held all along in a window (tests).
@@ -154,7 +156,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -182,6 +184,7 @@ fn args(args: Vec<String>) -> Result<Args> {
                 let name = value()?;
                 a.preset = Some(RenderSettings::preset(&name).ok_or(format!("--preset {name}: no such preset"))?);
             }
+            "--setting-ini" => a.setting_ini = Some(value()?),
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
             "--title" => a.title = true,
@@ -564,12 +567,31 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         .map(ryza)
         .or(config.as_deref().map(|c| RenderSettings { hdr_scene: true, ..RenderSettings::from_config_over(ryza(RenderSettings::DESKTOP), c) }))
         .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)).map(ryza))
-        .unwrap_or(ryza(RenderSettings::DESKTOP))
-        .resolved();
+        .unwrap_or(ryza(RenderSettings::DESKTOP));
+    // The game's own graphics settings (`barrel_ryza::graphics`): the config's game keys, then
+    // `--setting-ini` over them; High with nothing given.
+    let mut game_settings = barrel_ryza::graphics::Settings::default();
+    if let Some(c) = &config {
+        game_settings.apply_config(c);
+    }
+    if let Some(path) = &a.setting_ini {
+        game_settings.apply_ini(&String::from_utf8_lossy(&barrel_files::read(Path::new(path)).map_err(|e| format!("--setting-ini {path}: {e}"))?));
+    }
+    let install = Install::open(Path::new(&a.install))?;
+    // The settings through the game's tables (`saves/graphicssetting`). They switch Barrel's
+    // passes only when the player gave some: else the render settings stand as they are.
+    let presets = {
+        let read = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}")).ok();
+        barrel_ryza::presets::Graphics::resolve(&game_settings, &read).unwrap_or_else(|e| {
+            eprintln!("graphics presets: {e}; the High one as shipped");
+            barrel_ryza::presets::Graphics::HIGH
+        })
+    };
+    eprintln!("graphics: {game_settings:?} {presets:?}");
+    let graphics = if game_settings.given { presets.apply(graphics) } else { graphics }.resolved();
     // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
     // them, the handheld setting's in the same share.
     let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };
-    let install = Install::open(Path::new(&a.install))?;
     if let Some(save) = &a.save {
         let state = barrel_ryza::save::decode(&barrel_files::read(Path::new(save))?).map_err(|e| format!("{save}: {e}"))?;
         let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
@@ -641,23 +663,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     let grass_pack = barrel_engine::field::named(&main, &format!("{}_grass.g1t", files.area)).and_then(|b| G1t::parse(b).ok());
     // The field's water (`<FIELD>_river.bin`): the pieces of its rivers and sea, in render space.
     let water = barrel_engine::field::named(&main, &format!("{}_river.bin", files.area)).and_then(|b| barrel_ryza::river::parse(b).ok()).map(|bodies| water_slots(&bodies));
-    // The game's general graphics preset for the graphics' foliage (full: High, reduced:
-    // Middle, least: Low), its plants and levels of detail (`barrel_ryza::presets::Graphics`).
-    let presets = {
-        let general = match graphics.foliage {
-            settings::Foliage::Full => "High",
-            settings::Foliage::Reduced => "Middle",
-            settings::Foliage::Least => "Low",
-        };
-        let read = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}")).ok();
-        barrel_ryza::presets::Graphics::read(general, &read).unwrap_or_else(|e| {
-            eprintln!("graphics presets: {e}; the High one as shipped");
-            barrel_ryza::presets::Graphics::HIGH
-        })
-    };
     let plant_preset = presets.grass;
     let lod_dist = presets.lod;
-    eprintln!("presets: {:?} {presets:?}", graphics.foliage);
     // The title's backdrop: its event's stage run to the first frame's moment, and the characters
     // it stages (`actors`: Ryza, Lent and Tao), loaded before the textures that borrow them.
     let title_event = match a.title {
@@ -1709,7 +1716,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             sway_cutoff: PLANT_ALPHA_REF,
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored) and `fBloomWeight` as the rate.
-            glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, l.bloom_weight * GLOW_RANGE)),
+            // Bloom off (the game's `BloomType`): no glow, as its Low draws none.
+            glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, if presets.bloom { l.bloom_weight * GLOW_RANGE } else { 0.0 })),
             // The exposure's metering by the set's rule (a window's frame time; offscreen the
             // first frame meters to the scene).
             meter: environment.as_ref().zip(view.exposure).map(|((_, _, l, _, _, _, _), baked)| barrel_render::meter::Params {
@@ -1748,6 +1756,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 specular_mips,
                 seconds: sky_clock,
                 glow: frame.glow,
+                rlr: graphics.rlr,
                 meter: frame.meter.as_ref(),
                 tone_white: frame.tone_white,
                 tone_gamma: frame.tone_gamma,

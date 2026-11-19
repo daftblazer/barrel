@@ -2510,12 +2510,16 @@ The DX release's graphics options are tables of presets, one element per `Type`,
   `lod_NX` on and 60 / 80) is the Switch version's.
 - `shadowdistpreset.xml`: `Distance` 1, 0.7, 0.5 (a scale of the shadow cascades' reach).
 - `grassqualitypreset.xml` / `grassrangepreset.xml`: see `_grass.bin` above.
-- Read by `barrel_ryza::presets::Graphics::read`: the general preset's `GrassQualityType`,
-  `GrassRangeType` and `LODDistType`, then those tables' `Field="Default"` rows.
+- Read by `barrel_ryza::presets::Graphics::resolve`: each item's type (the general preset's
+  attribute for it, or the item's own level when the quality is Custom), then that item's
+  table's `Field="Default"` row. A type a switch's table lacks (High's DOF "Middle" in a table
+  of Off and On) is on.
 - `texturepreset.xml`: `TextureMipBias` High 0, Middle 1, Low 2 (Barrel leaves out that many
   of each texture's largest levels).
 - `shadowpreset.xml`: the three cascades' map sizes, High 4096² each; Middle 2000 × 2400,
-  2000 × 2400, 1600²; Low 1200 × 1600, 1200 × 1600, 1024².
+  2000 × 2400, 1600²; Low 1200 × 1600, 1200 × 1600, 1024². Measured on the PC game's captures:
+  its maps are 2000 × 2400, 2000 × 2400 and 1600 × 1600 cascades and 1024 for the characters'
+  at every setting, so this table changes nothing there; Barrel keeps those sizes.
 - `pointlightpreset.xml`: `ClusterFarLimitZ` Middle 100000, Low 50000, VeryLow 10000 (how far
   point lights are gathered), `LightFadeOutRange` 2000 for all.
 - `rlrpreset.xml` (screen-space reflections): `MaxRaySamples` 256 / 128 / 64, `PixelsPerStep`
@@ -2524,6 +2528,36 @@ The DX release's graphics options are tables of presets, one element per `Type`,
 - `waterqualitypreset.xml`: `EnableShoreBubble` on High only, `EnableCaustics` off on Low.
 - `aapreset` (Off 0, Fxaa 1, Taa 2), `texturefilterpreset` (Linear 0, Anisotropic 1) and
   `bloompreset`, `dofpreset`, `lightshaftpreset`, `ssaopreset` (`Enable` 0 / 1): switches.
+
+### The original's settings (`Setting.ini`) and Barrel's
+
+`Setting.ini`'s `[Graphics]` section has these integer keys (measured on the answer key's
+captures, `gs-q0`, `gs-q1`, `gs-q2`, `gs-rp6`, one frame of Rasenboden's gate): `GRAPHICS_QUALITY_ALL`
+0 Low, 1 Middle, 2 High, 3 Custom, and the items `GRAPHICS_QUALITY_TEX`, `_SHADOW`, `_RLR`, `_EFF`,
+`GRAPHICS_ANTIAILIASING` (sic; 0 Off, 1 Fxaa, 2 Taa), `_DOF`, `_AO`, `_BLOOM`, `_LIGHTSHAFT` (0 off,
+1 on), `_DISPRANGE`, `_POINTLIGHT`, `_GRASS_RANGE`, `_GRASS_DENSITY`, `_TEXTURE_FILTERING` (0 Linear,
+1 Anisotropic), `_SHADOW_DRAW_DIST`, `_WATER_QUALITY`, `_LOD_DIST`. At 0 to 2 the overall quality decides every
+item and the items are ignored (all items at 2 under ALL=0 draws the same frame as all at 0); at 3
+the items decide. An item counts up from its lowest level (Low / Off / Linear; the grass and point
+light items VeryLow, Low, Middle); a value past the table's end is the top level. The frames
+differ by level in the passes drawn (game draws at 2550: High 2149, Middle 1554, Low 1346): going
+from High to Low the SSAO (3 programs and its blend), the DOF down-scale, the bloom and star
+passes, the light shafts and the TAA go, the composite with DOF is replaced by one without, and
+the shorter draw ranges cut the field models' G-buffer draws; about 1,100 shadow draws and 900
+scene draws fewer. The reflections' pass runs at every level, its `vReflParam.x` and
+`vSampleEdgeFadeParam.x` following `rlrpreset.xml` (step 0.0037 / 0.0074 / 0.0148, fade
+0.0078 / 0.0156 / 0.0312 at High / Middle / Low).
+
+Barrel takes them (`barrel_ryza::graphics::Settings`) in this order, a later source over an
+earlier one: High everywhere; the game keys of Barrel's graphics config (`quality
+high|middle|low|custom`, and one key per item named as the ini's without `GRAPHICS_`, lower case,
+`antialiasing` mended: `quality_tex`, `quality_shadow`, `quality_rlr`, `quality_eff`, `antialiasing`,
+`dof`, `ao`, `bloom`, `lightshaft`, `disprange`, `pointlight`, `grass_range`, `grass_density`,
+`texture_filtering`, `shadow_draw_dist`, `water_quality`, `lod_dist`, each with the level's name
+or number); then `--setting-ini FILE`, whose items and overall quality replace the config's. Barrel's own keys
+(`scale`, `upscaler`, `msaa`, `taa`, ...) and `--preset` stay. When none of the game's settings is
+given, the game's items change nothing Barrel set itself (its `taa`, `anisotropy`, `occlusion`,
+`reflections` and `depth_of_field`).
 
 ## Ryza DX: `saves/envoverride/env_override.xml`
 

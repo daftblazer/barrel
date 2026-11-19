@@ -20,9 +20,9 @@ pub const LEVELS: u32 = 6;
 // The constants of the game's passes as captured (Rasenboden at noon, its 960 by 540 target;
 // docs/shading.md, "The screen-space reflections"): the shaders hold the same numbers, and a test
 // checks they agree.
-/// `nMaxRaySmpl`: the march's steps.
+/// `nMaxRaySmpl` at the game's High level: the march's steps.
 pub const MAX_STEPS: u32 = 256;
-/// `vReflParam`: a half-size pixel's step in normalised device units (2 / 540), the aspect
+/// `vReflParam` at High (one pixel a step): a half-size pixel's step in normalised device units (2 / 540), the aspect
 /// (16 / 9), the ray direction's scale and its bias (a ray with `z / |R| * scale + bias` of 1 or
 /// more points at the viewer and shows nothing).
 pub const REFL: [f32; 4] = [0.0037037037, 1.7777778, 1.0, 0.5];
@@ -30,7 +30,7 @@ pub const REFL: [f32; 4] = [0.0037037037, 1.7777778, 1.0, 0.5];
 pub const DEPTH_PARAM: [f32; 2] = [-0.02, 0.02];
 /// `vDepthFadeParam`: the thickest surface a ray hits (units), and the scale of its fade.
 pub const DEPTH_FADE: [f32; 3] = [100.0, 0.01, 0.0];
-/// `vSampleEdgeFadeParam`: the steps' fade (`i * x + y`: from step 128) and the screen edge's
+/// `vSampleEdgeFadeParam` at High: the steps' fade (`i * x + y`: from step 128) and the screen edge's
 /// (`d * z + w`, `d` the hit's distance from the middle in the larger axis).
 pub const EDGE_FADE: [f32; 4] = [0.0078125, -1.0, 20.0, -9.0];
 /// The pass reads nothing as a surface past the occlusion's far limit (`ao::DEPTH_FAR`).
@@ -39,6 +39,31 @@ pub const SKY_DEPTH: f32 = crate::ao::DEPTH_FAR;
 pub const MERGE_X: f32 = 1.0;
 /// `vAmbParam.z`: the cube map's last mip, which the reflections' chain matches.
 pub const MIP_LAST: f32 = (LEVELS - 1) as f32;
+
+/// One level of the game's reflection quality (`rlrpreset.xml`: `MaxRaySamples` 256 / 128 / 64,
+/// `PixelsPerStep` 1 / 2 / 4 for High, Middle, Low). The game's constants follow from them as
+/// captured at each level (the answer key's `gs-q2`, `gs-q1`, `gs-q0` Rasenboden frames):
+/// `vReflParam.x` is `PixelsPerStep` times High's step, and `vSampleEdgeFadeParam.x` (the steps'
+/// fade, which ends at the last step) is two over `MaxRaySamples`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rlr {
+    pub max_ray_samples: u32,
+    pub pixels_per_step: u32,
+}
+
+impl Rlr {
+    pub const HIGH: Rlr = Rlr { max_ray_samples: MAX_STEPS, pixels_per_step: 1 };
+
+    /// `vReflParam` at this level.
+    pub fn refl(&self) -> [f32; 4] {
+        [REFL[0] * self.pixels_per_step as f32, REFL[1], REFL[2], REFL[3]]
+    }
+
+    /// `vSampleEdgeFadeParam` at this level.
+    pub fn edge_fade(&self) -> [f32; 4] {
+        [EDGE_FADE[0] * MAX_STEPS as f32 / self.max_ray_samples as f32, EDGE_FADE[1], EDGE_FADE[2], EDGE_FADE[3]]
+    }
+}
 
 const MARCH_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/reflect.frag.spv"));
 const MIP_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/reflect_mip.frag.spv"));
@@ -64,6 +89,8 @@ pub struct Reflections {
     linear: vk::Sampler,
     chain: vk::Sampler,
     pool: vk::DescriptorPool,
+    /// The reflection quality level the march runs at.
+    rlr: Rlr,
     maps: Option<Maps>,
 }
 
@@ -83,7 +110,7 @@ struct Maps {
 
 impl Reflections {
     /// The passes and pipelines, for a scene in `scene_format`.
-    pub fn new(gpu: &Gpu, scene_format: vk::Format) -> Result<Reflections> {
+    pub fn new(gpu: &Gpu, scene_format: vk::Format, rlr: Rlr) -> Result<Reflections> {
         let d = &gpu.device;
         let shader_read = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
         let colour_ref = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
@@ -134,7 +161,7 @@ impl Reflections {
             let ranges = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: push }];
             d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&sets).push_constant_ranges(&ranges), None)
         };
-        let layouts = [layout(set_layouts[0], 80)?, layout(set_layouts[1], 8)?, layout(set_layouts[2], 8)?];
+        let layouts = [layout(set_layouts[0], 96)?, layout(set_layouts[1], 8)?, layout(set_layouts[2], 8)?];
         let input = vk::PipelineVertexInputStateCreateInfo::default();
         let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
         let viewport = vk::PipelineViewportStateCreateInfo::default().viewport_count(1).scissor_count(1);
@@ -196,7 +223,7 @@ impl Reflections {
         let chain = sampler(vk::Filter::LINEAR, vk::SamplerMipmapMode::LINEAR, MIP_LAST)?;
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 + (LEVELS - 1) + 3 }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET).max_sets(LEVELS + 1).pool_sizes(&sizes), None)? };
-        Ok(Reflections { pass, apply_passes, layouts, set_layouts, pipelines, modules, point, linear, chain, pool, maps: None })
+        Ok(Reflections { pass, apply_passes, layouts, set_layouts, pipelines, modules, point, linear, chain, pool, rlr, maps: None })
     }
 
     /// The targets for a scene of `scene_size` drawn into `scene` (a view of its colour image),
@@ -309,13 +336,14 @@ impl Reflections {
             d.cmd_end_render_pass(cb);
         };
         let inverse = |size: (u32, u32)| [1.0 / size.0 as f32, 1.0 / size.1 as f32];
-        let mut push = [0f32; 20];
+        let mut push = [0f32; 24];
         for (k, row) in view.rows.iter().enumerate() {
             push[4 * k..4 * k + 4].copy_from_slice(row);
         }
         push[12..16].copy_from_slice(&view.scale);
         let [iw, ih] = inverse(m.size);
         push[16..20].copy_from_slice(&[m.size.0 as f32, m.size.1 as f32, iw, ih]);
+        push[20..24].copy_from_slice(&[self.rlr.max_ray_samples as f32, self.rlr.pixels_per_step as f32, 0.0, 0.0]);
         draw(self.pass, m.level_fbs[0], m.size, self.pipelines[0], self.layouts[0], m.march_set, &push);
         for k in 1..LEVELS {
             let size = level_size(m.size, k);
@@ -372,6 +400,16 @@ mod tests {
         assert_eq!(numbers(source, "DEPTH_FADE"), DEPTH_FADE);
         assert_eq!(numbers(source, "EDGE_FADE"), EDGE_FADE);
         assert_eq!(numbers(source, "SKY_DEPTH"), [SKY_DEPTH]);
+    }
+
+    #[test]
+    fn the_levels_give_the_captured_constants() {
+        // The game's `vReflParam.x` and `vSampleEdgeFadeParam.x` at Middle and Low (gs-q1, gs-q0).
+        let middle = Rlr { max_ray_samples: 128, pixels_per_step: 2 };
+        let low = Rlr { max_ray_samples: 64, pixels_per_step: 4 };
+        assert_eq!((Rlr::HIGH.refl(), Rlr::HIGH.edge_fade()), (REFL, EDGE_FADE));
+        assert!((middle.refl()[0] - 0.0074074).abs() < 1e-6 && (middle.edge_fade()[0] - 0.015625).abs() < 1e-9);
+        assert!((low.refl()[0] - 0.0148148).abs() < 1e-6 && (low.edge_fade()[0] - 0.03125).abs() < 1e-9);
     }
 
     #[test]

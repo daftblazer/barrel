@@ -37,6 +37,8 @@ pub(super) struct Inputs<'a> {
     /// The bloom's threshold (a part of the white point) and the glow's rate.
     pub glow: (f32, f32),
     pub meter: Option<&'a barrel_render::meter::Params>,
+    /// The reflections' quality level (`vReflParam`, `vSampleEdgeFadeParam`).
+    pub rlr: barrel_render::reflect::Rlr,
     pub tone_white: f32,
     pub tone_gamma: f32,
     pub tone_scale: [f32; 3],
@@ -467,10 +469,10 @@ pub(super) fn json(i: &Inputs) -> String {
     let mut march = Consts::new();
     march.insert("mV2P", some(&v2p));
     march.insert("mP2V", some(&p2v));
-    march.insert("vReflParam", some(&reflect::REFL));
+    march.insert("vReflParam", some(&i.rlr.refl()));
     march.insert("vDepthParam", some(&reflect::DEPTH_PARAM));
     march.insert("vDepthFadeParam", some(&reflect::DEPTH_FADE));
-    march.insert("vSampleEdgeFadeParam", some(&reflect::EDGE_FADE));
+    march.insert("vSampleEdgeFadeParam", some(&i.rlr.edge_fade()));
     put("reflections.march", march);
     if pieces > 0 {
         for (role, piece) in [("water.first", 0), ("water.last", pieces - 1)] {
