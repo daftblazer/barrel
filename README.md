@@ -15,6 +15,10 @@
 *Play the Atelier games you own natively on Linux, on low-end PCs and on ARM handhelds,
 with modern upscaling and, in the future, built-in mod support.*
 
+<img src="docs/media/ryza-garden-gate.jpg" alt="Ryza at her garden gate in Rasenboden, rendered by Barrel" width="100%">
+
+<sub>Atelier Ryza DX's Rasenboden, drawn by Barrel's own Vulkan renderer: no original code, no DirectX translation.</sub>
+
 </div>
 
 ---
@@ -71,6 +75,10 @@ that is **clean, fast and open**.
 | Atelier Shallie DX | 2021 | All its data reads (events, messages, tables) |
 | Atelier Ayesha DX | 2021 | Its older PSSG data reads (meshes, textures, skeletons, motions) |
 | Atelier Sophie 2, Ryza 2 DX, Ryza 3 DX | 2022–24 | Every texture, model, animation, event and message in their archives reads |
+
+<p align="center">
+  <img src="docs/media/ryza-village.jpg" alt="Ryza in Rasenboden village, rendered by Barrel" width="100%">
+</p>
 
 ### How "the same" is checked
 
