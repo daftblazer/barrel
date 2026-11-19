@@ -212,19 +212,22 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   The per-object query (`0x140a39fc0`, from `0x1407282ce`) and Barrel's version of it:
   docs/renderer.md, "Ryza DX: objects behind the field's occluders" (99fe8e5): at the gate
   Barrel's draws 975 -> 934, field parts the game does not draw 78 -> 38, matched 859 -> 858.
-  Left: (1) the stump `obj-A21-COMMON-STUMP-01` (object 1147) is wholly inside kept quads 7
-  and 13 by 213 units yet the game draws it. The query is skipped for an object whose byte
-  `+0x249` is set or whose list has no occlusion object (`[r14+0x10]`), but the stump is
-  queried: a hook on `0x140a39fc0` at frame 2550 (`RYZA_HOOKS`, field `flt*20:rdx`: centre,
-  three unit axes, half sizes) logs 364 queries, the stump's box among them (centre 34633,
-  4984, 37882; half sizes 219, 91, 215; turned 0.31 rad). Against the game's own boxes and eye
-  the rule as read (scratch `occg.py`, game space) hides that stump, and 103 of the 364 (78 to
-  119 with the boxes halved or doubled): the rule is missing a step. Likely the pass's unread
-  second half (`0x140a3d3a9` to `0x140a3dd9d`): it finds the kept quads' extreme corners in a
-  2D camera basis (the eye, the look point and the up at the camera's `+0x0`, `+0x10`,
-  `+0x20`), notes which quad gives each, and rewrites bits of each record's `+0x5c` flags
-  (`0x3`, `0xc`, `0x30`, `0xc0`, set beside each of the four edge planes when built); the
-  query itself skips only all-zero planes. Read that half next. (2) Of the 38, some 28 are
+  The stump was a false lead: the game hides stump 1147 too (its own query on its own kept
+  records, a hook `flt*20:rdx u32:rcx+0xc8 flt*768:[rcx+0x30]` at frame 2550, scratch
+  `occr.py`: 12 records, no zero planes, 97 of the 364 boxes hidden, 1147 among them). The
+  game's fourth stump draw is stump 1145, which it queries and draws and Barrel leaves out
+  by the view: its centre is at x -1.11 in Barrel's view (box to -1.06), the paired draw by count
+  made 1147 look wrong. The view test's planes are the camera's (logged at `[r14]`: 72.7 by
+  45 degrees, near 50, far 300,000, inside negative), but an object takes one of two tests
+  by its word `+0x250`: 0, its oriented box (`0x14099a3d0` on `+0x1d0`); else the world box
+  around that box (`0x14099a3b0`, a jump to `0x14099c050`, on `+0x220`: max then min corner).
+  At the gate 463 take the first and 760 the second (scratch `views.log`); 1145's world box
+  reaches 2 units inside the left plane where Barrel's (its vertices' box, 45 to 187 units
+  smaller a side) is outside. What sets `+0x250` is not read: not the model (both tests
+  have deserts, cliffs, trees, fences), not the tilt, nor size or distance alone (the second
+  test's objects are smaller, median half diagonal 194 against 1,495, but overlap). Left:
+  (1) the `+0x250` flag (Barrel would test those objects on the box around their oriented
+  box; one draw at the gate). (2) Of the 38, some 28 are
   `event_titleback`-named parts (Rasenboden's cliffs sharing the title's texture names);
   the mountain (8), cliff blocks 78, 95, 96, 586, 587 and the stair and kudzu (828, 972)
   lie partly outside every single kept quad (the game may join quads, not read), and 6 to 7

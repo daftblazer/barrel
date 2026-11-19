@@ -520,6 +520,9 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
         let placed = best.is_some_and(|(j, ..)| bdraws[j].world != IDENTITY);
         let Some((j, d, m)) = best else {
             unmatched_game.push(&gkeys[i]);
+            if std::env::var_os("PARITY_LIST").is_some() {
+                println!("game only: {} indices, tex {:?}", gkeys[i].1, gkeys[i].0);
+            }
             *unmatched_vs.entry(g.vs.chars().take(8).collect::<String>()).or_default() += 1;
             continue;
         };
