@@ -195,7 +195,9 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     game's two draws are not swapped: the first (intensity 20) covers exactly the pixels with
     depth below 1, the second (`sky_intensity` 15) exactly the sky (pixel mirror at the gate).
     Open: Barrel's post pass has no depth, so its sky takes 20 (9% of the gate's pixels, the
-    top of the screen, 25% too much wash there); the colours' and sky intensity's defaults (rows
+    top of the screen, 25% too much wash there; giving it depth means storing the depth on every
+    setting, not only GSR 2 and FSR 3 (`keeps_depth`), and a `sampler2DMS` variant of post.frag
+    for MSAA; the scene's alpha is no mask, blended models write it); the colours' and sky intensity's defaults (rows
     without them) are not read; the screen's tilt is fitted to three views; the reference
     point is the camera's focus (the player plus her look height, 128) to within the cascade fit;
     the step 1/60 a frame is not sourced.
