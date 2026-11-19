@@ -1089,6 +1089,41 @@ vertex program rebuilds `N` from two bytes and takes no vertex colour), with `T 
 -N.y)` normalised and `B = T × N`: `n = N × blue + B × red + T × green`. The bark's specular
 map has `F0` 0.02 and `g` 0.2.
 
+**The screen-space reflections** (passes 20 and 21, draws 1920 to 1926 at the gate, before the
+specular ambient pass, which reads them as `sRLR`):
+
+- *Depth* (1920, `sh06e53d9e8eb2b743`): the depth (0 at the near plane, 1 at the far; linear depth
+  `1 / (d × vDepthParam.x + vDepthParam.y)` = 50 / (1 − d)) into a half size target (960 × 540),
+  one filtered sample a pixel.
+- *The march* (1921, `sh2cea560807dd9928`, into the half size `rt960x540.9#2`, rgba16f): per
+  pixel `d0` = that depth (sky, 1: nothing). `P = mP2V (ndc, d0, 1)` (divided by w: the view
+  position), `N` the full size normal target's octahedral pair (`xy × 2 − 1`, `z = 1 − |x| −
+  |y|`, below 0 `xy = (1 − |y|, 1 − |x|) × sign(xy)`, normalised), `R = P − 2 (P·N) N`. `f_dir =
+  R.z / |R| × vReflParam.z + vReflParam.w` (1, 0.5): 1 or more, nothing. The end `E = mV2P (P +
+  R)` (divided by w); `D = E − (ndc, d0)`, scaled by `vReflParam.x / max(|D.y|, |D.x| ×
+  vReflParam.y)` (2/540: a half size pixel; the aspect 16/9), and as a screen step `S = D × (0.5,
+  −0.5, 1)` (uv, depth). The ray starts two steps out (`(uv, d0) + 2 S`); `prev` = d0. Up to
+  `nMaxRaySmpl` (256) times: `sd` = the depth at the ray's uv; where the ray's depth is `sd` or
+  more, `thick = lin(sat(z)) − lin(sd)` and, with the step before (`q = ray − S`), if it crossed
+  the depth seen the step before (`q.z < prev ≤ ray.z`) the hit is at `q.uv + t (ray.uv − q.uv)`,
+  `t = a / (thick + a)`, `a = lin(prev) − lin(sat(q.z))`, with thickness 0; otherwise the ray's
+  own uv with `thick`. A hit counts when its thickness is under `vDepthFadeParam.x` (100 units):
+  the colour is the lit scene (`sScene`, the target before this pass: fogged, with the sky, no
+  specular ambient) at the hit's uv, alpha `1 − max(sat(thick × 0.01), sat(i × vSampleEdgeFadeParam.x
+  + .y) (step i: 1/128, −1: fades past 128 steps), sat(max(|u − ½|, |v − ½|) × 20 − 9) (the
+  screen's edge), sat(f_dir))`, and the march stops. A thicker hit moves the ray to that uv and
+  goes on. The ray leaving the screen (`max(|u − ½|, |v − ½|) > ½`) or the far plane (depth > 1)
+  gives nothing (0, 0, 0, 0); `prev = sd` each step. Constants at the gate: `vReflParam`
+  (0.0037037, 1.7778, 1, 0.5), `vDepthParam` (−0.02, 0.02), `vDepthFadeParam` (100, 0.01, 0),
+  `vSampleEdgeFadeParam` (0.0078125, −1, 20, −9), `mP2V`/`mV2P` the projection's.
+- *Mips* (1922 to 1926, `sh2469f6b1e450a08d`): each level one bilinear sample of the one above
+  (480 × 270 down to 30 × 16): six levels.
+- *Read by the specular ambient pass* at the pixel's uv: the colour at level `lod = vAmbParam.z
+  (1 − g)` (the cube map's), the weight the alpha at level `vMerge.y` (0) when `lod` is past it,
+  times `vMerge.x` (1); `env = cube × vAmbSpcWgt.x × vAmbParam.y × vAmbSpcScl`, then `env + w
+  (sRLR.rgb − env)`: the reflection replaces the scaled cube light. Over her thighs the weight is
+  0.26 (the boots 0.44), the colour (0.37, 0.31, 0.20): warmer and dimmer than the cube's.
+
 **The ambient occlusion** (passes 2 to 6, draws 912 to 916 of the capture, after the G-buffer:
 they read this frame's depth and normals, not the frame before's). Draw 912 makes the full
 size depth linear (`1 / (depth × vDepthParam.x + vDepthParam.y)`: near 50, far 300000), 913 takes
