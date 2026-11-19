@@ -411,8 +411,8 @@ const CASCADE_ALPHA_REF: f32 = 100.0 / 255.0;
 const SUB_BIAS: [(f32, f32); 2] = [(2.5, 0.01), (5.0, 0.07)];
 // STAND-IN: The shadow shaders that take the second bias set are those the gate's capture shows with it (the model's shadow groups `@D0A7806D` and `@456FF036`; the other groups take the first); the real thing is the game's rule for choosing between its `ShadowSlopeBias` and `ShadowSlopeBiasEx`, not found.
 const SUB_BIAS_EX_SHADERS: [&str; 2] = ["@D0A7806D", "@456FF036"];
-// STAND-IN: The characters' map's box is the box of her draws (their vertices on the scene's starting joints) grown by this much on every side, from the gate's: its U and V extents are 144.5 and 220.8 against the box's own 76.2 and 163 (`mSubW2S`); the real thing is how the game bounds the characters (the extents grow with her pose: 175 by 273 running), not found.
-const SUB_BOX_PAD: f32 = 17.3;
+// STAND-IN: The characters' map's box is the box of her draws (their vertices on the scene's starting joints) grown by these much sideways (x and z) and up and down, from the gate's: the game's box in the sun's view is a world box's (its v extent equals its depth, the sun at 45 degrees), 144.5 by 220.8 against her draws' own 76.2 by 163.1 (`mSubW2S`); the real thing is how the game bounds the characters (its box follows her pose: 136.8 by 231.1 in the turn), not found.
+const SUB_BOX_PAD: Vec3 = Vec3::new(25.0, 6.7, 25.0);
 // The static shadow map's box (`mSemiStaticW2S`, Rasenboden at noon, to 1e-4 of a texel): its
 // u and v span the heightmap's 64,000-unit square at heights 0 to 5,000 exactly (the map's
 // heights run 1,766 to 7,000, so the top is not the map's), and its depth runs 173,439 from
@@ -2141,7 +2141,7 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, 
             look[SHADOW_CASCADE_SLOT + 9] = [forward.x, forward.y, forward.z, 0.0];
             // The characters' map: the smallest box in the sun's view around the characters' box.
             if let Some((lo, hi)) = sub_box {
-                let (lo, hi) = (lo - Vec3::splat(SUB_BOX_PAD), hi + Vec3::splat(SUB_BOX_PAD));
+                let (lo, hi) = (lo - SUB_BOX_PAD, hi + SUB_BOX_PAD);
                 let corners: [Vec3; 8] = std::array::from_fn(|k| Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
                 let vp = shadow::fit_view_proj(&corners, sun, f32::MAX);
                 let side = shadow_maps(size)[shadow::SUB_LAYER][0] as f32;
