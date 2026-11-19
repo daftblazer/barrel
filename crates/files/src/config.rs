@@ -100,9 +100,13 @@ fn migrate(title: Title) {
     if std::env::var_os("BARREL_CONFIG").is_some() {
         return;
     }
+    // The old shared settings are Escha's: another game starts from its own defaults (a
+    // handheld's launcher preset among them).
+    if title != Title::Escha {
+        return;
+    }
     let (Some(shared), Some(own)) = (dir(), game_dir()) else { return };
-    let files: &[&str] = if title == Title::Escha { &["graphics.conf", "options.conf", "mods.toml"] } else { &["graphics.conf"] };
-    for name in files {
+    for name in ["graphics.conf", "options.conf", "mods.toml"] {
         let (old, new) = (shared.join(name), own.join(name));
         if old.is_file() && !new.exists() && std::fs::create_dir_all(&own).is_ok() {
             let _ = std::fs::copy(&old, &new);
