@@ -810,9 +810,18 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
     (fitted at the end of the walk: the data's both are linear in time, not in the pitch, and
     the pitch slows over its last 5 frames: not explained). `tools/walkdiff.py OURS KEY`
     diffs a headless walk (`barrel-tool walk`) with the key per frame, a line a segment.
-    Left (walk-30): the stairs' heights (7 up at the top step, 3.4 along), the camera starting
-    at 393.25 and 400 from her first step, a wall at z 33809 which Barrel's collision lacks
-    (she walks through; from frame 2920 on), the pitch's transient (0.6 degrees).
+    Left (walk-30), largest first:
+    1. A wall the game lacks: at frame 2178 (running right past the garden stairs) she stops
+       at x 32223, z 31622 against `A21-S07-STAIR-01_cbvh2.g1co` (one of the stair model's
+       three meshes, `_cbvh`, `_cbvh1`, `_cbvh2`); from there every segment diverges (222
+       units by 2209). With that mesh left out the walk holds to 11 units and 0.34 degrees
+       through frame 2779, and the rest diverges at 2780 by 333 instead of 1,594. Numbered
+       meshes are common (trees, rocks, floors up to `_cbvh22`), so leaving out `2` is not
+       the rule: whether this piece is placed wrong (its per-file rotation and offset), a
+       steep floor taken for a wall, or a piece the walk does not collide with, is open.
+    2. A wall at z 33809 that Barrel's collision lacks (she walks through; from frame 2920 on).
+    3. The stairs' heights (7 up at the top step, 3.4 along), the camera starting at 393.25 and
+       400 from her first step, the pitch's transient (0.6 degrees).
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair
