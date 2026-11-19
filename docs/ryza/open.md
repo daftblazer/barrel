@@ -227,11 +227,16 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   have deserts, cliffs, trees, fences), not the tilt, nor size or distance alone (the second
   test's objects are smaller, median half diagonal 194 against 1,495, but overlap). Left:
   (1) the `+0x250` flag (Barrel would test those objects on the box around their oriented
-  box; one draw at the gate). (2) Of the 38, some 28 are
-  `event_titleback`-named parts (Rasenboden's cliffs sharing the title's texture names);
-  the mountain (8), cliff blocks 78, 95, 96, 586, 587 and the stair and kudzu (828, 972)
-  lie partly outside every single kept quad (the game may join quads, not read), and 6 to 7
-  far trees (785 to 1183). (3) Occluders are off on the title (`a.title`): the title's field
+  box; one draw at the gate). (2) The rest of the extra parts
+  (20 objects at the gate) are not the occluders' doing. The game keeps quads 98, 8, 3, 6,
+  2, 1, 0, 4, 9, 5, 11, 14 (its records matched to the file's by plane); the dropped ones
+  in view are mostly inside a nearer kept quad as Barrel's rule has it, but 15 and 16 (inside
+  only by the edge planes) and the four big far quads 92, 95, 96, 97 go for a reason not read.
+  The mountain (8), the cliffs 78, 95, 96, 586, 587 and the kudzu 972 reach the game's query
+  and its own records leave them visible (the best quad misses each by 397 to 3,108 units),
+  yet it draws none of them: something after the query leaves them out (per part, or a
+  draw-stage test; not read). The far trees (785 to 1183, `-FAR`/`-FAREND`) and object 168
+  never reach the game's view test: left out before it (a far-tree switch, not read). (3) Occluders are off on the title (`a.title`): the title's field
   has a `_le.koc` too; whether the game uses it there is not checked. What got it here from 809: objects are
   in or out of view whole, by a sphere (`docs/renderer.md`, "Ryza DX: which field models are
   drawn"), and have no draw ranges or lower levels of detail at the top settings, as the
