@@ -781,6 +781,24 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   walk and run change loop to loop, each change mixing the last motion out over 0.2 s. How
   the game moves her during the start and stop (here eased in and out) and its mixing time
   are not read.
+- **Walking her, measured (2026-11-19, ryza-recomp `walk-30`, `tools/walkstate.py`).** Frames
+  are drawn frames; the stick acts on the frame it is read (no lag in position).
+  - She moves along the stick's direction against the camera from the first frame, at full
+    speed at once (no easing in or out); only her facing turns toward it, 0.2 rad a frame
+    (11.46 degrees; 12 rad a second, Barrel's stand-in) until within a step, then it keeps with the stick. Barrel moves her along
+    her facing: wrong.
+  - Speeds by the left stick's lean (of 32767): full 600 units a second, 12000 (0.37) 108.9,
+    6000 (0.18) none (a dead zone). The curve between is not sampled.
+  - Against a wall she slides (423 to 458 along it at full lean), and stuck in a corner jitters
+    10 units a second.
+  - The camera: right stick x full turns it 1.5 degrees a frame (90 a second), -20000 (0.61) 0.8
+    (a dead zone near 0.165 if linear). Right stick y 20000 pitches 0.38 a frame, rising to 0.5
+    and easing to a stop at -9.12 (its limit or the stick's release, not split); the distance
+    shortens as it pitches down (400 at 8 degrees, 330.7 at -9.12: the ground pull-in or a
+    pitch rule). While she runs it turns toward where she goes by 1.01 degrees a frame times
+    the sine of the angle between (0.71 at 45 degrees); how it depends on speed is not sampled.
+  - The eye at pitch 8 is 184.2 above her feet, 396.1 out: 400 along the view from a point
+    128.5 above her feet.
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair
