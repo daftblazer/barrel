@@ -883,6 +883,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   landmarks' triangles (above) are where it goes next, and a walk through the village (not
   only the gate) is still to be timed.
 - **Floors on models**: read, see "Ryza in the field".
+- **The game's own graphics options (2026-11-19).** In play on the RP6 Barrel ran at 13 fps:
+  not the handheld preset (an old shared `graphics.conf` of Escha's was copied in, fixed), full
+  plants (120,884), 3,974 draws, and Ryza's reflections, depth of field and HDR scene forced on
+  whatever the preset (`crates/ryza/src/play/mod.rs`, the `hdr_scene: true, reflections: true`
+  line). The original on the same device runs with its own `Setting.ini` `[Graphics]`:
+  `GRAPHICS_QUALITY_ALL=3`, `GRAPHICS_QUALITY_TEX=1`, `GRAPHICS_ANTIAILIASING=1`, every other
+  item 0 (shadow, RLR, effects, DOF, AO, bloom, light shafts, draw range, point lights, grass
+  range and density, filtering, shadow distance, water, LOD). A fair timing needs Barrel's
+  Options to be the game's: the same items, the same values, the presets' tables (docs/formats.md,
+  "Ryza DX: the graphics presets"). Not read yet: what each value means (which index is High,
+  whether 0 is off for the switches, what QUALITY_ALL 3 is).
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
