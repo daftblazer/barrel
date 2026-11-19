@@ -24,6 +24,7 @@ const ROLES: &[(&str, usize, usize)] = &[
     ("lighting.stage2", 12, 2),
     ("lighting.chara", 12, 3),
     ("lighting.water", 15, 0),
+    ("clouds.shape", 16, 0),
     ("sky.plane", 17, 0),
     ("sky.dome0", 17, 1),
     ("sky.dome1", 17, 2),

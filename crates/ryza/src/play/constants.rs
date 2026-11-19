@@ -47,6 +47,8 @@ pub(super) struct Inputs<'a> {
     pub scene_size: (u32, u32),
     /// The sun flare's settings, when the frame has them.
     pub sun_flare: Option<&'a barrel_render::flare::Settings>,
+    /// The clouds' maps, when the frame has them.
+    pub clouds: Option<&'a barrel_render::clouds::CloudFrame>,
 }
 
 type Consts = BTreeMap<&'static str, Vec<Option<f32>>>;
@@ -476,6 +478,17 @@ pub(super) fn json(i: &Inputs) -> String {
             }
             put(role, c);
         }
+    }
+
+    // The cloud map's shaping draw: the density's threshold, sharpness, thinness and height
+    // scale, one value a channel.
+    if let Some(c) = i.clouds {
+        let mut m = Consts::new();
+        m.insert("vThreshold", some(&c.shape.threshold));
+        m.insert("vSharpness", some(&c.shape.sharpness));
+        m.insert("vThinness", some(&c.shape.thinness));
+        m.insert("vHeightScale", some(&c.shape.height));
+        put("clouds.shape", m);
     }
 
     // The post chain.

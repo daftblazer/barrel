@@ -1755,6 +1755,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 far: view.far,
                 scene_size: renderer.targets.scene_size,
                 sun_flare: frame.sun_flare.as_ref(),
+                clouds: frame.clouds.as_ref(),
             }))
         });
         // The stage dumps (`BARREL_DUMP_STAGES`): the frame drawn again up to each stage, its
