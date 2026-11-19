@@ -600,7 +600,9 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   left view's grass strip went from 23.5 to 12.3 and no other sway phase comes near (24),
   the board to 3.30 / 3.75 / 4.38. Ryza's cloth pieces (NUNO: skirt, jacket hem, hair) run the
   game's solver, read and matched stage by stage against a capture (docs/formats.md "Cloth
-  pieces"): the board to 3.12 / 3.63 / 4.21. Not done: the hanging lamps.
+  pieces"): the board to 3.12 / 3.63 / 4.21. The hanging lamps do not move in the game: between the
+  capture's frames 2500 and 2550 only the four skinned field objects (Barrel's within 0.1),
+  the grass and the water change their draws (scratch `moving.py`).
 - **Brightness and bloom.** The brightness and saturation are the game's now (above,
   "Field lighting": the sun's key scale, the colour scale, `SaturationScaleEx`). The bloom
   is the game's bright pass and chain (docs/shading.md, "the frame as the game draws it")
