@@ -259,7 +259,7 @@ enum ScenePart {
 /// 3; location 1 is the motion target, or unused): they are kept for the pass that reads them
 /// after the scene, so the second part of a frame with water leaves them alone, and the first
 /// part leaves the scene image readable for the reflections' march instead of for the copy.
-fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::SampleCountFlags, part: ScenePart, reflect: bool) -> Result<vk::RenderPass> {
+fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::SampleCountFlags, part: ScenePart, reflect: bool, normals: bool) -> Result<vk::RenderPass> {
     use vk::{AttachmentLoadOp as Load, AttachmentStoreOp as Store, ImageLayout as Layout};
     let multisampled = samples != vk::SampleCountFlags::TYPE_1;
     let single = vk::SampleCountFlags::TYPE_1;
@@ -271,9 +271,10 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
     // copy; the second finds it, and the kept images, ready to draw into.
     let load = if second { Load::LOAD } else { Load::CLEAR };
     let initial = |layout| if second { layout } else { Layout::UNDEFINED };
-    let depth_last = if settings.keeps_depth() { Layout::SHADER_READ_ONLY_OPTIMAL } else { Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
-    // Kept for GSR 2 to read, else only across the two parts.
-    let depth_store = if settings.keeps_depth() || first { Store::STORE } else { Store::DONT_CARE };
+    let depth_read = settings.keeps_depth() || normals;
+    let depth_last = if depth_read { Layout::SHADER_READ_ONLY_OPTIMAL } else { Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+    // Kept for GSR 2 or the half-size normal and depth target to read, else only across the two parts.
+    let depth_store = if depth_read || first { Store::STORE } else { Store::DONT_CARE };
     let depth = attachment(DEPTH_FORMAT, samples, load, depth_store, initial(Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL), if first { Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { depth_last });
     let scene_last = if first && !reflect { Layout::TRANSFER_SRC_OPTIMAL } else { Layout::SHADER_READ_ONLY_OPTIMAL };
     let mut attachments = vec![];
@@ -296,6 +297,13 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
     let mut colour = vec![vk::AttachmentReference { attachment: 0, layout: Layout::COLOR_ATTACHMENT_OPTIMAL }];
     if settings.motion && !multisampled {
         colour.push(vk::AttachmentReference { attachment: 2, layout: Layout::COLOR_ATTACHMENT_OPTIMAL });
+    }
+    if normals && !multisampled {
+        // Location 1, where the motion vectors would be (there are none with the normals).
+        // Read after the scene pass (by the half-size target's pass), not carried into the water's part.
+        let (normal_load, normal_store, normal_last) = if second { (Load::DONT_CARE, Store::DONT_CARE, Layout::COLOR_ATTACHMENT_OPTIMAL) } else { (Load::CLEAR, Store::STORE, Layout::SHADER_READ_ONLY_OPTIMAL) };
+        colour.push(vk::AttachmentReference { attachment: attachments.len() as u32, layout: Layout::COLOR_ATTACHMENT_OPTIMAL });
+        attachments.push(attachment(crate::ao::NORMAL_FORMAT, single, normal_load, normal_store, Layout::UNDEFINED, normal_last));
     }
     if reflect && !multisampled {
         if colour.len() == 1 {
@@ -323,8 +331,8 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
     let done = [vk::SubpassDependency::default()
         .src_subpass(0)
         .dst_subpass(vk::SUBPASS_EXTERNAL)
-        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-        .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS)
+        .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
         .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TRANSFER)
         .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::TRANSFER_READ)];
     let subpasses = [subpass];
@@ -503,10 +511,15 @@ impl Renderer {
         // through (`ScenePart`).
         // The reflections need the normals and depth pre-pass and single-sampled drawing.
         let reflect_on = settings.reflections && samples == vk::SampleCountFlags::TYPE_1;
-        let render_pass = scene_render_pass(d, &settings, samples, ScenePart::Whole, reflect_on)?;
-        let water_passes = [scene_render_pass(d, &settings, samples, ScenePart::First, reflect_on)?, scene_render_pass(d, &settings, samples, ScenePart::Second, reflect_on)?];
-        // Colour locations: the scene, the motion vectors, the reflections' two.
-        let colour_targets = if reflect_on { 4 } else if settings.motion && samples == vk::SampleCountFlags::TYPE_1 { 2 } else { 1 };
+        let dof_on = settings.depth_of_field && samples == vk::SampleCountFlags::TYPE_1;
+        // Without the occlusion's own half-size pre-pass the reflections and the depth of field get
+        // their normals and depth from the scene pass: it writes the world normal, keeps its depth,
+        // and one full-screen pass builds the half-size target (`ao::Occlusion::derive`).
+        let from_scene = !settings.occlusion && !settings.motion && (reflect_on || dof_on);
+        let render_pass = scene_render_pass(d, &settings, samples, ScenePart::Whole, reflect_on, from_scene)?;
+        let water_passes = [scene_render_pass(d, &settings, samples, ScenePart::First, reflect_on, from_scene)?, scene_render_pass(d, &settings, samples, ScenePart::Second, reflect_on, from_scene)?];
+        // Colour locations: the scene, the motion vectors (or the world normal), the reflections' two.
+        let colour_targets = if reflect_on { 4 } else if (settings.motion && samples == vk::SampleCountFlags::TYPE_1) || from_scene { 2 } else { 1 };
         // The post pass: into the window's image or the offscreen one, no depth.
         let post_attachment = [vk::AttachmentDescription::default()
             .format(color_format)
@@ -590,7 +603,7 @@ impl Renderer {
         let refraction_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 }];
         let refraction_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&refraction_sizes), None)? };
         let refraction_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(refraction_pool).set_layouts(&[set_layout]))?[0] };
-        let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion, settings.scene_format(), reflect_on)?;
+        let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion, settings.scene_format(), reflect_on, from_scene)?;
 
         // Pipeline.
         let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -598,9 +611,14 @@ impl Renderer {
             Ok(unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None)? })
         };
         let (vs, fs) = (module(VERT)?, module(FRAG)?);
+        // The models' and the terrain's programs write the world normal in the motion vectors'
+        // attachment where the scene pass feeds the half-size target (`NORMAL_AS_MOTION`).
+        let normal_entry = [vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 }];
+        let normal_data = u32::from(from_scene).to_le_bytes();
+        let normal_special = vk::SpecializationInfo::default().map_entries(&normal_entry).data(&normal_data);
         let stages = [
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main"),
-            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main").specialization_info(&normal_special),
         ];
         let vbind = [vk::VertexInputBindingDescription { binding: 0, stride: size_of::<Vertex>() as u32, input_rate: vk::VertexInputRate::VERTEX }];
         let vattr = [
@@ -645,11 +663,19 @@ impl Renderer {
         let spec_written = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA);
         let spec_kept = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::empty());
         let opaque = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA);
-        let blend_att = [opaque, motion_blend, spec_written, spec_written];
+        // The second location: the motion vectors, or the world normal (two channels) that only
+        // the models and the terrain write, the other programs leave as it is.
+        let (model_slot, other_slot) = if from_scene { (motion_blend, spec_kept) } else { (motion_blend, motion_blend) };
+        let blend_att = [opaque, model_slot, spec_written, spec_written];
         let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..colour_targets]);
         // The terrain, the sky's plane and the water (their programs have no reflections' outputs;
         // they are drawn before the models or where nothing the reflections see is).
-        let flat_att = [opaque, motion_blend, spec_kept, spec_kept];
+        let flat_att = [opaque, other_slot, spec_kept, spec_kept];
+        let ground_att = [opaque, model_slot, spec_kept, spec_kept];
+        let ground_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&ground_att[..colour_targets]);
+        // The outline hulls rewrite the specular targets but not the normal.
+        let outline_att = [opaque, other_slot, spec_written, spec_written];
+        let outline_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&outline_att[..colour_targets]);
         let flat_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&flat_att[..colour_targets]);
         let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
         // Set 0 the colour, 1 the instances (and the look), 2 the mask.
@@ -697,7 +723,7 @@ impl Renderer {
             .src_alpha_blend_factor(vk::BlendFactor::ONE)
             .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
             .alpha_blend_op(vk::BlendOp::ADD)
-            .color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend, spec_kept, spec_kept];
+            .color_write_mask(vk::ColorComponentFlags::RGBA), other_slot, spec_kept, spec_kept];
         // The forward pass over the characters blends over the lit scene: the specular ambient
         // below it (the reflections' factor) shows by one minus the hull's alpha, its gloss stays.
         let forward_spec = vk::PipelineColorBlendAttachmentState::default()
@@ -709,7 +735,7 @@ impl Renderer {
             .dst_alpha_blend_factor(vk::BlendFactor::ONE)
             .alpha_blend_op(vk::BlendOp::ADD)
             .color_write_mask(vk::ColorComponentFlags::RGBA);
-        let forward_att = [sky_blend_att[0], motion_blend, forward_spec, spec_kept];
+        let forward_att = [sky_blend_att[0], other_slot, forward_spec, spec_kept];
         let forward_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&forward_att[..colour_targets]);
         let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att[..colour_targets]);
         let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
@@ -754,7 +780,7 @@ impl Renderer {
         // The characters' outline pass: the same shaders in outline mode, front faces culled (an
         // inverted hull: only the pushed-out back faces show, as a rim).
         let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
-        let outline_info = pipeline_info.rasterization_state(&outline_raster);
+        let outline_info = pipeline_info.rasterization_state(&outline_raster).color_blend_state(&outline_blend);
         let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
         let forward_info = outline_info.depth_stencil_state(&no_depth).color_blend_state(&forward_blend);
         let forward_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[forward_info], None).map_err(|(_, e)| e)?[0] };
@@ -815,11 +841,11 @@ impl Renderer {
             let tpl_layouts = [terrain_layout, instance_layout, set_layout];
             let tpl = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&tpl_layouts).push_constant_ranges(&push), None)? };
             let tfs = module(TERRAIN_FRAG)?;
-            let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main")];
+            let tstages = [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(tfs).name(c"main").specialization_info(&normal_special)];
             // The heightmap is wound the other way from the models and seen from above only: no
             // culling.
             let traster = raster.cull_mode(vk::CullModeFlags::NONE);
-            let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster).color_blend_state(&flat_blend);
+            let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster).color_blend_state(&ground_blend);
             let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
             TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
         };
@@ -830,8 +856,10 @@ impl Renderer {
         // scene's (the terrain's heightmap both ways).
         // The pre-pass runs when the occlusion, the reflections or the depth of field read its
         // normals and depth; the occlusion program itself only with the occlusion.
-        let dof_on = settings.depth_of_field && samples == vk::SampleCountFlags::TYPE_1;
-        let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion || reflect_on || dof_on, targets.scene_size)?;
+        let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion || reflect_on || dof_on, from_scene, targets.scene_size)?;
+        if let Some(normal) = &targets.normal {
+            ao.bind_scene(&gpu, targets.depth_view, normal.2);
+        }
         let dof = if dof_on {
             let mut dof = dof::DepthOfField::new(&gpu)?;
             dof.rebind(&gpu, &ao, &targets, &post_sets, post_sampler)?;
@@ -1043,7 +1071,7 @@ impl Renderer {
             // The ambient occlusion: the field's models and terrain (and the distant view's solid
             // pieces) as world normal and depth at half size, the occlusion from them (ao.frag);
             // a map of 1 where the setting or the game has none.
-            if self.ao.on() && occlusion {
+            if self.ao.on() && !self.ao.from_scene() && occlusion {
                 self.ao.begin_gbuf(gpu, cb);
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
                 d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
@@ -1118,8 +1146,8 @@ impl Renderer {
             }
             // The normals and view depth the occlusion reads (at half size; the clear depth where
             // nothing is drawn): the coverage the board compares against the game's depth.
-            if let (Some(dump), Some((image, size))) = (&self.dump, self.ao.gbuf_image()) {
-                dump.grab(gpu, cb, "depth", image, size, dump::Texels::Rgba32F, 1.0);
+            if !self.ao.from_scene() {
+                self.dump_gbuf(gpu, cb);
             }
             if let Some(t) = &timer {
                 t.mark(d, cb, 2);
@@ -1259,6 +1287,14 @@ impl Renderer {
                 if refract {
                     // The second part of the scene pass, after a copy of the first.
                     d.cmd_end_render_pass(cb);
+                    // The half-size normal and depth target from the opaque scene, which the water
+                    // and the reflections read (the depth read in the shader layout meanwhile).
+                    let derive = self.ao.from_scene() && occlusion;
+                    if derive {
+                        barrier(d, cb, targets.depth, vk::ImageAspectFlags::DEPTH, 1, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                        self.ao.derive(gpu, cb, &draw_vp);
+                        self.dump_gbuf(gpu, cb);
+                    }
                     // The reflections go into what the water refracts; the scene is left as the copy reads it.
                     if let Some(r) = self.reflect.as_ref().filter(|_| reflect_frame) {
                         r.record(gpu, cb, &ao::View::of(&draw_vp), true);
@@ -1275,7 +1311,8 @@ impl Renderer {
                     // The kept colour and depth, written by the first part, are read again by the second.
                     let (kept, aspect) = (targets.multisample.map_or(targets.scene, |m| m.0), vk::ImageAspectFlags::COLOR);
                     barrier(d, cb, kept, aspect, 1, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-                    barrier(d, cb, targets.depth, vk::ImageAspectFlags::DEPTH, 1, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                    let depth_was = if derive { vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL } else { vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+                    barrier(d, cb, targets.depth, vk::ImageAspectFlags::DEPTH, 1, depth_was, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
                     if let Some((motion, ..)) = targets.motion {
                         barrier(d, cb, motion, aspect, 1, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
                     }
@@ -1359,6 +1396,12 @@ impl Renderer {
                 }
             }
             d.cmd_end_render_pass(cb);
+            // The half-size normal and depth target from the scene pass (a frame with water built
+            // it from the opaque part).
+            if self.ao.from_scene() && occlusion && !refract {
+                self.ao.derive(gpu, cb, &draw_vp);
+                self.dump_gbuf(gpu, cb);
+            }
             // The reflections over the opaque scene (a frame with water did them before its copy).
             if let Some(r) = self.reflect.as_ref().filter(|_| reflect_frame && !refract) {
                 r.record(gpu, cb, &ao::View::of(&draw_vp), false);
@@ -1490,6 +1533,18 @@ impl Renderer {
         drawn
     }
 
+    /// The stage dump of the half-size normals and view depth the occlusion, the reflections and
+    /// the depth of field read (the clear depth where nothing is drawn): the coverage the board
+    /// compares against the game's depth.
+    ///
+    /// # Safety
+    /// `cb` is recording outside a render pass, after the target was drawn.
+    unsafe fn dump_gbuf(&self, gpu: &Gpu, cb: vk::CommandBuffer) {
+        if let (Some(dump), Some((image, size))) = (&self.dump, self.ao.gbuf_image()) {
+            unsafe { dump.grab(gpu, cb, "depth", image, size, dump::Texels::Rgba32F, 1.0) };
+        }
+    }
+
     /// The stage dump of the reflections' march (`reflections`: the colour and the alpha, in the
     /// scene's units as stored).
     ///
@@ -1506,8 +1561,11 @@ impl Renderer {
         self.targets.destroy(gpu);
         let s = &self.settings;
         self.ao.resize(gpu, s.scene_size(width, height))?;
-        let targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format(), self.reflect.is_some())?;
+        let targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format(), self.reflect.is_some(), self.ao.from_scene())?;
         write_refraction_set(&gpu.device, self.refraction_set, self.refraction_sampler, targets.refraction_view);
+        if let Some(normal) = &targets.normal {
+            self.ao.bind_scene(gpu, targets.depth_view, normal.2);
+        }
         if let Some(r) = self.reflect.as_mut() {
             r.rebind(gpu, &self.ao, &targets)?;
         }

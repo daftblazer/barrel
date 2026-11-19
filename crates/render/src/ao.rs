@@ -11,6 +11,9 @@ use crate::{Gpu, Result};
 
 /// The normal and linear depth target: a world normal in rgb, the depth along the view in a.
 pub const GBUF_FORMAT: vk::Format = vk::Format::R32G32B32A32_SFLOAT;
+/// The scene pass's world normal, octahedral in two channels (`normal_octahedral.glsl`): a half
+/// float each keeps the direction to a milli-radian at four bytes a pixel.
+pub const NORMAL_FORMAT: vk::Format = vk::Format::R16G16_SFLOAT;
 /// The occlusion (red; the others repeat it, for the stage dumps).
 pub const MAP_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
@@ -67,6 +70,82 @@ impl View {
     }
 }
 
+/// The view depth of a device depth `d` as `1 / (x + y * d)`, returned as `[x, y]`, for a
+/// perspective projection in `vp`: the depth row is `alpha * w + beta`, so `d = alpha + beta / w`.
+fn device_depth_to_view(vp: &Mat4) -> [f32; 2] {
+    let row = |i: usize| glam::Vec4::new(vp.x_axis[i], vp.y_axis[i], vp.z_axis[i], vp.w_axis[i]);
+    let (z, w) = (row(2), row(3));
+    let alpha = z.truncate().dot(w.truncate()) / w.truncate().length_squared();
+    let beta = z.w - alpha * w.w;
+    [-alpha / beta, 1.0 / beta]
+}
+
+impl Derive {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        gpu: &Gpu,
+        input: &vk::PipelineVertexInputStateCreateInfo,
+        assembly: &vk::PipelineInputAssemblyStateCreateInfo,
+        viewport: &vk::PipelineViewportStateCreateInfo,
+        raster: &vk::PipelineRasterizationStateCreateInfo,
+        msaa: &vk::PipelineMultisampleStateCreateInfo,
+        blend: &vk::PipelineColorBlendStateCreateInfo,
+        dynamic_state: &vk::PipelineDynamicStateCreateInfo,
+        shader_read: vk::ImageLayout,
+    ) -> Result<Derive> {
+        let d = &gpu.device;
+        // Every texel is written: nothing to load.
+        let attachment = [vk::AttachmentDescription::default()
+            .format(GBUF_FORMAT)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(shader_read)];
+        let colour = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
+        let subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&colour)];
+        let to_shader = [vk::SubpassDependency::default()
+            .src_subpass(0)
+            .dst_subpass(vk::SUBPASS_EXTERNAL)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ)];
+        let pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachment).subpasses(&subpass).dependencies(&to_shader), None)? };
+        let binding = |i| vk::DescriptorSetLayoutBinding::default().binding(i).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(1).stage_flags(vk::ShaderStageFlags::FRAGMENT);
+        let bindings = [binding(0), binding(1)];
+        let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings), None)? };
+        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
+        let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&sizes), None)? };
+        let set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(pool).set_layouts(&[set_layout]))?[0] };
+        let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: 16 }];
+        let set_layouts = [set_layout];
+        let pipeline_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts).push_constant_ranges(&push), None)? };
+        let words = |code: &[u8]| -> Vec<u32> { code.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect() };
+        let module = unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words(crate::GBUF_DERIVE_FRAG)), None)? };
+        let post = unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words(crate::POST_VERT)), None)? };
+        let stages = [
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(module).name(c"main"),
+        ];
+        let info = vk::GraphicsPipelineCreateInfo::default()
+            .stages(&stages)
+            .vertex_input_state(input)
+            .input_assembly_state(assembly)
+            .viewport_state(viewport)
+            .rasterization_state(raster)
+            .multisample_state(msaa)
+            .color_blend_state(blend)
+            .dynamic_state(dynamic_state)
+            .layout(pipeline_layout)
+            .render_pass(pass);
+        let pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
+        // The vertex program is only needed to build the pipeline.
+        unsafe { d.destroy_shader_module(post, None) };
+        Ok(Derive { pass, pipeline_layout, pipeline, module, set_layout, pool, set })
+    }
+}
+
 /// The passes, pipeline and targets.
 pub struct Occlusion {
     pub gbuf_pass: vk::RenderPass,
@@ -80,7 +159,22 @@ pub struct Occlusion {
     set_layout: vk::DescriptorSetLayout,
     /// Whether the targets are the scene's half size (the setting is on) or one texel.
     on: bool,
+    /// The pass that builds the half-size target from the scene pass's depth and normal, where
+    /// there is no geometry pre-pass.
+    derive: Option<Derive>,
     maps: Option<Maps>,
+}
+
+/// The pass, pipeline and inputs of [`Occlusion::derive`].
+struct Derive {
+    pass: vk::RenderPass,
+    pipeline_layout: vk::PipelineLayout,
+    pipeline: vk::Pipeline,
+    module: vk::ShaderModule,
+    set_layout: vk::DescriptorSetLayout,
+    pool: vk::DescriptorPool,
+    /// The scene's depth and normal, bound by [`Occlusion::bind_scene`].
+    set: vk::DescriptorSet,
 }
 
 /// The targets of one size.
@@ -91,6 +185,8 @@ struct Maps {
     map: (vk::Image, vk::DeviceMemory, vk::ImageView),
     gbuf_fb: vk::Framebuffer,
     map_fb: vk::Framebuffer,
+    /// The normal and depth target alone, for the derive pass.
+    derive_fb: Option<vk::Framebuffer>,
     /// The pass reads the normal target through this one; the main pass the occlusion through
     /// `map_set`.
     gbuf_set: vk::DescriptorSet,
@@ -100,8 +196,9 @@ struct Maps {
 impl Occlusion {
     /// The passes and the pipeline; `on`: the targets are the scene's half size (for a scene of
     /// `scene_size`), else a white texel every frame. `set_layout` is the one-sampler layout of
-    /// the texture sets.
-    pub fn new(gpu: &Gpu, set_layout: vk::DescriptorSetLayout, on: bool, scene_size: (u32, u32)) -> Result<Occlusion> {
+    /// the texture sets. `from_scene`: the target is built from the scene pass's depth and normal
+    /// ([`Occlusion::derive`]) in place of a geometry pre-pass of its own.
+    pub fn new(gpu: &Gpu, set_layout: vk::DescriptorSetLayout, on: bool, from_scene: bool, scene_size: (u32, u32)) -> Result<Occlusion> {
         let d = &gpu.device;
         let colour = |format, to: vk::ImageLayout| {
             vk::AttachmentDescription::default()
@@ -187,7 +284,8 @@ impl Occlusion {
         let linear = sampler(vk::Filter::LINEAR, false)?;
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET).max_sets(2).pool_sizes(&sizes), None)? };
-        let mut o = Occlusion { gbuf_pass, map_pass, pipeline_layout, pipeline, modules, point, linear, pool, set_layout, on, maps: None };
+        let derive = if on && from_scene { Some(Derive::new(gpu, &input, &assembly, &viewport, &raster, &msaa, &blend, &dynamic_state, shader_read)?) } else { None };
+        let mut o = Occlusion { gbuf_pass, map_pass, pipeline_layout, pipeline, modules, point, linear, pool, set_layout, on, derive, maps: None };
         o.make_maps(gpu, scene_size)?;
         Ok(o)
     }
@@ -214,6 +312,7 @@ impl Occlusion {
         let framebuffer = |pass, views: &[vk::ImageView]| unsafe { d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(size.0).height(size.1).layers(1), None) };
         let gbuf_fb = framebuffer(self.gbuf_pass, &[gbuf.2, depth.2])?;
         let map_fb = framebuffer(self.map_pass, &[map.2])?;
+        let derive_fb = self.derive.as_ref().map(|dv| framebuffer(dv.pass, &[gbuf.2])).transpose()?;
         let layouts = [self.set_layout, self.set_layout];
         let sets = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(self.pool).set_layouts(&layouts))? };
         let write = |set, sampler, view| {
@@ -222,7 +321,7 @@ impl Occlusion {
         };
         write(sets[0], self.point, gbuf.2);
         write(sets[1], self.linear, map.2);
-        self.maps = Some(Maps { size, gbuf, depth, map, gbuf_fb, map_fb, gbuf_set: sets[0], map_set: sets[1] });
+        self.maps = Some(Maps { size, gbuf, depth, map, gbuf_fb, map_fb, derive_fb, gbuf_set: sets[0], map_set: sets[1] });
         Ok(())
     }
 
@@ -234,6 +333,9 @@ impl Occlusion {
                 let _ = d.free_descriptor_sets(self.pool, &[m.gbuf_set, m.map_set]);
                 d.destroy_framebuffer(m.gbuf_fb, None);
                 d.destroy_framebuffer(m.map_fb, None);
+                if let Some(fb) = m.derive_fb {
+                    d.destroy_framebuffer(fb, None);
+                }
                 for (image, memory, view) in [m.gbuf, m.depth, m.map] {
                     d.destroy_image_view(view, None);
                     d.destroy_image(image, None);
@@ -280,6 +382,48 @@ impl Occlusion {
     /// The occlusion map's image, its size and the normal target's, for the stage dump.
     pub fn map_image(&self) -> Option<(vk::Image, (u32, u32))> {
         self.maps.as_ref().map(|m| (m.map.0, m.size))
+    }
+
+    /// Whether the normal and depth target is built from the scene pass ([`Occlusion::derive`]).
+    pub fn from_scene(&self) -> bool {
+        self.derive.is_some()
+    }
+
+    /// Points the derive pass at the scene's depth (in its shader-read layout) and normal.
+    pub fn bind_scene(&self, gpu: &Gpu, depth: vk::ImageView, normal: vk::ImageView) {
+        let Some(dv) = &self.derive else { return };
+        let info = |view| [vk::DescriptorImageInfo::default().sampler(self.point).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let (depth, normal) = (info(depth), info(normal));
+        let writes = [
+            vk::WriteDescriptorSet::default().dst_set(dv.set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&depth),
+            vk::WriteDescriptorSet::default().dst_set(dv.set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&normal),
+        ];
+        unsafe { gpu.device.update_descriptor_sets(&writes, &[]) };
+    }
+
+    /// The half-size normal and depth target from the scene pass's depth and normal, for the
+    /// frame's view-projection `vp`: one full-screen pass (the geometry is not drawn again).
+    ///
+    /// # Safety
+    /// `cb` is recording outside a render pass; the scene's depth is in its shader-read layout
+    /// and its normal target was drawn.
+    pub unsafe fn derive(&self, gpu: &Gpu, cb: vk::CommandBuffer, vp: &Mat4) {
+        let (Some(dv), Some(m)) = (&self.derive, &self.maps) else { return };
+        let Some(fb) = m.derive_fb else { return };
+        let d = &gpu.device;
+        let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: m.size.0, height: m.size.1 } };
+        let [x, y] = device_depth_to_view(vp);
+        let push = [x, y, CLEAR_DEPTH, 0.0];
+        unsafe {
+            d.cmd_begin_render_pass(cb, &vk::RenderPassBeginInfo::default().render_pass(dv.pass).framebuffer(fb).render_area(area), vk::SubpassContents::INLINE);
+            d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: m.size.0 as f32, height: m.size.1 as f32, min_depth: 0.0, max_depth: 1.0 }]);
+            d.cmd_set_scissor(cb, 0, &[area]);
+            d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, dv.pipeline);
+            d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, dv.pipeline_layout, 0, &[dv.set], &[]);
+            d.cmd_push_constants(cb, dv.pipeline_layout, vk::ShaderStageFlags::FRAGMENT, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, 16));
+            d.cmd_draw(cb, 3, 1, 0, 0);
+            d.cmd_end_render_pass(cb);
+        }
     }
 
     /// Begins the pass that draws the normals and depth.
@@ -346,6 +490,14 @@ impl Occlusion {
             }
             d.destroy_render_pass(self.gbuf_pass, None);
             d.destroy_render_pass(self.map_pass, None);
+            if let Some(dv) = self.derive.take() {
+                d.destroy_descriptor_pool(dv.pool, None);
+                d.destroy_descriptor_set_layout(dv.set_layout, None);
+                d.destroy_pipeline(dv.pipeline, None);
+                d.destroy_pipeline_layout(dv.pipeline_layout, None);
+                d.destroy_shader_module(dv.module, None);
+                d.destroy_render_pass(dv.pass, None);
+            }
         }
     }
 }
@@ -368,6 +520,25 @@ mod tests {
         assert_eq!(numbers("RADIUS"), RADIUS);
         assert_eq!(numbers("RAY"), RAY);
         assert_eq!(numbers("OCC"), OCC);
+    }
+
+    #[test]
+    fn device_depth_gives_the_view_depth() {
+        // Depth 0..1 as the scene pass writes it: a perspective projection (mirrored in x and flipped
+        // in y as the renderer's), a view looking from a point at a target.
+        let mut proj = Mat4::perspective_rh(45f32.to_radians(), 16.0 / 9.0, 50.0, 300_000.0);
+        proj.y_axis.y *= -1.0;
+        proj.x_axis.x *= -1.0;
+        let eye = Vec3::new(10.0, 20.0, 30.0);
+        let view = Mat4::look_at_rh(eye, Vec3::new(-100.0, 5.0, -2000.0), Vec3::Y);
+        let vp = proj * view;
+        let [x, y] = device_depth_to_view(&vp);
+        for p in [Vec3::new(-100.0, 5.0, -2000.0), Vec3::new(300.0, -40.0, -700.0), Vec3::new(10.0, 20.0, -90000.0)] {
+            let clip = vp * p.extend(1.0);
+            let want = clip.w;
+            let got = 1.0 / (x + y * clip.z / clip.w);
+            assert!((got - want).abs() < want * 1e-3, "{got} {want}");
+        }
     }
 
     #[test]

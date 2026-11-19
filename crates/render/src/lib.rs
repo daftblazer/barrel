@@ -47,6 +47,7 @@ pub const SKY_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.vert.s
 pub const SKY_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv"));
 pub const WATER_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.vert.spv"));
 pub const WATER_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.frag.spv"));
+pub const GBUF_DERIVE_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/gbuf_derive.frag.spv"));
 pub const AO_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ao.frag.spv"));
 pub const TERRAIN_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain.frag.spv"));
 pub const SHADOW_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shadow.frag.spv"));
@@ -974,6 +975,10 @@ pub struct Targets {
     /// The scene pass's two per-pixel targets for the screen-space reflections (`reflect.rs`):
     /// the specular ambient's factor and gloss, and the cube light it reflects.
     pub spec: Option<[(vk::Image, vk::DeviceMemory, vk::ImageView); 2]>,
+    /// The scene pass's world normal (`ao::NORMAL_FORMAT`, octahedral; in the motion vectors' place, there are none then) where the reflections or
+    /// the depth of field need the normals and depth without the occlusion's own half-size
+    /// pre-pass: `ao::Occlusion::derive` builds their half-size target from it and the depth.
+    pub normal: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
 }
 
 impl Targets {
@@ -1003,6 +1008,7 @@ impl Targets {
         show_motion: bool,
         scene_format: vk::Format,
         reflections: bool,
+        normals: bool,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let (scene_width, scene_height) = scene_size;
@@ -1037,7 +1043,7 @@ impl Targets {
         let refraction_view = view(refraction, scene_format, vk::ImageAspectFlags::COLOR)?;
         let scene_view = view(scene, scene_format, vk::ImageAspectFlags::COLOR)?;
         // Depth is sampled when GSR 2 reads it. It is kept across the two parts of a frame with water.
-        let depth_usage = if gsr2_pipelines.is_some() || fsr3_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::empty() };
+        let depth_usage = if normals || gsr2_pipelines.is_some() || fsr3_pipelines.is_some() { vk::ImageUsageFlags::SAMPLED } else { vk::ImageUsageFlags::empty() };
         let (depth, depth_memory) = image_with(DEPTH_FORMAT, vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | depth_usage, samples)?;
         // With samples, the multisampled colour the pass resolves into the scene.
         let multisample = if samples != vk::SampleCountFlags::TYPE_1 {
@@ -1067,12 +1073,20 @@ impl Targets {
         } else {
             None
         };
+        // The world normal the scene pass writes for the half-size normal and depth target.
+        let normal_target = if normals && multisample.is_none() {
+            let (image, memory) = image(ao::NORMAL_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+            Some((image, memory, view(image, ao::NORMAL_FORMAT, vk::ImageAspectFlags::COLOR)?))
+        } else {
+            None
+        };
         let scene_framebuffer = match (multisample, motion_target, spec_targets) {
             (Some((_, _, msaa_view)), _, _) => framebuffer(scene_pass, &[msaa_view, depth_view, scene_view], scene_size)?,
             (None, motion, spec) => {
                 // Colour, depth, then the motion vectors and the reflections' targets as there are.
                 let mut views = vec![scene_view, depth_view];
                 views.extend(motion.map(|m| m.2));
+                views.extend(normal_target.map(|t| t.2));
                 views.extend(spec.iter().flatten().map(|t| t.2));
                 framebuffer(scene_pass, &views, scene_size)?
             }
@@ -1135,6 +1149,7 @@ impl Targets {
             post_sets,
             motion: motion_target,
             spec: spec_targets,
+            normal: normal_target,
             multisample,
             scene_size,
             scene,
@@ -1198,7 +1213,7 @@ impl Targets {
                 d.destroy_image(image, None);
                 d.free_memory(memory, None);
             }
-            for (image, memory, view) in self.spec.take().into_iter().flatten() {
+            for (image, memory, view) in self.normal.take().into_iter().chain(self.spec.take().into_iter().flatten()) {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
                 d.free_memory(memory, None);

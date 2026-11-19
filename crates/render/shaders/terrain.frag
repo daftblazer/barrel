@@ -98,6 +98,7 @@ layout(set = 1, binding = 6) uniform sampler2D pattern_map;
 
 #define AO_SET 2
 #include "occlusion.glsl"
+#include "normal_octahedral.glsl"
 #include "environment_light.glsl"
 #include "specular_direct.glsl"
 
@@ -109,6 +110,8 @@ layout(constant_id = 0) const bool AO_PASS = false;
 layout(location = 9) in vec4 cur_clip;
 layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
+// The world normal takes the motion vectors' attachment where there is no pre-pass (as in model.frag).
+layout(constant_id = 1) const bool NORMAL_AS_MOTION = false;
 // The ground's normal from the blended normal map `nm`, in the frame of the vertex normal (the
 // game's space, x not mirrored; the map's red along the side axis, green along the slope, blue
 // along the normal), back in the render space.
@@ -122,7 +125,7 @@ vec3 ground_normal(vec4 nm) {
 }
 
 void main() {
-    motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
+    motion = NORMAL_AS_MOTION ? vec2(0.0) : (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     int code = int(uv.x + 0.5), reps = int(uv.y + 0.5);
     int la = code & 31, lb = (code >> 5) & 31, mix_code = (code >> 10) & 31;
     bool baked = (code & 32768) != 0;
@@ -198,9 +201,13 @@ void main() {
     }
     // The ambient occlusion's pass (ao.rs, the pipeline made with AO_PASS): the ground's normal
     // and depth in place of its light.
-    if (AO_PASS) {
-        color = vec4(per_pixel ? ground_normal(nm) : normalize(normal), 1.0 / gl_FragCoord.w);
-        return;
+    {
+        vec3 n = per_pixel ? ground_normal(nm) : normalize(normal);
+        if (NORMAL_AS_MOTION) motion = octahedral_encode(n);
+        if (AO_PASS) {
+            color = vec4(n, 1.0 / gl_FragCoord.w);
+            return;
+        }
     }
     float sun_lit = sun_shadow(world) * cloud_light(world);
     // The stage dump of the sun's share (`dump::Stop::Shadow`).

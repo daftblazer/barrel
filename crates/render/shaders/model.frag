@@ -117,6 +117,10 @@ layout(location = 1) out vec2 motion;
 // mixes it toward the reflections after the scene is drawn.
 layout(location = 2) out vec4 spec_light;
 layout(location = 3) out vec4 spec_env;
+// Where the occlusion's own pre-pass does not run, the world normal (octahedral, for the half-size
+// normal and depth target, `gbuf_derive.frag`) takes the motion vectors' attachment (the scene pass
+// has no motion vectors then); set by the scene pass's pipelines.
+layout(constant_id = 1) const bool NORMAL_AS_MOTION = false;
 layout(location = 11) flat in vec4 tint_mul;
 layout(location = 12) flat in vec4 tint_add;
 // The mesh's tangent (turned like the normal) and the bitangent's sign; zero without one.
@@ -148,6 +152,10 @@ layout(set = 1, binding = 6) uniform sampler2D pattern_map;
 layout(set = 1, binding = 7) uniform samplerCube spec_cube;
 #define AO_SET 5
 #include "occlusion.glsl"
+#include "normal_octahedral.glsl"
+void put_normal(vec3 n) {
+    if (NORMAL_AS_MOTION) motion = octahedral_encode(n);
+}
 #include "environment_light.glsl"
 #include "specular_direct.glsl"
 #include "specular_ambient.glsl"
@@ -162,7 +170,7 @@ void specular_surface(vec3 albedo, out vec3 f0, out float gloss) {
 }
 
 void main() {
-    motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
+    motion = NORMAL_AS_MOTION ? vec2(0.0) : (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     spec_light = vec4(0.0);
     spec_env = vec4(0.0);
     vec4 c = texture(tex, uv);
@@ -267,6 +275,9 @@ void main() {
         return;
     }
     vec3 n = normalize(normal);
+    if ((pc.flags & 1u) != 0u) {
+        put_normal(n);
+    }
     if (AO_PASS && (pc.flags & 1u) != 0u) {
         color = vec4(n, 1.0 / gl_FragCoord.w);
         return;
@@ -313,6 +324,7 @@ void main() {
             }
             n = nm;
         }
+        put_normal(n);
         if (AO_PASS) {
             color = vec4(n, 1.0 / gl_FragCoord.w);
             return;

@@ -680,8 +680,30 @@ pass: to all the diffuse light, tinted by the colour, and to the direct and ambi
 (`--timings`: "occlusion"): the normal pass 0.3 ms for 950 draws and 680,000 triangles at half
 size, the full-screen pass 0.2.
 
+**Normals and depth without the occlusion.** The geometry pre-pass runs only with the occlusion
+(the AO has to be known before the scene's lighting in a forward pass). The reflections, the depth
+of field and the water's refraction read the same half-size target (`ao::GBUF_FORMAT`: world normal,
+view depth) where the occlusion is off, and there the scene pass makes it: the models and the
+terrain write their world normal, octahedral in two half floats (`normal_octahedral.glsl`,
+`ao::NORMAL_FORMAT`), into the motion vectors' attachment (location 1, which a scene pass without
+`motion` does not have; `NORMAL_AS_MOTION`, a specialisation of the scene's pipelines; the
+other programs leave it unwritten), and the pass keeps its depth buffer (stored, read in its
+shader layout). When the scene pass ends (a frame with water: when its opaque first part ends)
+one full-screen pass (`gbuf_derive.frag`, `Occlusion::derive`) builds the half-size target from
+the depth (the view depth from the projection's depth row, `device_depth_to_view`; the clear depth
+where the depth is 1) and the normal, one scene texel per half-size texel. Nothing is drawn twice.
+A frame with `motion` (a temporal upscaler) keeps the pre-pass. Differences from the pre-pass's
+target: the distant view's solid pieces (flag 16), drawn on the far plane, hold the clear depth, the
+normals are octahedral to a half float, and the outline hulls and the characters' hull pass may
+add depth. At the rp6's settings (Low reflections, no occlusion; the gate, `--timings`, 240
+frames, the desktop GPU) 1920 x 1080: occlusion 0.222 -> 0.005 ms, scene 1.560 -> 1.616, the
+three stages 3.399 -> 3.220 ms; 3840 x 2160: occlusion 0.416 -> 0.010, scene 4.456 -> 4.717, 6.481
+-> 6.323. The scene pass costs more here (the normal's write, the depth kept, the full-screen
+pass); the geometry drawn twice is what a tiler (the RP6) pays most for. At High (occlusion on) the
+frame is as before (319 pixels differ by at most 3 at 1080p).
+
 **Depth of field.** Ryza's frames (`RenderSettings::depth_of_field`, on in `ryza`'s settings;
-like the reflections it needs the normals and depth pre-pass and single-sampled drawing) soften the far
+like the reflections it needs the normals and depth target and single-sampled drawing) soften the far
 view as the game's type 0 does (`dof.rs`; docs/shading.md, "The depth of field (type 0)"). After
 the scene (before the glow) three passes run: the weight (`dof_weight.frag`: the occlusion's
 view depth turned to the game's raw depth and looked up in the curve, at the scene's size), the
@@ -699,7 +721,7 @@ agrees to 0.0004 (alpha 0 to 1), the layers to 0.008 (their colour is the scene'
 agrees to 0.016), the tone to 3.67 from 3.89 (turn 4.39 from 4.57, left 4.50 from 4.74).
 
 **Screen-space reflections.** Ryza's frames (the game's choice in `RenderSettings::reflections`,
-on in `ryza`'s settings; it needs the normals and depth pre-pass and single-sampled drawing, so
+on in `ryza`'s settings; it needs the normals and depth target and single-sampled drawing, so
 MSAA leaves it out) add the game's reflections to the specular ambient (`reflect.rs`; docs/shading.md,
 "The screen-space reflections"). The scene pass has two more colour targets (`Targets::spec`,
 rgba16f at the scene's size, written by `model.frag` and cleared to nothing): the specular
@@ -1307,9 +1329,10 @@ white as the field models'. Her specular ambient (the sheen on her metal) is in 
 flag 1 << 24 with 128, her specular map in set 4 and `look.chara_spec` (the cube map's scale
 times its tint from the set's `indirectChara_` block, and the exposure in w).
 
-**Which passes run (Ryza's graphics settings).** The normals and depth pre-pass (`ao.rs`,
-`Occlusion::on`) is drawn when the ambient occlusion, the reflections or the depth of field is on
-(the game runs reflections and depth of field with SSAO off); the occlusion program itself
+**Which passes run (Ryza's graphics settings).** The normals and depth target (`ao.rs`,
+`Occlusion::on`) is made when the ambient occlusion, the reflections or the depth of field is on
+(the game runs reflections and depth of field with SSAO off): by the geometry pre-pass with the
+occlusion, else from the scene pass (above); the occlusion program itself
 (`RenderSettings::occlusion`) only with the occlusion, else the map reads 1. The reflections'
 march takes the game's level (`reflect::Rlr`, `rlrpreset.xml`: 256 / 128 / 64 steps of 1 / 2 / 4
 half-size pixels, push constants of the march; the game's `vReflParam.x` is the step times the
