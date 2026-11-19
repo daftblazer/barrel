@@ -84,6 +84,8 @@ pub(super) const FORWARD_PASS: &[(&str, &[f32])] = &[
     ("fOLCSatFade", &[0.0]),
     ("cSpec", &[1.0, 1.0, 1.0, 20.0]),
 ];
+/// The lighting pass's `fOccAlbScl` on the stage's draws: occlusion.glsl's `STAGE_OCC_ALBEDO`.
+pub(super) const STAGE_OCC_ALBEDO: f32 = 1.0;
 /// `vAmbOccRat`'s first two values (the others are not used).
 pub(super) const AMBIENT_OCCLUSION_RATIO: [f32; 2] = [0.75268143, 0.24731857];
 /// The rim table's entries as the capture has them, all alike: strength (`x`) and power (`w`).
@@ -149,13 +151,23 @@ pub(super) fn json(i: &Inputs) -> String {
     lighting.insert("litDir", lit_dir.clone());
     lighting.insert("litCol", lit_col);
     lighting.insert("vEye", v_eye.clone());
+    // The stage's occlusion: tinted by the albedo at `STAGE_OCC_ALBEDO` and taken whole on the
+    // ambient (`vAmbOccRat` 1, 0: the characters' split it).
+    lighting.insert("fOccAlbScl", some(&[STAGE_OCC_ALBEDO]));
+    lighting.insert("vAmbOccRat", vec![Some(1.0), Some(0.0), None, None]);
     put("lighting.stage", lighting.clone());
-    // The lighting pass's second and third draws light the same stage with the same lights.
+    // The lighting pass's second and third draws light the same stage with the same lights,
+    // and add the emission maps at their strength (`emScl`, `EMISSION_SLOT`).
+    lighting.insert("emScl", some(&[look[EMISSION_SLOT][0]]));
     put("lighting.stage1", lighting.clone());
     put("lighting.stage2", lighting.clone());
+    lighting.remove("emScl");
     // The water's lighting pass takes the same lights and the camera (its position, and the
     // way it looks as the shadow slots carry it).
     let mut water_light = lighting.clone();
+    // (Not the stage's occlusion: the water's own is not done.)
+    water_light.remove("fOccAlbScl");
+    water_light.remove("vAmbOccRat");
     water_light.insert("vCameraPos", some(&[-eye[0], eye[1], eye[2]]));
     let fwd = look[SHADOW_CASCADE_SLOT + 9];
     if fwd[..3] != [0.0; 3] {
@@ -175,6 +187,7 @@ pub(super) fn json(i: &Inputs) -> String {
         lighting.insert(name, values.iter().map(|&v| Some(v)).collect());
     }
     lighting.insert("vAmbOccRat", vec![Some(AMBIENT_OCCLUSION_RATIO[0]), Some(AMBIENT_OCCLUSION_RATIO[1]), None, None]);
+    lighting.insert("emScl", some(&[look[EMISSION_SLOT][0]]));
     lighting.insert("cRimTbl", (0..64).map(|i| match i % 4 {
         0 => Some(RIM_ENTRY[0]),
         3 => Some(RIM_ENTRY[1]),
@@ -395,8 +408,17 @@ pub(super) fn json(i: &Inputs) -> String {
     };
     let sp = look[SPECULAR_SLOT];
     let tint = look[SPECULAR_SLOT + 1];
-    put("specular.stage", spec(i.stage.diffuse_map, sp[0], [tint[0], tint[1], tint[2]], sp[1]));
-    put("specular.chara", spec(chara.diffuse_map, chara.specular_map, chara.specular_map_color, i.specular_mips));
+    // Both draws take the sun at the set's own colour (as the forward pass) and their
+    // occlusion's share on the ambient (the stage's whole, the characters' split).
+    let set_sun = [stage_cols[0][0] / key, stage_cols[0][1] / key, stage_cols[0][2] / key, 1.0];
+    let with_sun = |mut c: Consts, occ: [f32; 2]| {
+        c.insert("litDir", some(&[dirs[0][0], dirs[0][1], dirs[0][2], 0.0]));
+        c.insert("litCol", some(&set_sun));
+        c.insert("vAmbOccRat", vec![Some(occ[0]), Some(occ[1]), None, None]);
+        c
+    };
+    put("specular.stage", with_sun(spec(i.stage.diffuse_map, sp[0], [tint[0], tint[1], tint[2]], sp[1]), [1.0, 0.0]));
+    put("specular.chara", with_sun(spec(chara.diffuse_map, chara.specular_map, chara.specular_map_color, i.specular_mips), AMBIENT_OCCLUSION_RATIO));
 
     // The water: the first and the last piece's body (its albedo and reflectance at normal
     // incidence, from the slots the water's vertex program reads).
@@ -563,6 +585,8 @@ mod tests {
         assert_eq!(numbers("RAMP_RANGE"), pass("rampCoordRange"));
         assert_eq!(numbers("OCC_ON_AMBIENT"), AMBIENT_OCCLUSION_RATIO);
         assert_eq!(numbers("RIM"), RIM_ENTRY);
+        let occlusion = include_str!("../../../render/shaders/occlusion.glsl");
+        assert!(occlusion.contains(&format!("const float STAGE_OCC_ALBEDO = {STAGE_OCC_ALBEDO:?};")));
     }
 
     #[test]
