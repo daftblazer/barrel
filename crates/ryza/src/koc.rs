@@ -30,7 +30,7 @@ pub fn walls(quads: &[Quad]) -> Vec<Wall> {
         .filter(|q| same(q[0], q[1]) && same(q[2], q[3]))
         .map(|q| {
             let ys = q.map(|p| p[1]);
-            Wall { a: [q[0][0], q[0][2]], b: [q[2][0], q[2][2]], low: ys.iter().copied().fold(f32::MAX, f32::min), high: ys.iter().copied().fold(f32::MIN, f32::max) }
+            Wall { a: [q[0][0], q[0][2]], b: [q[2][0], q[2][2]], low: ys.iter().copied().fold(f32::MAX, f32::min), high: ys.iter().copied().fold(f32::MIN, f32::max), outline: None }
         })
         .collect()
 }

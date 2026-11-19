@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn against_a_wall_she_and_the_camera_follow_her_slide() {
-        let wall = barrel_engine::walk::Wall { a: [-5000.0, 100.0], b: [5000.0, 100.0], low: -100.0, high: 300.0 };
+        let wall = barrel_engine::walk::Wall { a: [-5000.0, 100.0], b: [5000.0, 100.0], low: -100.0, high: 300.0, outline: None };
         let walls = Walls::from_walls(vec![wall], 1000.0);
         let (mut p, mut c) = (player(), cam());
         let diagonal = Sticks { left: [1.0, 1.0], right: [0.0; 2] };

@@ -22,8 +22,6 @@ pub const RUN_LEAN: f32 = 0.6;
 // Measured: walk-30 frames 2150-2170 (her facing turns 0.2 rad, 11.46 degrees, every frame).
 /// How fast she turns toward where she goes, radians a second (0.2 a frame at 60 a second).
 pub const TURN_RATE: f32 = 12.0;
-/// A turn this near half way round (radians) goes the negative way, so one of exactly that is not left to rounding.
-const HALF_TURN_TIE: f32 = 1e-3;
 /// She has moved, for her facing and the camera, when she goes further than this in a frame (units).
 const MOVED_LEAST: f32 = 1e-3;
 // STAND-IN: The fallback collision size and step height are chosen; the real thing is the character tables' values and the game's own step rule.
@@ -155,8 +153,9 @@ impl Player {
         if moved[0].hypot(moved[1]) > MOVED_LEAST {
             let want = moved[0].atan2(moved[1]);
             let mut d = (want - self.turn).rem_euclid(std::f32::consts::TAU);
-            // Measured: walk-30 frames 2560-2575 (turned half way round she goes the negative way).
-            if d > std::f32::consts::PI - HALF_TURN_TIE {
+            // Measured: walk-30 frames 2560-2575 and 2780-2795 (179.2 degrees the negative way
+            // and 179.99 the positive way: the short way, however near half a turn).
+            if d > std::f32::consts::PI {
                 d -= std::f32::consts::TAU;
             }
             self.turn += d.clamp(-TURN_RATE * dt, TURN_RATE * dt);
@@ -221,7 +220,7 @@ mod tests {
 
     #[test]
     fn a_wall_stops_her() {
-        let wall = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: 300.0 };
+        let wall = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: 300.0, outline: None };
         let walls = Walls::from_walls(vec![wall], 1000.0);
         let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
         run(&mut p, [0.0, 1.0], 2.0, Some(&walls));
@@ -230,7 +229,7 @@ mod tests {
 
     #[test]
     fn she_steps_over_a_low_wall() {
-        let kerb = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: STEP_UP * 0.5 };
+        let kerb = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: STEP_UP * 0.5, outline: None };
         let walls = Walls::from_walls(vec![kerb], 1000.0);
         let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
         run(&mut p, [0.0, 1.0], 2.0, Some(&walls));

@@ -802,8 +802,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   - **Built (`barrel_ryza::walk`, the window and `barrel-tool walk` share its `step`).** Dead zones
     0.2257 (left, from 108.9 at 12000) and 0.1651 (right), linear; speed 600 times the lean; she
     moves along the stick against the camera as the frame began and faces where she went (a
-    slide along a wall included; still when held), 0.2 rad a frame, the negative way when exactly
-    half round; the camera turns 1.5 a frame, follows where she went at 1.0125 a frame times the
+    slide along a wall included; still when held), 0.2 rad a frame, the short way round however
+    near half a turn (179.2 degrees went the negative way, 179.99 the positive); the camera turns 1.5 a frame, follows where she went at 1.0125 a frame times the
     sine of the angle across its view (0.7125 measured at 45 degrees against 0.716 here: the
     last half percent is not explained); pitch 0.9375 a frame times the stick for 8 frames at
     75%, floor -9.12; below 5 degrees the eye comes in 4.6 and the look point rises 1.71 a degree
@@ -811,15 +811,15 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
     the pitch slows over its last 5 frames: not explained). `tools/walkdiff.py OURS KEY`
     diffs a headless walk (`barrel-tool walk`) with the key per frame, a line a segment.
     Left (walk-30), largest first:
-    1. A wall the game lacks: at frame 2178 (running right past the garden stairs) she stops
-       at x 32223, z 31622 against `A21-S07-STAIR-01_cbvh2.g1co` (one of the stair model's
-       three meshes, `_cbvh`, `_cbvh1`, `_cbvh2`); from there every segment diverges (222
-       units by 2209). With that mesh left out the walk holds to 11 units and 0.34 degrees
-       through frame 2779, and the rest diverges at 2780 by 333 instead of 1,594. Numbered
-       meshes are common (trees, rocks, floors up to `_cbvh22`), so leaving out `2` is not
-       the rule: whether this piece is placed wrong (its per-file rotation and offset), a
-       steep floor taken for a wall, or a piece the walk does not collide with, is open.
-    2. A wall at z 33809 that Barrel's collision lacks (she walks through; from frame 2920 on).
+    1. Solved: a sloping wall triangle spans only its own heights where she is
+       (`walk::Wall::span`). The stair's side, `A21-S07-STAIR-01_cbvh2.g1co`, falls from 6184 to
+       5808 along its 1,100 units and had blocked her at frame 2178, about 186 below its top. The walk now
+       holds to 11 units and 0.34 degrees through frame 2779 (`walk-30-to-2779`).
+    2. The fence keeps her further off than Barrel does: from frame 2917 she slides along
+       `A21-COMMON-FENCE-02_cplh1.g1co` (x 31454 to 31797, z 33856 to 33910) about 78 units
+       from its face, and Barrel's 30-unit radius lets her 48 closer (52 units off by 2921, 342
+       at most by 3079). Open: whether `_cplh` shapes (as against `_cbvh`) are pushed out, or
+       she is wider against them, or another shape in front of the fence is not loaded.
     3. The stairs' heights (7 up at the top step, 3.4 along), the camera starting at 393.25 and
        400 from her first step, the pitch's transient (0.6 degrees).
 - **Collision shapes outside their models** (small). With the placement list's per-file

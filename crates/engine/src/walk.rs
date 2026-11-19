@@ -15,6 +15,38 @@ pub struct Wall {
     pub b: [f32; 2],
     pub low: f32,
     pub high: f32,
+    /// A wall made from a triangle: its three corners as (how far from a to b, 0 to 1; height),
+    /// so the heights it spans are taken where along it a point is (a long sloping side, as a
+    /// stair's rail, spans only its own slope's heights at each point). None: `low` to `high`
+    /// all along.
+    pub outline: Option<[[f32; 2]; 3]>,
+}
+
+impl Wall {
+    /// The heights the wall spans at `t` along it (0 at a, 1 at b).
+    pub fn span(&self, t: f32) -> (f32, f32) {
+        let Some(o) = self.outline else { return (self.low, self.high) };
+        let lo_t = o.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
+        let hi_t = o.iter().map(|p| p[0]).fold(f32::MIN, f32::max);
+        let t = t.clamp(lo_t, hi_t);
+        let (mut low, mut high) = (f32::MAX, f32::MIN);
+        for (p, q) in [(o[0], o[1]), (o[1], o[2]), (o[2], o[0])] {
+            let (t0, t1) = (p[0].min(q[0]), p[0].max(q[0]));
+            if t < t0 || t > t1 {
+                continue;
+            }
+            // An upright edge spans both its ends' heights; any other, its height at t.
+            let (y0, y1) = if t1 - t0 < 1e-6 {
+                (p[1].min(q[1]), p[1].max(q[1]))
+            } else {
+                let y = p[1] + (q[1] - p[1]) * (t - p[0]) / (q[0] - p[0]);
+                (y, y)
+            };
+            low = low.min(y0);
+            high = high.max(y1);
+        }
+        if low > high { (self.low, self.high) } else { (low, high) }
+    }
 }
 
 /// The walls of a collision mesh, with the leaves' bounds to find them by.
@@ -87,7 +119,8 @@ impl Walls {
                     continue;
                 }
                 let y = from[1] + (to[1] - from[1]) * t;
-                if y >= w.low && y <= w.high && best.is_none_or(|b| t < b) {
+                let (low, high) = w.span(u);
+                if y >= low && y <= high && best.is_none_or(|b| t < b) {
                     best = Some(t);
                 }
             }
@@ -125,7 +158,11 @@ impl Walls {
                 if w.high < y || w.low > y + height {
                     continue;
                 }
-                let q = closest(p, w.a, w.b);
+                let (q, t) = closest(p, w.a, w.b);
+                let (low, high) = w.span(t);
+                if high < y || low > y + height {
+                    continue;
+                }
                 let (dx, dz) = (p[0] - q[0], p[1] - q[1]);
                 let d = (dx * dx + dz * dz).sqrt();
                 if d < radius && d > 1e-4 {
@@ -275,22 +312,40 @@ fn wall(v: [[f32; 3]; 3], max_slope: f32) -> Option<Wall> {
         .into_iter()
         .max_by(|x, y| span(x.0, x.1).total_cmp(&span(y.0, y.1)))?;
     let ys = v.map(|p| p[1]);
-    Some(Wall { a, b, low: ys.iter().copied().fold(f32::MAX, f32::min), high: ys.iter().copied().fold(f32::MIN, f32::max) })
+    let (ab, len) = ([b[0] - a[0], b[1] - a[1]], span(a, b));
+    let along = |p: [f32; 2]| if len > 0.0 { ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / len } else { 0.0 };
+    let outline = [0, 1, 2].map(|i| [along(flat[i]), ys[i]]);
+    Some(Wall { a, b, low: ys.iter().copied().fold(f32::MAX, f32::min), high: ys.iter().copied().fold(f32::MIN, f32::max), outline: Some(outline) })
 }
 
-/// The point of segment a-b nearest p.
-fn closest(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+/// The point of segment a-b nearest p, and how far along it that is (0 at a, 1 at b).
+fn closest(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> ([f32; 2], f32) {
     let (ab, ap) = ([b[0] - a[0], b[1] - a[1]], [p[0] - a[0], p[1] - a[1]]);
     let len = ab[0] * ab[0] + ab[1] * ab[1];
     let t = if len > 0.0 { ((ap[0] * ab[0] + ap[1] * ab[1]) / len).clamp(0.0, 1.0) } else { 0.0 };
-    [a[0] + ab[0] * t, a[1] + ab[1] * t]
+    ([a[0] + ab[0] * t, a[1] + ab[1] * t], t)
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
+    fn a_sloping_wall_spans_its_own_heights_where_she_is() {
+        // A rail's side, 1000 long, its top falling from 200 to 0 and its bottom at -400:
+        // low at the far end, so a character standing at 50 passes over it there.
+        let w = super::wall([[0.0, 200.0, 0.0], [0.0, 0.0, 1000.0], [0.0, -400.0, 1000.0]], 45.0).unwrap();
+        // At z 900 (t along whichever way the wall's segment runs): the top at 20, the bottom
+        // at -340 (the bottom edge falls from 200 to -400).
+        let t = (900.0 - w.a[1]) / (w.b[1] - w.a[1]);
+        let (low, high) = w.span(t);
+        assert!((high - 20.0).abs() < 1e-3 && (low + 340.0).abs() < 1e-3, "{low} {high}");
+        let walls = super::Walls::from_walls(vec![w], 2000.0);
+        assert_eq!(walls.step([30.0, 900.0], [-60.0, 0.0], 50.0, 150.0, 20.0), [-30.0, 900.0]);
+        assert_ne!(walls.step([30.0, 100.0], [-60.0, 0.0], 50.0, 150.0, 20.0), [-30.0, 100.0]);
+    }
+
+    #[test]
     fn a_line_through_a_wall_hits_it() {
-        let w = super::Walls::from_walls(vec![super::Wall { a: [-100.0, 50.0], b: [100.0, 50.0], low: 0.0, high: 200.0 }], 1000.0);
+        let w = super::Walls::from_walls(vec![super::Wall { a: [-100.0, 50.0], b: [100.0, 50.0], low: 0.0, high: 200.0, outline: None }], 1000.0);
         assert_eq!(w.first_hit([0.0, 100.0, 0.0], [0.0, 100.0, 100.0]), Some(0.5));
         // Over its top, or beside it: no.
         assert_eq!(w.first_hit([0.0, 300.0, 0.0], [0.0, 300.0, 100.0]), None);
