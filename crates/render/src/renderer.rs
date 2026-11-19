@@ -1435,7 +1435,7 @@ impl Renderer {
             // the post pass.
             let (threshold, rate) = glow;
             if let Some(g) = &targets.glow {
-                g.record(d, &glow_pipelines, cb, threshold, tone_white, meter.as_ref());
+                g.record(d, &glow_pipelines, cb, threshold, rate, tone_white, meter.as_ref());
                 if let (Some(dump), Some((bright, bloom))) = (self.dump.as_ref().filter(|_| upto == dump::Stop::Full), g.bloom_images()) {
                     // The glow's targets are stored at half too (the post pass doubles them).
                     let k = 1.0 / HDR_RANGE_INV;

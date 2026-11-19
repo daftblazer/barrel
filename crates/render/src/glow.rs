@@ -310,7 +310,7 @@ impl Targets {
     /// # Safety
     /// `cb` is recording outside a render pass, after the scene's pass. `metered`: the exposure
     /// to meter the scene to first (the Ryza games' bloom only).
-    pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, threshold: f32, white: f32, metered: Option<&meter::Params>) {
+    pub unsafe fn record(&self, d: &ash::Device, p: &Pipelines, cb: vk::CommandBuffer, threshold: f32, rate: f32, white: f32, metered: Option<&meter::Params>) {
         let run = |to: &Target, from: vk::DescriptorSet, add: bool, push: Push| unsafe {
             let (w, h) = to.size;
             let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: w, height: h } };
@@ -333,6 +333,10 @@ impl Targets {
             let on = metered.zip(self.meter.as_ref().zip(p.meter.as_ref()));
             if let Some((params, (m, mp))) = on {
                 m.record(d, mp, cb, params);
+            }
+            // No glow this frame (the post pass adds none): the metering alone.
+            if rate <= 0.0 {
+                return;
             }
             // The bright pass (its own program: the exposure's set rides with the scene's).
             if let Some(b) = &p.bright {

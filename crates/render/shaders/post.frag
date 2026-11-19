@@ -68,7 +68,8 @@ void main() {
     if (pc.screen.z > 0.5) {
         lit = soften(lit, 2.0 * metered);
     }
-    vec3 live = lit + texture(glow, uv).rgb * pc.rate;
+    // No glow (rate 0): its passes did not run, so its target is not read.
+    vec3 live = pc.rate > 0.0 ? lit + texture(glow, uv).rgb * pc.rate : lit;
     vec3 before = texture(frozen, uv).rgb * 2.0 * metered;
     vec3 c = mix(live, before, pc.frozen_weight);
     if (pc.screen.x > 0.0) {

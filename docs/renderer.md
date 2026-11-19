@@ -606,7 +606,9 @@ anisotropy`: 16 on the desktop, 4 on the handhelds, capped by the device's
 into a plain band a few metres off where the game keeps them sharp; with it they carry as far.
 The game's own sampler states are not read (by the look, not yet the game's setting).
 
-**The finished frame** (`post.frag`): the scene doubled plus the glow, then for a game that
+**The finished frame** (`post.frag`): the scene doubled plus the glow (with a rate of 0,
+the bloom's passes are skipped, the exposure metering alone running, and the glow is not
+read; at the handheld's settings on the PC the glow stage went from 0.21 to 0.05 ms), then for a game that
 asks (`Frame::tone_white`, `Frame::saturation`; Escha passes 0 for both and is unchanged) a
 tone curve, `c (1 + c / w²) / (1 + c)` with white point w, and a saturation scale per channel
 about the BT.601 luma. Ryza takes w from its set's `fLumiMax` and the scale from its
