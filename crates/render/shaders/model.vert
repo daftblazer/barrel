@@ -12,6 +12,10 @@ layout(location = 7) in vec3 in_corner;
 // The mesh's tangent (xyz) and the bitangent's sign (w); all zero for a mesh without one.
 layout(location = 8) in vec4 in_tangent;
 // view_proj: the camera; instance: which of the instances places this draw.
+// The cascades' shadow pass (renderer.rs, `shadow_cascade_pipeline`): the game's constant bias
+// (`params.z`, of the cascade's depth) added here, exact for the cascades' orthographic
+// projections; its slope term is the pipeline's depth bias.
+layout(constant_id = 0) const bool CASCADE_BIAS = false;
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
     // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
     uint light; } pc;
@@ -340,4 +344,7 @@ void main() {
     // A sky dome's layer slides along u (flag 4096: the push's last float is how far, the
     // game's `txTrs01`).
     uv = (pc.flags & 4096u) != 0u ? in_uv + vec2(pc.outline_colour, 0.0) : in_uv;
+    if (CASCADE_BIAS) {
+        gl_Position.z += pc.params.z * gl_Position.w;
+    }
 }

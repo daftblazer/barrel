@@ -993,6 +993,13 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   of the box's depth: 4, 11 and 37 units), (2.5, 0.01) and (5, 0.07) for the sub map; the
   alpha 0.392 (100 / 255) in all. The draws: 104, 177 and 669 (the cascades), 25 (the sub map),
   Barrel's: 160, 235 and 687.
+  Barrel writes no depth in the pixel program (so the depth test runs early): the constant is
+  added to the clip depth in the vertex shader (`model.vert`, `CASCADE_BIAS`; exact, the boxes
+  being orthographic) and the slope term is the raster state's depth bias at `sbias.x`, which
+  takes the larger of |ddx| and |ddy| (or their length) where the game adds them (a listed
+  difference, `docs/engine.md`). The shadow pass at the handheld's settings on the PC: 1.62 to
+  0.91 ms (High 1.87 to 1.10); against the written depth, a texel's shift at a few shadow edges
+  (434 pixels by more than 8 of 255 at the gate; a slope scale of 1.5 or 2 is further off).
 - **The characters' map** (`mSubW2S`, `scSubSM`, `nSubSdw`, `sSubShadow`; pass 10, 25 draws
   into the 1024² map, all of the player's submeshes of her first level of detail, one draw each):
   the characters are in this map and not in the two near cascades (none of her 25 draws' index

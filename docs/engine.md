@@ -677,6 +677,10 @@ mistake for a day). `u46` in the events does not play its movie yet.
   `foliage` key no longer picks Ryza's plants (the game's grass items do). Without any of the
   game's settings given, Barrel's own `--preset` and config choices (TAA, anisotropy, and the
   occlusion, reflections and depth of field switches) stand, and everything else is High.
+- **The shadow casters' slope bias** (Ryza; `docs/shading.md`, "The casters' pass"): the game
+  writes the depth plus its slope scale times |ddx| + |ddy|; Barrel's raster depth bias takes
+  the larger of the two (or their length), so a few shadow edges sit a texel off. It lets the
+  depth test run before the pixel program, which halves the pass's cost.
 
 ## Sound
 

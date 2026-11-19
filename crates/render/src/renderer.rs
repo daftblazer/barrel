@@ -803,9 +803,22 @@ impl Renderer {
         let shadow_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[shadow_info], None).map_err(|(_, e)| e)?[0] };
         // The cascades': the game's own bias written in the shader, none in the raster state.
         let shadow_cascade_fs = module(SHADOW_CASCADE_FRAG)?;
-        let cascade_stages = [shadow_stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(shadow_cascade_fs).name(c"main")];
-        let cascade_raster = raster.cull_mode(vk::CullModeFlags::NONE);
-        let cascade_info = shadow_info.stages(&cascade_stages).rasterization_state(&cascade_raster);
+        // The game's bias: its constant added in the vertex shader (exact for the orthographic
+        // cascades), its slope term the raster state's (set per bias, `cmd_set_depth_bias`), the
+        // shader writing no depth so the test runs early. The game adds the depth's slopes in x
+        // and y where Vulkan takes the larger (or their length): a listed difference
+        // (docs/engine.md).
+        let cascade_bias_on = 1u32.to_ne_bytes();
+        let cascade_spec_entry = [vk::SpecializationMapEntry { constant_id: 0, offset: 0, size: 4 }];
+        let cascade_spec = vk::SpecializationInfo::default().map_entries(&cascade_spec_entry).data(&cascade_bias_on);
+        let cascade_stages = [
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main").specialization_info(&cascade_spec),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(shadow_cascade_fs).name(c"main"),
+        ];
+        let cascade_raster = raster.cull_mode(vk::CullModeFlags::NONE).depth_bias_enable(true);
+        let cascade_dynamic = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR, vk::DynamicState::DEPTH_BIAS];
+        let cascade_dynamic_state = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&cascade_dynamic);
+        let cascade_info = shadow_info.stages(&cascade_stages).rasterization_state(&cascade_raster).dynamic_state(&cascade_dynamic_state);
         let shadow_cascade_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[cascade_info], None).map_err(|(_, e)| e)?[0] };
 
         // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
@@ -986,6 +999,9 @@ impl Renderer {
                 // A cascade is written with the game's bias where the game gave one.
                 let bias = if layer == shadow::SUB_LAYER { shadow_sub.map(|(_, b)| b[0]) } else { shadow_bias.filter(|_| layer <= shadow::STATIC_LAYER).map(|b| b[layer.min(2)]) };
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if bias.is_some() { shadow_cascade_pipeline } else { shadow_pipeline });
+                if let Some(b) = bias {
+                    d.cmd_set_depth_bias(cb, 0.0, 0.0, b.slope);
+                }
                 let mut push = [0f32; 32];
                 // Word 31: the lighting material (Draw::light); full for what pushes no draw's own (the terrain).
                 push[31] = f32::from_bits(FULL_LIGHT);
@@ -1020,6 +1036,7 @@ impl Renderer {
                         let b = sets[usize::from(k)];
                         let params = [b.alpha_ref, b.slope, b.constant, 0.0];
                         d.cmd_push_constants(cb, pipeline_layout, stages_pc, 64, std::slice::from_raw_parts(params.as_ptr() as *const u8, 16));
+                        d.cmd_set_depth_bias(cb, 0.0, 0.0, b.slope);
                     }
                     d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
