@@ -904,6 +904,16 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   characters' map's 16 taps over the whole view (bcfe208) +4.8; 5204466..eb78689 +4.4, not
   split yet. Each is the game's own pass; whether the game's Low settings skip or shrink them is
   what reading its settings answers.
+  The original's values, read off the answer key (2026-11-19: the gate at frame 2550 with
+  `Setting.ini` variants, runs `gs-q0`..`gs-q3`, `gs-x-*` one item at a time, `gs-rp6` the
+  handheld's file): `GRAPHICS_QUALITY_ALL` 0 Low, 1 Middle, 2 High, 3 Custom; below 3 it decides
+  everything and the items are ignored; at 3 the items are used, 0 the lowest. The handheld's
+  file is Custom, nearly all Low: 1,346 draws against High's 2,149, without AO, depth of field,
+  bloom and star, light shafts and TAA; the three cascades and the characters' map keep their
+  sizes at every level (2000x2400, 2000x2400, 1600, 1024) and the reflections still run. A
+  structural cost of Barrel's: its AO, reflections and depth of field need a second geometry
+  pass (normals and depth at half size, `ao.rs`) where the game's deferred G-buffer already
+  holds them; on the RP6 that pre-pass and AO are 15 ms of the played 87.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
