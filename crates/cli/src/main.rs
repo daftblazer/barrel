@@ -1,5 +1,6 @@
 //! `barrel-tool`: inspect and unpack Atelier game data.
 
+mod ryza_walk;
 mod unread;
 
 use std::collections::BTreeMap;
@@ -45,6 +46,8 @@ usage:
   barrel-tool ryza-commands INSTALL EVENT [DRAWS]  a Ryza DX event's commands as Barrel's player takes them: `frame aACTION word operands...`
       in hex (frames at 60 a second from the event's start), for tools/cmddiff.py against the game's log;
       DRAWS (numbers with commas) are what its random commands draw, in order; a looping event stops at 10 minutes
+  barrel-tool walk INSTALL FIELD --pad FILE --from N --start X,Y,Z,YAW --camera YAW,PITCH,DIST --state OUT [--to N]
+      Ryza walked through a field headless by a pad script (`frame buttons [held]`): her state and the camera a frame a line
   barrel-tool ryza-field INSTALL [FIELD]  a Ryza DX field loaded from the archives into a scene (no
                                FIELD: every field, one line each)
   barrel-tool opl2 FILE#N              a field's placements: each object, its instances and their tags, then its effects
@@ -157,6 +160,7 @@ fn main() -> ExitCode {
         ["opl2", file] => opl2_list(file),
         ["ryza-commands", root, event] => ryza_commands(Path::new(root), event, ""),
         ["ryza-commands", root, event, draws] => ryza_commands(Path::new(root), event, draws),
+        ["walk", args @ ..] => ryza_walk::run(args),
         ["ryza-field", root] => ryza_field(Path::new(root), None),
         ["ryza-field", root, field] => ryza_field(Path::new(root), Some(field)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),

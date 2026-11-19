@@ -21,6 +21,7 @@ pub mod maps;
 pub mod motion;
 pub mod npc;
 pub mod player;
+pub mod walk;
 pub mod solids;
 pub mod save;
 pub mod story;

@@ -785,45 +785,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let joints = barrel_engine::skin::skin(&skeleton, &locals);
         // Her feet on the ground: the field's heightmap under her (the given height when there
         // is none, or she is off it).
-        let mut ground = barrel_engine::field::named(&main, &format!("{}.khm", files.area.to_ascii_uppercase()))
-            .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
-            .and_then(|b| barrel_formats::khm::parse(b).ok())
-            .map(barrel_engine::walk::Ground::of_heightmap);
-        // And the field's walls (`<field>_le.koc`), when it has them.
-        let walls = install
-            .read(&format!("\\data\\x64\\field\\{0}\\{0}_le.koc", a.field.to_ascii_lowercase()))
-            .ok()
-            .and_then(|b| barrel_ryza::koc::parse(&b).ok())
-            .map(|q| barrel_engine::walk::Walls::from_walls(barrel_ryza::koc::walls(&q), 2000.0));
-        // And the placed models' collision meshes (`barrel_ryza::solids`): more walls, and floors
-        // on models, added after she is stood on the terrain (so she does not start on a
-        // tree's top).
-        let placements = barrel_engine::field::named(&main, &format!("{}.opl2", files.area)).map(barrel_formats::opl2::parse).transpose()?;
-        let (mut solids, fit) = placements.map(|p| barrel_ryza::solids::placed_meshes(&p, &objects)).unwrap_or_default();
-        eprintln!("model collision: {fit:?}");
-        // And the field's own shapes (`<FIELD>_coll.bin`).
-        if let Some(b) = main.entries.iter().find(|e| !e.is_dummy() && e.name.to_ascii_lowercase().ends_with("_coll.bin")).map(|e| main.data(e)) {
-            solids.extend(barrel_ryza::solids::field_shapes(b)?);
-        }
-        let at = &match ground.as_ref().and_then(|g| g.height(at.x, at.z, f32::MAX / 2.0, 0.0)) {
-            Some(y) => Vec3::new(at.x, y, at.z),
-            None => *at,
-        };
+        let barrel_ryza::walk::Terrain { ground, walls, start: at } = barrel_ryza::walk::load_terrain(&install, &a.field, &files.area, &main, &objects, *at)?;
+        let at = &at;
         eprintln!("Ryza stands at {at:?}");
-        let slope = barrel_engine::walk::DEFAULT_SLOPE;
-        if let Some(g) = ground.as_mut() {
-            for c in &solids {
-                g.add_floors(c, slope);
-            }
-        }
-        let walls = solids.iter().fold(walls, |w, c| {
-            let more = barrel_engine::walk::Walls::new(c, slope);
-            Some(match w {
-                Some(w) => w.join(more),
-                None => more,
-            })
-        });
-        eprintln!("model collision: {} meshes, {} triangles", solids.len(), solids.iter().map(|c| c.triangles.len()).sum::<usize>());
         // Her settings from the character tables (`barrel_ryza::chara`): her model's scale, her
         // size against the walls, the camera's look height.
         let chara = barrel_ryza::chara::Chara::read(&install.read("\\saves\\chara\\chara.xml")?, &install.read("\\saves\\chara\\charabase.xml")?, "PC00A")?;
@@ -836,12 +800,6 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
         let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
         (player.radius, player.height) = (chara.radius, chara.height);
-        // Her speeds: those at which her planted feet keep still in the walk and run loops
-        // (`motion::stride_speed`), at her model's scale.
-        let stride = |m: u32| anims.iter().find(|(n, _)| *n == m).and_then(|(_, a)| barrel_ryza::motion::stride_speed(&skeleton, a)).map(|v| v * chara.size[2]);
-        if let Some(v) = stride(barrel_ryza::motion::WALK) { player.walk_speed = v; }
-        if let Some(v) = stride(barrel_ryza::motion::RUN) { player.run_speed = v; }
-        eprintln!("Ryza: walk {:.0}, run {:.0} units a second", player.walk_speed, player.run_speed);
         // Her cloth (hair, skirt): the pieces' solvers, fed her pose each frame.
         let cloth = cloth::ClothDriver::new(geometry, &skeleton, &scene.cloth_slots, instance, chara.local_gravity);
         rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut, cloth, joints: joints.clone() });
@@ -1219,13 +1177,19 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     });
     let fov = a.fov.unwrap_or(if a.title { barrel_ryza::title::CAMERA.fov } else { follow.map_or(30.0, |c| c.fov) }).to_radians();
     // How high above her feet the camera looks (`LOOK_HEIGHT`).
-    let look_height = LOOK_HEIGHT;
+    let mut look_height = barrel_ryza::walk::LOOK_HEIGHT;
     let (mut yaw, mut pitch) = match (follow, &rig) {
         (Some(c), Some(r)) => (c.yaw - r.player.turn.to_degrees(), c.pitch),
         _ => (a.yaw, a.pitch),
     };
     let mut dist = a.distance.or(follow.map(|c| c.length)).unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
     let (pitch_range, length_range) = follow.map_or(((-10.0, 70.0), (150.0, 3000.0)), |c| (c.pitch_range, c.length_range));
+    // The walk's camera (`barrel_ryza::walk`), in the game's yaw (the view's is 180 minus it);
+    // the locals above are what it gives the view each frame.
+    let mut cam = barrel_ryza::walk::Camera::new(180.0 - yaw, pitch, dist, pitch_range);
+    if follow.is_some() && rig.is_some() {
+        cam = cam.following();
+    }
     let mut center = match (follow, &rig) {
         (Some(_), Some(r)) => (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
         _ => center,
@@ -1430,33 +1394,34 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             last = now;
             frame_dt = dt;
             let key = |k: K| if p.held(k) { 1.0 } else { 0.0 };
-            // The pad's sticks with the dead zone taken out (a stick resting a little off centre
-            // neither walks her nor turns the camera).
-            let (left, right) = p.sticks();
-            let (left, right) = (barrel_render::pad::stick(left[0], left[1]), barrel_render::pad::stick(right[0], right[1]));
-            // Right (the stick or the arrow key) swings the camera the way the game's does (the
-            // other sign was mirrored against it, tried on a handheld).
+            // The sticks as the walk takes them (`barrel_ryza::walk`: it takes the dead zones out
+            // itself); the keys are the same sticks pushed to their edge. Right (the stick or
+            // the arrow key) swings the camera the way the game's does (the other sign was
+            // mirrored against it, tried on a handheld). Up pitches it down.
             // (The title's camera is fixed: its keys work the menu, and the play camera's
             // limits are not its own.)
-            if !a.title {
-                yaw += (key(K::ArrowRight) - key(K::ArrowLeft) + right[0]) * CAMERA_TURN * dt;
-                pitch = (pitch + (key(K::ArrowUp) - key(K::ArrowDown) - right[1]) * CAMERA_TURN * dt).clamp(pitch_range.0, pitch_range.1);
-                dist = (dist * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(length_range.0, length_range.1);
+            let (left, right) = p.sticks();
+            let mut sticks = barrel_ryza::walk::Sticks {
+                left: [key(K::KeyD) - key(K::KeyA) + left[0] + a.lean[0], key(K::KeyW) - key(K::KeyS) + left[1] + a.lean[1]],
+                right: [key(K::ArrowRight) - key(K::ArrowLeft) + right[0], right[1] - (key(K::ArrowUp) - key(K::ArrowDown))],
+            };
+            let length = (sticks.left[0] * sticks.left[0] + sticks.left[1] * sticks.left[1]).sqrt();
+            let full = if p.held(K::ShiftLeft) || p.held(K::ShiftRight) { SHIFT_LEAN } else { 1.0 };
+            if length > full {
+                sticks.left = sticks.left.map(|v| v / length * full);
             }
+            if !a.title {
+                cam.length = (cam.length * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(length_range.0, length_range.1);
+            }
+            if a.title {
+                sticks.right = [0.0; 2];
+            }
+            match rig.as_mut() {
+                Some(r) => barrel_ryza::walk::step(&mut r.player, &mut cam, &sticks, dt, r.ground.as_ref(), r.walls.as_ref()),
+                None => cam.steer(sticks.right, dt),
+            }
+            (yaw, pitch, dist, look_height) = (180.0 - cam.yaw, cam.pitch, cam.distance(), cam.look_height());
             if let Some(r) = rig.as_mut() {
-                let mut lean = [key(K::KeyD) - key(K::KeyA) + left[0] + a.lean[0], key(K::KeyW) - key(K::KeyS) + left[1] + a.lean[1]];
-                let length = (lean[0] * lean[0] + lean[1] * lean[1]).sqrt();
-                let full = if p.held(K::ShiftLeft) || p.held(K::ShiftRight) { 0.4 } else { 1.0 };
-                if length > full {
-                    lean = lean.map(|v| v / length * full);
-                }
-                // Against the camera, in render space (x mirrored), then game space. Right on
-                // screen is the right-handed view's left, (-cos, 0, sin): the projection mirrors
-                // clip-space x (as in Escha's walk).
-                let y = yaw.to_radians();
-                let (forward, side) = (Vec3::new(-y.sin(), 0.0, -y.cos()), Vec3::new(-y.cos(), 0.0, y.sin()));
-                let way = forward * lean[1] + side * lean[0];
-                r.player.step([-way.x, way.z], dt, r.ground.as_ref(), r.walls.as_ref());
                 // Her pose: the motion playing, the last one mixed out over it.
                 let local = |(m, t): (u32, f32)| barrel_engine::skin::local_pose(&r.skeleton, &r.anims.iter().find(|(n, _)| *n == m).unwrap_or(&r.anims[0]).1, t);
                 let (now, from) = r.player.pose();
@@ -1896,13 +1861,9 @@ fn cloud_map_override() -> Result<Option<Vec<u8>>> {
     Ok(Some(rgba))
 }
 
-// STAND-IN: The camera's look height is 0.8 of her CamH, measured from one frame; the real thing is the game's own rule.
-/// How high above her feet the camera behind Ryza looks: measured from the game's eye (32526.8,
-/// 6363.3, 29944.7) with her at (32518.2, 6179.6, 30331.5) and the field camera's 8° and 400;
-/// about 0.8 of her `CamH` (160). The rule itself is not read (`docs/ryza/open.md`).
-const LOOK_HEIGHT: f32 = 128.0;
-/// How fast the camera turns, degrees a second.
-const CAMERA_TURN: f32 = 120.0;
+// STAND-IN: Shift's lean is chosen: a stick lean of this length walks.
+/// The lean Shift holds the keys to (the stick's throw, before its dead zone).
+const SHIFT_LEAN: f32 = 0.5;
 
 /// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
 type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight, barrel_ryza::environment::Clouds), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, [f32; 2]);

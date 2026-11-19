@@ -1,27 +1,31 @@
 //! Ryza as the player walks her: where she stands, which way she faces, and which of her
 //! field motions plays (`motion`). The input is a lean on the ground (game space x, z, length
-//! up to 1); a light lean walks, a full one runs. Setting off plays the gait's start motion
-//! and then its loop, letting go its stop motion and then the stand; walk and run change
-//! straight from loop to loop. Each change mixes the last motion out over `BLEND`. Stand-ins,
-//! not read from the game: the speeds (eased in over the start motion and out over the stop
-//! one), the lean that starts a run, how fast she turns, her size against the walls and the
-//! mixing time (`docs/ryza/open.md`, "Ryza in the field").
+//! up to 1: the stick against the camera with its dead zone out, `crate::walk`); a light lean
+//! walks, a full one runs. She moves along the lean from the first frame at a speed
+//! proportional to it, her facing turning toward it at `TURN_RATE`. Setting off plays the
+//! gait's start motion and then its loop, letting go its stop motion and then the stand; walk
+//! and run change straight from loop to loop. Each change mixes the last motion out over
+//! `BLEND`. Stand-ins, not read from the game: the lean that starts a run, her size against
+//! the walls and the mixing time (`docs/ryza/open.md`, "Ryza in the field").
 
 use barrel_engine::walk::{Ground, Walls};
 use glam::Vec3;
 
 use crate::motion;
 
-// STAND-IN: The walking and running speeds are chosen, not read from the game.
-/// Walking and running speeds, units (centimetres) a second.
-pub const WALK_SPEED: f32 = 150.0;
-pub const RUN_SPEED: f32 = 480.0;
+// Measured: walk-30 frames 1900-2019 (a full lean moves her 10.0 units a frame along the stick).
+/// Her speed at a full lean, units (centimetres) a second; it is proportional to the lean.
+pub const FULL_SPEED: f32 = 600.0;
 // STAND-IN: The lean that starts a run is chosen, not read from the game.
 /// The lean at and above which she runs.
 pub const RUN_LEAN: f32 = 0.6;
-// STAND-IN: The turn rate is chosen, not read from the game.
-/// How fast she turns toward where she goes, radians a second.
+// Measured: walk-30 frames 2150-2170 (her facing turns 0.2 rad, 11.46 degrees, every frame).
+/// How fast she turns toward where she goes, radians a second (0.2 a frame at 60 a second).
 pub const TURN_RATE: f32 = 12.0;
+/// A turn this near half way round (radians) goes the negative way, so one of exactly that is not left to rounding.
+const HALF_TURN_TIE: f32 = 1e-3;
+/// She has moved, for her facing and the camera, when she goes further than this in a frame (units).
+const MOVED_LEAST: f32 = 1e-3;
 // STAND-IN: The fallback collision size and step height are chosen; the real thing is the character tables' values and the game's own step rule.
 /// Her size against the walls when the character tables give none (`chara::Chara`), and the
 /// highest step she climbs.
@@ -71,14 +75,11 @@ pub struct Player {
     /// Her size against the walls (radius, height).
     pub radius: f32,
     pub height: f32,
-    /// Her full walking and running speeds, units a second.
-    pub walk_speed: f32,
-    pub run_speed: f32,
 }
 
 impl Player {
     pub fn new(at: Vec3, turn: f32, lengths: &[(u32, f32)]) -> Player {
-        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT, walk_speed: WALK_SPEED, run_speed: RUN_SPEED }
+        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT }
     }
 
     fn length(&self, m: u32) -> f32 {
@@ -94,68 +95,49 @@ impl Player {
         }
     }
 
-    /// One step of `dt` seconds with the lean `lean` (game x, z).
-    pub fn step(&mut self, lean: [f32; 2], dt: f32, ground: Option<&Ground>, walls: Option<&Walls>) {
+    /// One step of `dt` seconds with the lean `lean` (game x, z; its length 0 to 1); how far she
+    /// went (x, z).
+    pub fn step(&mut self, lean: [f32; 2], dt: f32, ground: Option<&Ground>, walls: Option<&Walls>) -> [f32; 2] {
         let amount = (lean[0] * lean[0] + lean[1] * lean[1]).sqrt().min(1.0);
-        self.gait = if amount < 0.05 { Gait::Stand } else if amount < RUN_LEAN { Gait::Walk } else { Gait::Run };
+        self.gait = if amount <= 0.0 { Gait::Stand } else if amount < RUN_LEAN { Gait::Walk } else { Gait::Run };
         self.clock += dt;
         self.since += dt;
         let done = self.clock >= self.length(self.motion);
         let (_, walk, walk_stop) = Gait::Walk.motions();
         let (_, run, run_stop) = Gait::Run.motions();
         let stopping = self.motion == walk_stop || self.motion == run_stop;
-        // Which motion now, and how much of the gait's speed she moves at.
-        let speed = match self.gait {
+        // Which motion now (her position does not follow it: she moves at the lean's speed).
+        match self.gait {
             Gait::Stand => {
                 if self.motion == motion::STAND || (stopping && done) {
                     self.play(motion::STAND);
                     self.moving = Gait::Stand;
-                    0.0
                 } else {
                     let (_, _, stop) = self.moving.motions();
                     self.play(stop);
-                    1.0 - (self.clock / self.length(stop)).min(1.0)
                 }
+                return [0.0; 2];
             }
             g => {
                 let (start, looped, _) = g.motions();
-                if self.motion == looped || (self.motion == start && done) {
+                if self.motion == looped || (self.motion == start && done) || self.motion == walk || self.motion == run {
+                    // Into the loop, or from one gait's loop straight to the other's.
                     self.play(looped);
-                    1.0
-                } else if self.motion == start {
-                    (self.clock / self.length(start)).min(1.0)
-                } else if self.motion == walk || self.motion == run {
-                    // From one gait's loop straight to the other's.
-                    self.play(looped);
-                    1.0
-                } else {
+                } else if self.motion != start {
                     self.play(start);
-                    0.0
                 }
             }
-        };
-        if self.gait != Gait::Stand {
-            self.moving = self.gait;
-            // Turn toward the lean, the short way round.
-            let want = lean[0].atan2(lean[1]);
-            let mut d = (want - self.turn).rem_euclid(std::f32::consts::TAU);
-            if d > std::f32::consts::PI {
-                d -= std::f32::consts::TAU;
-            }
-            self.turn += d.clamp(-TURN_RATE * dt, TURN_RATE * dt);
         }
-        if speed <= 0.0 || self.moving == Gait::Stand {
-            return;
-        }
-        // Along where she faces (so a stop carries on her way).
-        let full = if self.moving == Gait::Run { self.run_speed } else { self.walk_speed };
-        let delta = [self.turn.sin() * full * speed * dt, self.turn.cos() * full * speed * dt];
+        self.moving = self.gait;
+        // Along the lean, at once, at its speed.
+        let delta = [lean[0] * FULL_SPEED * dt, lean[1] * FULL_SPEED * dt];
         let to = match walls {
             // A wall whose top is within a step of her feet (a floor's edge, a kerb) she steps
             // over: the walls see her from a step up.
             Some(w) => w.step([self.at.x, self.at.z], delta, self.at.y + STEP_UP, self.height - STEP_UP, self.radius),
             None => [self.at.x + delta[0], self.at.z + delta[1]],
         };
+        let before = self.at;
         match ground {
             // Off the ground, or up a ledge higher than a step: she stays.
             Some(g) => {
@@ -165,6 +147,21 @@ impl Player {
             }
             None => self.at = Vec3::new(to[0], self.at.y, to[1]),
         }
+        let moved = [self.at.x - before.x, self.at.z - before.z];
+        // Turn toward where she went (the lean, or along a wall she slid on; not at all while
+        // she is held), the short way round.
+        // Measured: walk-30 frames 2920-3040 (against a wall her facing and the camera follow
+        // her slide, and keep still when she is stuck in a corner).
+        if moved[0].hypot(moved[1]) > MOVED_LEAST {
+            let want = moved[0].atan2(moved[1]);
+            let mut d = (want - self.turn).rem_euclid(std::f32::consts::TAU);
+            // Measured: walk-30 frames 2560-2575 (turned half way round she goes the negative way).
+            if d > std::f32::consts::PI - HALF_TURN_TIE {
+                d -= std::f32::consts::TAU;
+            }
+            self.turn += d.clamp(-TURN_RATE * dt, TURN_RATE * dt);
+        }
+        moved
     }
 
     /// Seconds into the motion playing: around again for the loops, held at the end otherwise.

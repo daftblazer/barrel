@@ -799,6 +799,20 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
     the sine of the angle between (0.71 at 45 degrees); how it depends on speed is not sampled.
   - The eye at pitch 8 is 184.2 above her feet, 396.1 out: 400 along the view from a point
     128.5 above her feet.
+  - **Built (`barrel_ryza::walk`, the window and `barrel-tool walk` share its `step`).** Dead zones
+    0.2257 (left, from 108.9 at 12000) and 0.1651 (right), linear; speed 600 times the lean; she
+    moves along the stick against the camera as the frame began and faces where she went (a
+    slide along a wall included; still when held), 0.2 rad a frame, the negative way when exactly
+    half round; the camera turns 1.5 a frame, follows where she went at 1.0125 a frame times the
+    sine of the angle across its view (0.7125 measured at 45 degrees against 0.716 here: the
+    last half percent is not explained); pitch 0.9375 a frame times the stick for 8 frames at
+    75%, floor -9.12; below 5 degrees the eye comes in 4.6 and the look point rises 1.71 a degree
+    (fitted at the end of the walk: the data's both are linear in time, not in the pitch, and
+    the pitch slows over its last 5 frames: not explained). `tools/walkdiff.py OURS KEY`
+    diffs a headless walk (`barrel-tool walk`) with the key per frame, a line a segment.
+    Left (walk-30): the stairs' heights (7 up at the top step, 3.4 along), the camera starting
+    at 393.25 and 400 from her first step, a wall at z 33809 which Barrel's collision lacks
+    (she walks through; from frame 2920 on), the pitch's transient (0.6 degrees).
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair
