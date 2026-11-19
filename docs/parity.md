@@ -169,20 +169,24 @@ noon, against the view of the scoreboard row `rasen-3d-2550`).
 - Left out of the comparison as time-dependent: the cloud pattern's offsets (`mW2Pt` 12 and 13) and the sky
   strip's layer offsets (`vTexOf` 4 to 7), which are the wind's travel since the field came up.
 - The board row is `rasen-constants` in the local checks file: it passes while the differ count is
-  at or below the number reached (665 compared, 0 differ, 188 pairs not dumped). Besides the lights,
+  at or below the number reached (705 compared, 0 differ, 172 pairs not dumped). Besides the lights,
   fog, sky and post values of the stage's passes, the dump holds: the lighting pass's other
   stage draws and the water's (`lighting.stage1`, `.stage2`, `.water`, with the camera), the
   cascades' reach (`vSMDF`, from the ends the look carries), the settings of the effects the set
   switches off, read from the set (`fKIDSDOFType`, `fHexScale`, `fStarWeight`, `fLensFlareWeight`,
   the distant blur's two settings, the star merge weight as 1 over `nStarLines` (inferred), the
   light shaft's noise members, the screen size), so they show Barrel reads the same settings (the
-  effects stay off).
+  effects stay off), and the sun flare's (roles `sunvis`, pass 73, and `flare`, pass 74 draw 0: the
+  reference point, the speeds, `mRotation` and the wash's curves and colours). The reference point
+  `vShadowReferenceUV` is compared within 0.005 (the cascade fit), the tool's `CASCADE_FIT`; the
+  flare pass's draw 1 is skipped (`OVERWRITTEN`): the capture's constants of its two draws look
+  swapped, the image having the flare at the first's `fIntensity` 20, so the role takes draw 0.
 - No counterpart, so not dumped: the cascades' matrices (`mW2S`: Barrel's boxes differ from the
   game's by up to 0.5% in the second axis, and `sdplane` and `vS2VZ` follow from them; the
   static and sub maps' too), the other shadow switches, ambient occlusion, reflections, height
   fog, the light shafts' power, light position and blur weights, the star's weight ramps
   (`g_vStarWeight`), `fHexRenderWeight`, the vignette (`fLimbDarkening` and its weight: no member
-  found), the temporal anti-aliasing, the sun flare and paraffin wash, the water's other terms.
+  found), the temporal anti-aliasing, the water's other terms.
   light).
 
 ## The pixel board (Ryza fields)
@@ -194,7 +198,7 @@ come from the reference run's pixel mirror (ryza-recomp's `docs/DESIGN.md`, "Pix
 draw>_<target>` files, `.f32` with a `.txt` beside it or `.png`); the folder is read only here.
 
 - A **view file** (`docs/ryza/views/<name>.txt`: numbers and names only, no paths) says which
-  frame the board reads: per stage the game's dump file stem (`stage tone 2078-2078_rt1920x1080.90#7`),
+  frame the board reads: per stage the game's dump file stem (`stage tone 2084-2084_rt1920x1080.90#7`: the game's frame after the sun flare, the last draw of pass 74; the tone pass's own draw is five before),
   `masks` (the depth and stencil before the sky), `normal` (the G-buffer's normal target), `strip` (the two
   targets round the cloud strip, when the dump has them), `view` (the capture's `mWV` rotation, nine
   numbers, for the `normal` line) and the `region` lines (name and a box in the 1920 by 1080 picture).

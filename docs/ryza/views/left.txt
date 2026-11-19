@@ -11,7 +11,7 @@ stage sky 1644-1648_rt1920x1080.26#4
 stage scene 1732-1732_rt1920x1080.26#4
 stage bright 1747-1747_rt482x272.26#1
 stage bloom 1752-1752_rt240x135.26#1
-stage tone 1773-1773_rt1920x1080.90#7
+stage tone 1779-1779_rt1920x1080.90#7
 masks 1628-1631_rt1920x1080.19#15.depth
 normal 7-823_rt1920x1080.9#12
 # The capture's mWV rotation.

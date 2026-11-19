@@ -45,6 +45,8 @@ pub(super) struct Inputs<'a> {
     pub near: f32,
     pub far: f32,
     pub scene_size: (u32, u32),
+    /// The sun flare's settings, when the frame has them.
+    pub sun_flare: Option<&'a barrel_render::flare::Settings>,
 }
 
 type Consts = BTreeMap<&'static str, Vec<Option<f32>>>;
@@ -437,6 +439,42 @@ pub(super) fn json(i: &Inputs) -> String {
     tone.insert("fDistantBlurIntensity", some(&[light.distant_blur_intensity]));
     tone.insert("fFar", some(&[i.far]));
     put("tone", tone);
+
+    // The sun flare: the visibility pass (the reference point in the first cascade's map and the
+    // speeds) and the wash's second draw. The game's `mRotation` is a 4 x 4 matrix of which the
+    // tilt is the upper-left 2 x 2.
+    if let Some(s) = i.sun_flare {
+        let [c, sn, ns, _] = s.rotation;
+        let rotation = [c, sn, 0.0, 0.0, ns, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        put(
+            "sunvis",
+            Consts::from([
+                // Barrel's cascade is the mirror image of the game's (render space has x negated, and
+                // its map's y runs the other way): both uv components are turned back.
+                ("vShadowReferenceUV", some(&[1.0 - s.reference[0], 1.0 - s.reference[1], s.reference[2], s.reference[3]])),
+                ("bReverseFlag", some(&[barrel_ryza::flare::REVERSE_FLAG])),
+                ("fShadowIntensityUpSpeed", some(&[s.up_speed])),
+                ("fShadowIntensityDownSpeed", some(&[s.down_speed])),
+            ]),
+        );
+        put(
+            "flare",
+            Consts::from([
+                ("mRotation", some(&rotation)),
+                ("fFlareCurveCoefficient", some(&[s.flare.curve_coefficient])),
+                ("fFlareCurveCenter", some(&[s.flare.curve_center])),
+                ("fFlareAmount", some(&[s.flare.amount])),
+                ("fIntensity", some(&[s.intensity])),
+                ("fFlareShadowInfluenceRatio", some(&[s.flare.shadow_influence])),
+                ("fParaffinCurveCoefficient", some(&[s.paraffin.curve_coefficient])),
+                ("fParaffinCurveCenter", some(&[s.paraffin.curve_center])),
+                ("fParaffinAmount", some(&[s.paraffin.amount])),
+                ("fParaffinShadowInfluenceRatio", some(&[s.paraffin.shadow_influence])),
+                ("vFlareColor", some(&s.flare.color)),
+                ("vParaffinColor", some(&s.paraffin.color)),
+            ]),
+        );
+    }
 
     let mut out = String::from("{\n");
     for (n, (role, consts)) in roles.iter().enumerate() {

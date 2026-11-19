@@ -54,6 +54,8 @@ const ROLES: &[(&str, usize, usize)] = &[
     ("shaft.65", 65, 0),
     ("shaft.68", 68, 0),
     ("tone", 69, 0),
+    ("sunvis", 73, 0),
+    ("flare", 74, 0),
 ];
 
 /// The lighting and post passes: from the ambient-and-shadow pass to the last pass before the
@@ -70,6 +72,22 @@ const SKIPPED: &[&str] = &["mV2W", "mP2W", "mW2P", "mWV", "mRrW2T", "mL2W", "ktg
 fn same(a: f32, b: f32) -> bool {
     (a - b).abs() <= 1e-5 + 1e-3 * a.abs().max(b.abs())
 }
+
+/// Constants that depend on the shadow cascades' boxes, which Barrel fits about half a percent
+/// away from the game's (docs/shading.md, "The ambient-and-shadow pass"): they agree within
+/// this much, in absolute terms, instead of a thousandth.
+const CASCADE_FIT: &[(&str, f32)] = &[("vShadowReferenceUV", 5e-3)];
+
+fn agree(name: &str, a: f32, b: f32) -> bool {
+    CASCADE_FIT.iter().find(|c| c.0 == name).map_or_else(|| same(a, b), |c| (a - b).abs() <= c.1)
+}
+
+/// Draws of the game's frame Barrel does not make: the flare pass's two draws cover the same quad
+/// and the second overwrites the first, so Barrel makes one. Its constants are the capture's
+/// first draw's: the image the second draw leaves has the flare at the first's fIntensity (20; the
+/// second's recorded 15 gives half again too little), so the capture appears to attach the two
+/// draws' constants the other way round (docs/ryza/open.md).
+const OVERWRITTEN: &[(usize, usize)] = &[(74, 1)];
 
 /// `3.4560e-1`-free text of a float.
 fn text(v: f32) -> String {
@@ -110,7 +128,7 @@ pub fn constants(dir: &Path, frame: u64, barrel: &Path) -> Result<()> {
             // The game's copy of the constant (a name can sit in both stages' buffers): the one
             // that agrees best.
             let copies: Vec<&Vec<f32>> = g.vars.iter().filter(|v| &v.0 == name).map(|v| &v.2).collect();
-            let off = |c: &Vec<f32>| mine.iter().enumerate().filter(|(i, m)| m.is_some_and(|m| c.get(*i).is_none_or(|&x| !same(x, m)))).count();
+            let off = |c: &Vec<f32>| mine.iter().enumerate().filter(|(i, m)| m.is_some_and(|m| c.get(*i).is_none_or(|&x| !agree(name, x, m)))).count();
             let Some(best) = copies.iter().min_by_key(|c| off(c)) else {
                 println!("pass {pass} draw {draw} {program} {name}: the game's draw has no such constant");
                 continue;
@@ -119,7 +137,7 @@ pub fn constants(dir: &Path, frame: u64, barrel: &Path) -> Result<()> {
                 let Some(m) = *m else { continue };
                 compared += 1;
                 match best.get(i) {
-                    Some(&x) if same(x, m) => {}
+                    Some(&x) if agree(name, x, m) => {}
                     Some(&x) => {
                         differ += 1;
                         println!("pass {pass} draw {draw} {program} {name}[{i}]: game {} barrel {}", text(x), text(m));
@@ -142,7 +160,7 @@ pub fn constants(dir: &Path, frame: u64, barrel: &Path) -> Result<()> {
         }
         sizes.insert(p, b - a);
         for (d, g) in ds[*a..*b].iter().enumerate() {
-            if p == FORWARD_PASS && d >= FORWARD_KEPT {
+            if (p == FORWARD_PASS && d >= FORWARD_KEPT) || OVERWRITTEN.contains(&(p, d)) {
                 continue;
             }
             for (name, ..) in &g.vars {

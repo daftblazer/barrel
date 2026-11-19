@@ -15,6 +15,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub mod ao;
 pub mod clouds;
 pub mod dump;
+pub mod flare;
 pub mod fsr;
 pub mod glow;
 pub mod locate;

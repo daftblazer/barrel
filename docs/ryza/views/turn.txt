@@ -9,7 +9,7 @@ stage sky 1871-1875_rt1920x1080.26#4
 stage scene 2005-2005_rt1920x1080.26#4
 stage bright 2020-2020_rt482x272.26#1
 stage bloom 2025-2025_rt240x135.26#1
-stage tone 2046-2046_rt1920x1080.90#7
+stage tone 2052-2052_rt1920x1080.90#7
 masks 1857-1860_rt1920x1080.19#15.depth
 normal 5-745_rt1920x1080.9#12
 # The capture's mWV rotation.

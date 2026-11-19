@@ -1522,7 +1522,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let (lo, hi) = corners.fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(l, h), c| (l.min(c), h.max(c)));
             Some(acc.map_or((lo, hi), |(l, h)| (l.min(lo), h.max(hi))))
         });
-        let mut view = look_for(sub_box, center, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, static_box, title_clip, sky_clock);
+        // The point the sun's shadow is asked about for the sun flare: where the camera looks
+        // behind her (the player and her look height), else where it is aimed.
+        let sun_probe = rig.as_ref().map_or(center, |r| (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0));
+        let mut view = look_for(sub_box, center, sun_probe, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, static_box, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1713,6 +1716,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             clouds: view.clouds,
             water_pieces,
             occlusion: true,
+            sun_flare: view.sun_flare,
         };
         constants::write_if_asked(|| {
             Some(constants::json(&constants::Inputs {
@@ -1731,6 +1735,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 near: view.near,
                 far: view.far,
                 scene_size: renderer.targets.scene_size,
+                sun_flare: frame.sun_flare.as_ref(),
             }))
         });
         // The stage dumps (`BARREL_DUMP_STAGES`): the frame drawn again up to each stage, its
@@ -1882,6 +1887,8 @@ struct View {
     shadow_sub: Option<Mat4>,
     /// The static shadow layer wanted and its look slot (texel, layer to fill).
     shadow_far: Option<(Mat4, [f32; 4])>,
+    /// The sun flare's settings (`barrel_ryza::flare`), with the shadows it reads.
+    sun_flare: Option<barrel_render::flare::Settings>,
     sky_plane: bool,
     /// The sky's large clouds, when the set has them: what their maps are made from.
     clouds: Option<CloudFrame>,
@@ -1916,7 +1923,7 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, (world, terrain_box): ((Vec3, Vec3), bool), clip: Option<(f32, f32)>, seconds: f32) -> View {
+fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, (world, terrain_box): ((Vec3, Vec3), bool), clip: Option<(f32, f32)>, seconds: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -1931,6 +1938,7 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, d
     let mut shadow_far = None;
     let mut shadow_cascades = [None; 2];
     let mut shadow_sub = None;
+    let mut sun_flare = None;
     let eye_point = eye;
     for (k, (now, before)) in vp.to_cols_array_2d().into_iter().zip(prev_vp.unwrap_or(vp).to_cols_array_2d()).enumerate() {
         look[40 + k] = before;
@@ -2096,6 +2104,7 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, d
             };
             shadow_vp = slice(0.0, ends[0]);
             shadow_cascades = [Some(slice(ends[0], ends[1])), Some(slice(ends[1], ends[2]))];
+            sun_flare = Some(barrel_ryza::flare::settings(probe, shadow_vp, view, sun, width as f32 / height as f32));
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
@@ -2128,5 +2137,5 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, yaw: f32, pitch: f32, d
         }
         exposure_k = Some(k);
     }
-    View { look, vp, shadow_vp, shadow_cascades, shadow_sub, shadow_far, sky_plane, clouds, near, far, exposure: exposure_k }
+    View { look, vp, shadow_vp, shadow_cascades, shadow_sub, shadow_far, sun_flare, sky_plane, clouds, near, far, exposure: exposure_k }
 }

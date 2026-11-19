@@ -6,6 +6,7 @@ pub mod camera;
 pub mod chara;
 pub mod environment;
 pub mod face;
+pub mod flare;
 pub mod gimmick;
 pub mod grass;
 pub mod presets;

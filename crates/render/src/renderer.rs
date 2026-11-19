@@ -20,6 +20,8 @@ pub struct Renderer {
     pub instance_layout: vk::DescriptorSetLayout,
     pub terrain_layout: vk::DescriptorSetLayout,
     pub shadow_target: shadow::ShadowTarget,
+    /// Ryza's sun flare: the sun's visibility and the wash's settings (`flare.rs`).
+    pub sun: flare::Sun,
     pub shared: scene_gpu::Shared,
     black_cube: (vk::Image, vk::DeviceMemory, vk::ImageView),
     pub extent: vk::Extent3D,
@@ -220,6 +222,9 @@ pub struct Frame<'a> {
     /// Whether the game's frame has the screen-space ambient occlusion (`ao.rs`; Ryza's): it is
     /// made when the graphics setting `occlusion` is on too.
     pub occlusion: bool,
+    /// Ryza's sun flare and paraffin wash with the point the sun's shadow is asked about; none
+    /// for a game without it (Escha).
+    pub sun_flare: Option<flare::Settings>,
 }
 
 /// Points the water's refraction set at the refraction image.
@@ -495,16 +500,16 @@ impl Renderer {
         ];
         let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
         // The post pass's one texture: the scene.
-        let post_binding = [0, 1, 2, 3, 4].map(|b| {
+        let post_binding = [0, 1, 2, 3, 4, 5, 6].map(|b| {
             vk::DescriptorSetLayoutBinding::default()
                 .binding(b)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_type(if b == 5 { vk::DescriptorType::UNIFORM_BUFFER } else { vk::DescriptorType::COMBINED_IMAGE_SAMPLER })
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)
         });
         let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
         // Two sets: GSR 2 swaps its output each frame, and the post pass reads the one just written.
-        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 10 }];
+        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 12 }, vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 2 }];
         let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&post_sizes), None)? };
         let post_layouts = [post_set_layout, post_set_layout];
         let post_sets: [vk::DescriptorSet; 2] = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))? }
@@ -523,6 +528,8 @@ impl Renderer {
         let clear = [0u8; 4];
         let filter = upload_texture(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&clear[..]] }, false)?;
         write_filter(&gpu, &post_sets, post_sampler, filter.2);
+        let sun = flare::Sun::new(&gpu, (shadow_target.view, shadow_target.sampler), post_sampler)?;
+        write_wash(&gpu, &post_sets, post_sampler, &sun);
         let glow_pipelines = glow::Pipelines::new(&gpu, settings.hdr_scene)?;
         let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
         let upscale_pipelines = if settings.upscales() || settings.sharpen_only() { Some(upscale::Pipelines::new(&gpu, upscale_mode, settings.scene_format())?) } else { None };
@@ -776,7 +783,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -787,7 +794,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion, sun_flare } = *frame;
         let upto = self.upto.get();
         let Renderer { forward_pipeline, ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
@@ -1303,6 +1310,8 @@ impl Renderer {
             if let Some(t) = &timer {
                 t.mark(d, cb, 4);
             }
+            // The sun flare's visibility, and the wash's settings for the post pass.
+            self.sun.record(d, cb, sun_flare.as_ref());
             // The post pass: the scene back to its range with the glow, then the text over it.
             d.cmd_begin_render_pass(
                 cb,
@@ -1418,6 +1427,7 @@ impl Renderer {
             if let Some(m) = self.clouds.take() {
                 m.destroy(gpu);
             }
+            self.sun.destroy(gpu);
             d.destroy_pipeline(self.pipeline, None);
             d.destroy_pipeline_layout(self.pipeline_layout, None);
             d.destroy_shader_module(self.vs, None);
@@ -1463,6 +1473,20 @@ impl Renderer {
 }
 
 /// Points the post pass's binding 3 (the screen filter) at `view`, in both sets.
+/// Points the post pass's sets at the sun flare's settings buffer and sun visibility.
+fn write_wash(gpu: &Gpu, sets: &[vk::DescriptorSet; 2], sampler: vk::Sampler, sun: &flare::Sun) {
+    let buffer = [vk::DescriptorBufferInfo::default().buffer(sun.settings()).range(vk::WHOLE_SIZE)];
+    let image = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(sun.visibility()).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+    let writes = sets.iter().flat_map(|s| {
+        [
+            vk::WriteDescriptorSet::default().dst_set(*s).dst_binding(5).descriptor_type(vk::DescriptorType::UNIFORM_BUFFER).buffer_info(&buffer),
+            vk::WriteDescriptorSet::default().dst_set(*s).dst_binding(6).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&image),
+        ]
+    });
+    let writes: Vec<_> = writes.collect();
+    unsafe { gpu.device.update_descriptor_sets(&writes, &[]) };
+}
+
 fn write_filter(gpu: &Gpu, sets: &[vk::DescriptorSet; 2], sampler: vk::Sampler, view: vk::ImageView) {
     let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
     let writes = sets.map(|s| vk::WriteDescriptorSet::default().dst_set(s).dst_binding(3).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info));

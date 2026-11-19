@@ -15,6 +15,17 @@ layout(set = 0, binding = 4) uniform sampler2D exposure;
 // BT.601 luma (0: none), and in w a tone curve's white point (0: none): extended Reinhard,
 // c (1 + c / w²) / (1 + c), or with a gamma in pad.y the Ryza games' filmic curve over the
 // white point's, then that gamma.
+// Ryza's sun flare and paraffin wash (flare.rs): its constants, and the sun's visibility (a
+// one-pixel value, 1 where the sun is blocked).
+layout(set = 0, binding = 5) uniform Wash {
+    vec4 rotation;       // the screen's tilt: row 0 then row 1 of the 2x2
+    vec4 flare_color;    // vFlareColor (xyz, weight in w)
+    vec4 paraffin_color; // vParaffinColor
+    vec4 flare;          // fFlareAmount, fFlareCurveCenter, fFlareCurveCoefficient
+    vec4 paraffin;       // fParaffinAmount, fParaffinCurveCenter, fParaffinCurveCoefficient
+    vec4 extra;          // the two layers' shadow influence ratios, on (0: no wash), fIntensity
+} wash;
+layout(set = 0, binding = 6) uniform sampler2D sun_visibility;
 layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; vec4 screen; vec4 grade; } pc;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
@@ -60,6 +71,20 @@ void main() {
     if (pc.saturation.x > 0.0) {
         float y = dot(c, vec3(0.299, 0.587, 0.114));
         c = max(mix(vec3(y), c, pc.saturation.xyz), 0.0);
+    }
+    if (wash.extra.z > 0.5) {
+        // The wash lies on the finished picture (after the tone curve), as the game's pass does
+        // on its 8-bit result. p: the screen's uv tilted about its centre.
+        vec2 q = uv - 0.5;
+        vec2 p = q.x * wash.rotation.xy + q.y * wash.rotation.zw + 0.5;
+        float vis = texelFetch(sun_visibility, ivec2(0), 0).r;
+        float dp = wash.paraffin.y - p.x;
+        float df = wash.flare.y - p.x;
+        float lit = clamp(wash.paraffin.z * dp * dp + p.y - (1.0 - wash.paraffin.x), 0.0, 255.0);
+        lit *= wash.extra.w * clamp(wash.extra.y, 0.0, 1.0) * vis * wash.paraffin_color.w;
+        float glow = clamp(wash.flare.x - (wash.flare.z * df * df + p.y), 0.0, 255.0);
+        glow *= wash.extra.w * (1.0 - vis * clamp(wash.extra.x, 0.0, 1.0));
+        c = (c + wash.flare_color.w * wash.flare_color.xyz * glow) * (1.0 + lit * (wash.paraffin_color.xyz - 1.0));
     }
     color = vec4(mix(c, pc.overlay.rgb, clamp(pc.overlay.a, 0.0, 1.0)), 1.0);
 }

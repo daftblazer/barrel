@@ -189,10 +189,15 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     of the screen (the far view), 0 below the middle. The curve is written by the CPU at load
     (no draw writes it in frames 1700 to 2600; the capture logs no texture uploads): what
     builds it (the field's or camera's focus settings) is not read.
-  - Also on: the sun flare and paraffin wash (pass 73 reads the cascade into a 1 × 1 sun visibility, pass 74
-    draws two screen quads with it: `fFlareAmount` 0.6, `fParaffinAmount` 0.2, `fIntensity`
-    20 and 15, `vFlareColor`, `vParaffinColor`, `mRotation`; the set's lens-flare block holds
-    them), the game's TAA (pass 72, `g_cbTemporalAAParam` 960, 0.1, 0.05, 0.2, `jitterScale`
+  - Also on, and now drawn: the sun flare and paraffin wash (docs/renderer.md, "The sun flare").
+    Open: the set holds none of its numbers (none of Rasenboden's 12 sets; the executable's
+    reader `0x140093a60` of the `EnvFlareParaffin` block has defaults for the curves, amounts 0.1
+    and 0.2, and intensity 20, but not for the colours, set at start-up, and the capture's
+    flare amount is 0.6), so colours, amount and intensity are stand-ins; the capture's `fIntensity`
+    of the kept draw (#2084) says 15 while the final image has 20 (the first draw's), so its two
+    draws' constants look swapped; the screen's tilt is fitted to three views; the reference
+    point is the camera's focus (the player plus her look height, 128) to within the cascade fit.
+    Also on: the game's TAA (pass 72, `g_cbTemporalAAParam` 960, 0.1, 0.05, 0.2, `jitterScale`
     0.5; Barrel's TAA is an option of its own) and two textured screen quads (pass 76,
     `materialColor` 1, not identified).
 

@@ -1236,6 +1236,21 @@ models, the normal map; for her, the toon ramp) and 3 its emission map (`Draw::e
 material's kind-19 texture), white where a draw has none. The fragment program reads set 3
 only under flag 32768, so a game that never sets it (Escha) draws as before.
 
+## The sun flare (Ryza)
+
+After the tone curve the game washes the frame with a warm flare along the top and a paraffin
+tint where the sun is not blocked (its pass 73 and 74; `render::flare`, `barrel_ryza::flare`,
+`post.frag`'s `wash`). The sun's visibility is a one-pixel value (two R16 targets, drawn from
+the kept one and kept again) that moves a sixtieth a frame toward 1 while a reference point near
+the player is in the first cascade's shadow and toward 0 while it is lit (`sunvis.frag`). The
+point is the camera's focus (the player at her look height) in the first cascade's map, uv and
+depth; Barrel's cascade is the game's mirrored, so the dump turns its uv back. The wash is read
+from a small uniform buffer written every frame with `cmd_update_buffer` (no settings: off, which
+is Escha's case). The tilt of the screen is the angle of the sun's direction on screen from
+vertical with the uv square's aspect (`atan(-x / (y * aspect))`, fitted to three views). The
+lighting sets hold none of the flare's numbers (checked in all twelve of Rasenboden's), so colours,
+amount and intensity are stand-ins from the capture; the executable's defaults supply the curves.
+
 ## The forward pass over Ryza's characters
 
 After the scene's models (and the Escha outlines' place), the draws that take the toon ramp
