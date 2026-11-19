@@ -145,7 +145,8 @@ impl RenderSettings {
 /// Barrel's graphics config (its own file, not the game's: the Options screen's graphics page
 /// writes it): one `key value` a line, `scale`, `upscaler` (bilinear, fsr1, gsr1), `msaa`,
 /// `shadows` (high, low), `taa`, `sharpen`, `gsr2`, `fsr3` (on, off), `anisotropy`, `foliage`
-/// (full, reduced, least), `occlusion` (on, off).
+/// (full, reduced, least), `occlusion`, `reflections`, `depth_of_field` (on, off; the last two
+/// Ryza's only).
 impl RenderSettings {
     pub fn to_config(&self) -> String {
         let on = |b: bool| if b { "on" } else { "off" };
@@ -156,14 +157,16 @@ impl RenderSettings {
         };
         let shadows = if self.shadows.size >= Shadows::DESKTOP.size { "high" } else { "low" };
         format!(
-            "scale {}\nupscaler {upscaler}\nmsaa {}\nshadows {shadows}\ntaa {}\nsharpen {}\ngsr2 {}\nfsr3 {}\nanisotropy {}\nfoliage {}\nocclusion {}\n",
+            "scale {}\nupscaler {upscaler}\nmsaa {}\nshadows {shadows}\ntaa {}\nsharpen {}\ngsr2 {}\nfsr3 {}\nanisotropy {}\nfoliage {}\nocclusion {}\nreflections {}\ndepth_of_field {}\n",
             self.scale, self.msaa, on(self.taa), on(self.sharpen), on(self.gsr2), on(self.fsr3), self.anisotropy,
             match self.foliage {
                 Foliage::Full => "full",
                 Foliage::Reduced => "reduced",
                 Foliage::Least => "least",
             },
-            on(self.occlusion)
+            on(self.occlusion),
+            on(self.reflections),
+            on(self.depth_of_field)
         )
     }
 
@@ -174,7 +177,12 @@ impl RenderSettings {
     }
 
     pub fn from_config(text: &str) -> RenderSettings {
-        let mut s = Self::DESKTOP;
+        Self::from_config_over(Self::DESKTOP, text)
+    }
+
+    /// The settings a config gives over `base` (a game's own defaults), resolved.
+    pub fn from_config_over(base: RenderSettings, text: &str) -> RenderSettings {
+        let mut s = base;
         for line in text.lines() {
             let Some((key, value)) = line.trim().split_once(' ') else { continue };
             let value = value.trim();
@@ -196,6 +204,8 @@ impl RenderSettings {
                 "fsr3" => s.fsr3 = on,
                 "anisotropy" => s.anisotropy = value.parse::<u32>().map_or(s.anisotropy, |v| v.clamp(1, 16)),
                 "occlusion" => s.occlusion = on,
+                "reflections" => s.reflections = on,
+                "depth_of_field" => s.depth_of_field = on,
                 "foliage" => {
                     s.foliage = match value {
                         "reduced" => Foliage::Reduced,

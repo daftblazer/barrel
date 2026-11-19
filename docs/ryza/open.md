@@ -894,6 +894,16 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   Options to be the game's: the same items, the same values, the presets' tables (docs/formats.md,
   "Ryza DX: the graphics presets"). Not read yet: what each value means (which index is High,
   whether 0 is off for the switches, what QUALITY_ALL 3 is).
+  Timed on the RP6 the same day (offscreen, 1920x1080, the gate after the opening,
+  `--done MM00_010`, medians): the settings it played at (scale 1, full plants, AO, reflections
+  and depth of field) 87.5 ms: AO 15.3, reflections and depth of field 24.4 together (they run
+  only with AO on), the rest 44.4. The handheld preset 34.9 ms (it was 14.1 on 2026-11-14's
+  build: that run had no `--done`, 32,980 plants in 66 draws against 90,462 in 1,432 after the
+  opening). Bisected on the device at the handheld preset: the plants after the opening +1.8 ms;
+  the three cascades and static layer (21ba11a) +6.4 (shadow +3.4); 20bcaef..688b35c +2.4; the
+  characters' map's 16 taps over the whole view (bcfe208) +4.8; 5204466..eb78689 +4.4, not
+  split yet. Each is the game's own pass; whether the game's Low settings skip or shrink them is
+  what reading its settings answers.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment

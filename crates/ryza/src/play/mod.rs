@@ -555,15 +555,17 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
     let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
+    // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
+    // (`Frame::tone_white`) sees past the half range's 2.0. Its reflections and depth of field
+    // are on with a preset; a config can turn them off.
+    let ryza = |s: RenderSettings| RenderSettings { hdr_scene: true, reflections: true, depth_of_field: true, ..s };
     let graphics = a
         .preset
-        .or(config.as_deref().map(RenderSettings::from_config))
-        .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)))
-        .unwrap_or(RenderSettings::DESKTOP)
+        .map(ryza)
+        .or(config.as_deref().map(|c| RenderSettings { hdr_scene: true, ..RenderSettings::from_config_over(ryza(RenderSettings::DESKTOP), c) }))
+        .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)).map(ryza))
+        .unwrap_or(ryza(RenderSettings::DESKTOP))
         .resolved();
-    // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
-    // (`Frame::tone_white`) sees past the half range's 2.0.
-    let graphics = RenderSettings { hdr_scene: true, reflections: true, depth_of_field: true, ..graphics };
     // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
     // them, the handheld setting's in the same share.
     let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };
