@@ -161,8 +161,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
-- **The post constants Barrel does not dump** (P2; `rasen-constants`: 502 compared, 0 differ,
-  231 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 665 compared, 0 differ,
+  188 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
   lists them by pass). They split three ways:
   - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
     shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `vSMDF`,

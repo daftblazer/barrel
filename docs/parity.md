@@ -169,9 +169,20 @@ noon, against the view of the scoreboard row `rasen-3d-2550`).
 - Left out of the comparison as time-dependent: the cloud pattern's offsets (`mW2Pt` 12 and 13) and the sky
   strip's layer offsets (`vTexOf` 4 to 7), which are the wind's travel since the field came up.
 - The board row is `rasen-constants` in the local checks file: it passes while the differ count is
-  at or below the number reached. The not-dumped list is the map of what Barrel has no
-  counterpart for (ambient occlusion, reflections, height fog, light shafts, the star filter,
-  the depth of field, the temporal anti-aliasing, the shadow cascades, the water's own
+  at or below the number reached (665 compared, 0 differ, 188 pairs not dumped). Besides the lights,
+  fog, sky and post values of the stage's passes, the dump holds: the lighting pass's other
+  stage draws and the water's (`lighting.stage1`, `.stage2`, `.water`, with the camera), the
+  cascades' reach (`vSMDF`, from the ends the look carries), the settings of the effects the set
+  switches off, read from the set (`fKIDSDOFType`, `fHexScale`, `fStarWeight`, `fLensFlareWeight`,
+  the distant blur's two settings, the star merge weight as 1 over `nStarLines` (inferred), the
+  light shaft's noise members, the screen size), so they show Barrel reads the same settings (the
+  effects stay off).
+- No counterpart, so not dumped: the cascades' matrices (`mW2S`: Barrel's boxes differ from the
+  game's by up to 0.5% in the second axis, and `sdplane` and `vS2VZ` follow from them; the
+  static and sub maps' too), the other shadow switches, ambient occlusion, reflections, height
+  fog, the light shafts' power, light position and blur weights, the star's weight ramps
+  (`g_vStarWeight`), `fHexRenderWeight`, the vignette (`fLimbDarkening` and its weight: no member
+  found), the temporal anti-aliasing, the sun flare and paraffin wash, the water's other terms.
   light).
 
 ## The pixel board (Ryza fields)

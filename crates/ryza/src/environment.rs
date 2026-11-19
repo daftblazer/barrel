@@ -117,6 +117,19 @@ pub struct Light {
     pub bloom_weight: f32,
     /// `trueHDR_fLumiThreshold`: the bloom's bright-pass threshold (0.3; Rasenboden's evening 0.8).
     pub lumi_threshold: f32,
+    /// The effects the game's post chain runs from this block, which Barrel does not draw (they
+    /// are off at Rasenboden's noon: weights 0): `fHexScale` and `fKIDSDOFType` (the depth of
+    /// field), `fDistantBlurZThreshold` and `fDistantBlurIntensity`, `fStarWeight` and
+    /// `nStarLines` (the star filter), `fLensFlareWeight`.
+    pub hex_scale: f32,
+    pub distant_blur_z_threshold: f32,
+    pub distant_blur_intensity: f32,
+    pub dof_type: f32,
+    pub star_weight: f32,
+    pub star_lines: f32,
+    pub lens_flare_weight: f32,
+    /// `lightShaft_`'s `NoiseScale`, `NoiseFrequency` and `NoiseWeight`.
+    pub shaft_noise: [f32; 3],
     /// `mainAmbientLight_color`.
     pub ambient: [f32; 3],
     /// `parallelLight00` (the sun) and `parallelLight01`.
@@ -134,6 +147,15 @@ const DARK_ADAPTED_SCALE: usize = 0x2c;
 const GAMMA: usize = 0x40;
 const LUMI_THRESHOLD: usize = 0x18;
 const COLOR_SCALE: usize = 0x44;
+const HEX_SCALE: usize = 0x08;
+const DISTANT_BLUR_Z_THRESHOLD: usize = 0x0c;
+const DISTANT_BLUR_INTENSITY: usize = 0x10;
+const DOF_TYPE: usize = 0x14;
+const STAR_WEIGHT: usize = 0x60;
+const STAR_LINES: usize = 0x64;
+const LENS_FLARE_WEIGHT: usize = 0x74;
+/// `lightShaft_` is at 0x33c in the file; its noise members follow the block's first 0x14 bytes.
+const SHAFT_NOISE: usize = 0x33c + 0x14;
 const BLOOM_WEIGHT: usize = 0x5c;
 const MAIN_AMBIENT: usize = 0x484;
 const PARALLEL: usize = 0x494;
@@ -631,6 +653,14 @@ impl Light {
             color_scale: rgb(COLOR_SCALE),
             bloom_weight: f(BLOOM_WEIGHT),
             lumi_threshold: f(LUMI_THRESHOLD),
+            hex_scale: f(HEX_SCALE),
+            distant_blur_z_threshold: f(DISTANT_BLUR_Z_THRESHOLD),
+            distant_blur_intensity: f(DISTANT_BLUR_INTENSITY),
+            dof_type: f(DOF_TYPE),
+            star_weight: f(STAR_WEIGHT),
+            star_lines: f(STAR_LINES),
+            lens_flare_weight: f(LENS_FLARE_WEIGHT),
+            shaft_noise: rgb(SHAFT_NOISE),
             ambient: rgb(MAIN_AMBIENT), parallel: [parallel(0), parallel(1)] })
     }
 }
@@ -680,6 +710,9 @@ mod tests {
         }
         put(0x5c, 0.6);
         put(0x18, 0.8);
+        for (o, v) in [(0x08, 0.5), (0x0c, 10000.0), (0x10, 1.0), (0x14, 2.0), (0x60, 0.3), (0x64, 4.0), (0x74, 0.2), (0x350, 0.4), (0x354, 0.8), (0x358, 1.0)] {
+            put(o, v);
+        }
         for (k, v) in [5.0, 2.074, 1.0, 30.0, -30.0].into_iter().enumerate() {
             put(0x494 + 4 * k, v);
         }
@@ -688,6 +721,8 @@ mod tests {
         assert_eq!((l.exposure_range, l.gamma, l.color_scale, l.bloom_weight), ((0.9, 2.4), 2.2, [1.2, 1.1, 1.0], 0.6));
         assert_eq!((l.light_adapted_scale, l.dark_adapted_scale), (0.5, 0.3));
         assert_eq!(l.lumi_threshold, 0.8);
+        assert_eq!((l.hex_scale, l.distant_blur_z_threshold, l.distant_blur_intensity, l.dof_type), (0.5, 10000.0, 1.0, 2.0));
+        assert_eq!((l.star_weight, l.star_lines, l.lens_flare_weight, l.shaft_noise), (0.3, 4.0, 0.2, [0.4, 0.8, 1.0]));
         assert_eq!(l.parallel[0], ParallelLight { color: [5.0, 2.074, 1.0], elevation: 30.0, azimuth: -30.0 });
         assert!(Light::read(&env[1..], Time::Noon, Weather::Sunny).is_err());
     }

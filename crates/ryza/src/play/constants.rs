@@ -148,6 +148,18 @@ pub(super) fn json(i: &Inputs) -> String {
     lighting.insert("litCol", lit_col);
     lighting.insert("vEye", v_eye.clone());
     put("lighting.stage", lighting.clone());
+    // The lighting pass's second and third draws light the same stage with the same lights.
+    put("lighting.stage1", lighting.clone());
+    put("lighting.stage2", lighting.clone());
+    // The water's lighting pass takes the same lights and the camera (its position, and the
+    // way it looks as the shadow slots carry it).
+    let mut water_light = lighting.clone();
+    water_light.insert("vCameraPos", some(&[-eye[0], eye[1], eye[2]]));
+    let fwd = look[SHADOW_CASCADE_SLOT + 9];
+    if fwd[..3] != [0.0; 3] {
+        water_light.insert("vCameraDir", some(&world(fwd)));
+    }
+    put("lighting.water", water_light);
     // The forward pass over the characters takes the stage's lights at the set's own colours (the
     // lighting pass's are those times the stage's key and second light scales).
     let mut forward = lighting.clone();
@@ -193,6 +205,13 @@ pub(super) fn json(i: &Inputs) -> String {
     ambient.insert("vAmbParam", vec![Some(i.stage.diffuse_map), Some(0.0), None, None]);
     ambient.insert("vAmbDifScl", vec![Some(i.stage.diffuse_map_color[0]), Some(i.stage.diffuse_map_color[1]), Some(i.stage.diffuse_map_color[2]), None]);
     ambient.insert("ambLit", some(&[stage_ambient[0], stage_ambient[1], stage_ambient[2], 1.0]));
+    // `vSMDF`: how far each cascade reaches past the first one's end (the shader's picking and
+    // blend); the third word is not placed. Barrel's ends are `CASCADE_ENDS` as the look carries
+    // them (`SHADOW_CASCADE_SLOT + 8`, times the shadow reach).
+    let ends = look[SHADOW_CASCADE_SLOT + 8];
+    if ends[0] > 0.0 {
+        ambient.insert("vSMDF", vec![Some(ends[1] - ends[0]), Some(ends[2] - ends[0]), None, None]);
+    }
     put("ambient.stage", ambient.clone());
     // The second kind of surface (its `ambLit` is the sky dome's own ambient): lit by the dome's
     // light slot, with no light map and no cloud pattern.
@@ -201,6 +220,9 @@ pub(super) fn json(i: &Inputs) -> String {
     second.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
     second.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     second.insert("ambLit", some(&[dome_ambient[0], dome_ambient[1], dome_ambient[2], 1.0]));
+    if let Some(v) = ambient.get("vSMDF") {
+        second.insert("vSMDF", v.clone());
+    }
     put("ambient.second", second);
     // The characters' flat ambient: the set's ambient at the characters' scale; their light map
     // is folded into it (no counterpart in the dump).
@@ -209,6 +231,9 @@ pub(super) fn json(i: &Inputs) -> String {
     ch.insert("vAmbParam", vec![Some(chara.diffuse_map), Some(0.0), None, None]);
     ch.insert("vAmbDifScl", vec![Some(chara.diffuse_map_color[0]), Some(chara.diffuse_map_color[1]), Some(chara.diffuse_map_color[2]), None]);
     ch.insert("ambLit", some(&[chara_ambient[0], chara_ambient[1], chara_ambient[2], 1.0]));
+    if let Some(v) = ambient.get("vSMDF") {
+        ch.insert("vSMDF", v.clone());
+    }
     put("ambient.chara", ch);
 
     // The scene's fog (the lighting passes' and the specular ambient's), the sky's, and the sky's
@@ -229,7 +254,10 @@ pub(super) fn json(i: &Inputs) -> String {
     sky_scene.insert("fog", fog_xy(look[s0 + 6]));
     sky_scene.insert("Scat", scat(&look[s0 + 1..s0 + 5], k, true));
     sky_scene.insert("vEye", v_eye.clone());
-    put("fog.sky", sky_scene.clone());
+    let mut sky_lit = sky_scene.clone();
+    sky_lit.insert("litDir", some(&[dirs[0][0], dirs[0][1], dirs[0][2], 0.0]));
+    sky_lit.insert("litCol", some(&[sun[0], sun[1], sun[2], 1.0]));
+    put("fog.sky", sky_lit);
 
     let mut plane = Consts::new();
     plane.insert("fog", fog_xy(look[s0 + 6]));
@@ -256,6 +284,9 @@ pub(super) fn json(i: &Inputs) -> String {
     dome.insert("fog", fog_xy(look[s0 + 6]));
     dome.insert("Scat", scat(&look[s0 + 1..s0 + 5], k, true));
     dome.insert("vEye", v_eye.clone());
+    // The dome's surface takes no light map (as the second kind of stage surface).
+    dome.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
+    dome.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     put("sky.dome0", dome.clone());
     put("sky.dome1", dome);
 
@@ -280,6 +311,12 @@ pub(super) fn json(i: &Inputs) -> String {
     strip.insert("Scat", scat(&look[c0 + 8..c0 + 12], k, true));
     strip.insert("vTraceParams", some(&look[c0 + 6]));
     strip.insert("vTraceDeltaScale", some(&[look[c0 + 7][0], look[c0 + 7][1]]));
+    // A second draw of the cloud pieces takes the same light.
+    let mut strip2 = Consts::new();
+    for name in ["litDir", "litCol", "ambLit"] {
+        strip2.insert(name, strip[name].clone());
+    }
+    put("sky.clouds2", strip2);
     put("sky.clouds", strip);
 
     // The ambient occlusion's pass (its program's constants: the depth terms
@@ -326,6 +363,14 @@ pub(super) fn json(i: &Inputs) -> String {
             let mut c = Consts::new();
             c.insert("vAlbedoColor", vec![Some(body[0]), Some(body[1]), Some(body[2]), None]);
             c.insert("vReflectance", vec![Some(body[3]), None, None, None]);
+            c.insert("vEye", v_eye.clone());
+            let f = world(look[SHADOW_CASCADE_SLOT + 9]);
+            if f != [0.0; 3] {
+                let xz = (f[0] * f[0] + f[2] * f[2]).sqrt();
+                c.insert("vRrCameraPos", v_eye.clone());
+                c.insert("vRrCameraDir", some(&[f[0], f[1], f[2], 0.0]));
+                c.insert("vCameraDirXZ", vec![Some(f[0] / xz), Some(f[2] / xz), None, None]);
+            }
             put(role, c);
         }
     }
@@ -359,6 +404,38 @@ pub(super) fn json(i: &Inputs) -> String {
     // The curve's normalisation: the post pass divides by the curve at the white point.
     let f = |x: f32| (x * (0.22 * x + 0.03) + 0.002) / (x * (0.22 * x + 0.3) + 0.06) - 0.0333;
     tone.insert("SimulateHDRParams", some(&[1.0 / f(i.tone_white), f(i.tone_white)]));
+    // The effects the set switches off here, which Barrel does not draw: their settings as the
+    // set's `trueHDR_` block and `lightShaft_` hold them (a weight of 0 is what makes not drawing
+    // right), and the tone pass's distant blur settings, also read from the set. Not dumped:
+    // `fHexRenderWeight`, the star's weight ramps, the shaft's power and light position, the
+    // blur's weights and the vignette (no member found for them).
+    let screen = some(&[i.scene_size.0 as f32, i.scene_size.1 as f32]);
+    let dof = Consts::from([("fKIDSDOFType", some(&[light.dof_type]))]);
+    put("dof.31", dof.clone());
+    let mut dof_hex = dof.clone();
+    dof_hex.insert("fHexScale", some(&[light.hex_scale]));
+    for role in ["dof.32", "dof.33", "dof.34", "dof.35", "dof.36", "dof.37"] {
+        put(role, dof_hex.clone());
+    }
+    // The merge pass of each of the star's lines (one in `nStarLines`) takes its share of the
+    // sum (inferred from nStarLines 4 and the capture's 0.25; the other passes' weight is 1).
+    let merge = Consts::from([("g_fStarMergeWeight", some(&[1.0 / light.star_lines]))]);
+    if light.star_lines > 0.0 {
+        for role in ["star.51", "star.54", "star.57", "star.60"] {
+            put(role, merge.clone());
+        }
+    }
+    let [scale, frequency, weight] = light.shaft_noise;
+    put("shaft.63", Consts::from([("vLightShaftNoizeParams", some(&[scale, frequency, weight, 0.0]))]));
+    put("shaft.65", Consts::from([("vScreenSize", screen.clone())]));
+    put("shaft.68", Consts::from([("vScreenSize", screen.clone())]));
+    tone.insert("vScreenSize", screen);
+    tone.insert("fKIDSDOFType", some(&[light.dof_type]));
+    tone.insert("fStarWeight", some(&[light.star_weight]));
+    tone.insert("fLensFlareWeight", some(&[light.lens_flare_weight]));
+    tone.insert("fDistantBlurZThreshold", some(&[light.distant_blur_z_threshold]));
+    tone.insert("fDistantBlurIntensity", some(&[light.distant_blur_intensity]));
+    tone.insert("fFar", some(&[i.far]));
     put("tone", tone);
 
     let mut out = String::from("{\n");
