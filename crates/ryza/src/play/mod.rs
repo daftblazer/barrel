@@ -2104,7 +2104,9 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, 
                 }
                 shadow::fit_view_proj(&points, sun, plane)
             };
-            shadow_vp = slice(0.0, ends[0]);
+            // The first cascade starts at the near plane (the game's box round the slice from z 50
+            // to 1600 maps onto its map exactly; from the eye it is 0.4% off).
+            shadow_vp = slice(near, ends[0]);
             shadow_cascades = [Some(slice(ends[0], ends[1])), Some(slice(ends[1], ends[2]))];
             sun_flare = Some(barrel_ryza::flare::settings(flare_look, probe, shadow_vp, view, sun, width as f32 / height as f32));
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
