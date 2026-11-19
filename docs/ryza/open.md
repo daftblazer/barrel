@@ -201,6 +201,11 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     without them) are not read; the screen's tilt is fitted to three views; the reference
     point is the camera's focus (the player plus her look height, 128) to within the cascade fit;
     the step 1/60 a frame is not sourced.
+    What is left of the gate's pixel score (3.96 of 255 over the frame): fine detail, not
+    colour (over 120-pixel blocks the error is 1.27); Barrel's picture has 25 to 35% more edge
+    contrast than the game's in every band of rows, the bottom (no depth of field) included, so
+    most of it is the game's TAA softening. Barrel's own TAA (`--preset desktop-taa`) scores 6.72
+    on the board's one still frame (no history, and it sharpens), so the board stays without it.
     Also on: the game's TAA (pass 72, `g_cbTemporalAAParam` 960, 0.1, 0.05, 0.2, `jitterScale`
     0.5; Barrel's TAA is an option of its own) and two textured screen quads (pass 76,
     `materialColor` 1, not identified).
