@@ -222,6 +222,9 @@ pub(super) fn json(i: &Inputs) -> String {
         let pick = shadow_planes(cascade, forward, eye, ends[0], ends[2], ends[3]);
         ambient.insert("vS2VZ", some(&pick[0]));
         ambient.insert("sdplane", some(&pick[1]));
+        // `scSMD`: each cascade's map, its texel and its size ({1/w, 1/h, w, h}).
+        let maps: Vec<f32> = (0..3).flat_map(|k| { let [_, _, tu, tv] = look[SHADOW_SIDES_SLOT + k]; [tu, tv, 1.0 / tu, 1.0 / tv] }).collect();
+        ambient.insert("scSMD", some(&maps));
     }
     put("ambient.stage", ambient.clone());
     // The second kind of surface (its `ambLit` is the sky dome's own ambient): lit by the dome's
@@ -231,7 +234,7 @@ pub(super) fn json(i: &Inputs) -> String {
     second.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
     second.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     second.insert("ambLit", some(&[dome_ambient[0], dome_ambient[1], dome_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane"] {
+    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD"] {
         if let Some(v) = ambient.get(name) {
             second.insert(name, v.clone());
         }
@@ -244,7 +247,7 @@ pub(super) fn json(i: &Inputs) -> String {
     ch.insert("vAmbParam", vec![Some(chara.diffuse_map), Some(0.0), None, None]);
     ch.insert("vAmbDifScl", vec![Some(chara.diffuse_map_color[0]), Some(chara.diffuse_map_color[1]), Some(chara.diffuse_map_color[2]), None]);
     ch.insert("ambLit", some(&[chara_ambient[0], chara_ambient[1], chara_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane"] {
+    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD"] {
         if let Some(v) = ambient.get(name) {
             ch.insert(name, v.clone());
         }

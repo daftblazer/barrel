@@ -387,6 +387,18 @@ const GLOW_RANGE: f32 = 2.0;
 // STAND-IN: The cascades' ends along the view are the game's ambient-and-shadow pass's at Rasenboden's gate (`vS2VZ` and `vSMDF`: the second cascade from 1600, the third from 1600 + 2000, the static layer from 10000) and the fade into it its `sdplane`'s 3500; the real thing is how the game sets them each frame, not found (the set's `shadowMap_ShadowCascadeStart` words hold other numbers).
 const CASCADE_ENDS: [f32; 3] = [1600.0, 3600.0, 10000.0];
 const CASCADE_BLEND: f32 = 3500.0;
+/// The game's shadow maps in texels (width, height) on the desktop: the three cascades (its
+/// ambient-and-shadow pass's `scSMD` and textures at the gate: 2000 x 2400, 2000 x 2400, 1600 x
+/// 1600), the static layer (its 2048-square semi-static map) and the characters' (`scSubSM`,
+/// 1024). The shadow image's layers are `SHADOW_LAYER` a side on the desktop; a lower
+/// setting's smaller image scales them all.
+const SHADOW_MAPS: [[u32; 2]; shadow::CASCADES] = [[2000, 2400], [2000, 2400], [1600, 1600], [2048, 2048], [1024, 1024]];
+const SHADOW_LAYER: u32 = 2400;
+
+/// The maps' sizes in a shadow image `size` texels a side.
+fn shadow_maps(size: u32) -> [[u32; 2]; shadow::CASCADES] {
+    SHADOW_MAPS.map(|m| m.map(|v| (v as u64 * size as u64 / SHADOW_LAYER as u64) as u32))
+}
 // STAND-IN: The cascades' depth begins this far from the camera toward the sun, one plane for all three (the pass's `mW2S` at the gate: 36755); the real thing is where the game takes that plane from (the field's bounds?), not found.
 const CASTER_PLANE: f32 = 36_755.0;
 /// How the game writes the cascades' depth (its shadow passes' `sbias` at the gate): slope
@@ -552,6 +564,9 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
     // (`Frame::tone_white`) sees past the half range's 2.0.
     let graphics = RenderSettings { hdr_scene: true, ..graphics };
+    // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
+    // them, the handheld setting's in the same share.
+    let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };
     let install = Install::open(Path::new(&a.install))?;
     if let Some(save) = &a.save {
         let state = barrel_ryza::save::decode(&barrel_files::read(Path::new(save))?).map_err(|e| format!("{save}: {e}"))?;
@@ -1684,6 +1699,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
             shadow_cascades: view.shadow_cascades,
+            shadow_sides: Some(shadow_maps(renderer.shadow_target.size)),
             shadow_sub: view.shadow_sub.map(|vp| (vp, SUB_BIAS.map(|(slope, constant)| shadow::Bias { slope, constant, alpha_ref: CASCADE_ALPHA_REF }))),
             shadow_bias: view.shadow_cascades[0].map(|_| CASCADE_BIAS.map(|(slope, constant)| shadow::Bias { slope, constant, alpha_ref: CASCADE_ALPHA_REF })),
             alpha_cutoff: MODEL_ALPHA_REF,
@@ -2113,6 +2129,9 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, 
                 look[27 + k] = col;
             }
             look[31] = [1.0 / size as f32, 1.0, 1.0, 0.0];
+            for (k, [w, h]) in shadow_maps(size).into_iter().take(4).enumerate() {
+                look[SHADOW_SIDES_SLOT + k] = [w as f32 / size as f32, h as f32 / size as f32, 1.0 / w as f32, 1.0 / h as f32];
+            }
             for (c, m) in shadow_cascades.iter().enumerate() {
                 for (k, col) in m.unwrap_or_default().to_cols_array_2d().into_iter().enumerate() {
                     look[SHADOW_CASCADE_SLOT + 4 * c + k] = col;
@@ -2125,7 +2144,7 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, 
                 let (lo, hi) = (lo - Vec3::splat(SUB_BOX_PAD), hi + Vec3::splat(SUB_BOX_PAD));
                 let corners: [Vec3; 8] = std::array::from_fn(|k| Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
                 let vp = shadow::fit_view_proj(&corners, sun, f32::MAX);
-                let side = shadow::SUB_SIZE.min(size) as f32;
+                let side = shadow_maps(size)[shadow::SUB_LAYER][0] as f32;
                 for (k, col) in vp.to_cols_array_2d().into_iter().enumerate() {
                     look[SHADOW_SUB_SLOT + k] = col;
                 }

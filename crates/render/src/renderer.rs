@@ -177,6 +177,9 @@ pub struct Frame<'a> {
     /// writes its depth for each of the bias sets the draws name (`Draw::sub_bias`); none for a
     /// game without one. Its casters are left out of the cascades.
     pub shadow_sub: Option<(Mat4, [shadow::Bias; 2])>,
+    /// Each layer's map in texels (width, height), from the layer's corner, where a game's maps
+    /// are smaller than the layer or not square (Ryza's cascades); none: every layer whole.
+    pub shadow_sides: Option<[[u32; 2]; shadow::CASCADES]>,
     pub alpha_cutoff: f32,
     /// The alpha test's reference for swaying draws (the plants), where a game holds another.
     pub sway_cutoff: f32,
@@ -794,7 +797,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion, sun_flare } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, shadow_sides, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion, sun_flare } = *frame;
         let upto = self.upto.get();
         let Renderer { forward_pipeline, ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
@@ -865,10 +868,15 @@ impl Renderer {
                     d.cmd_end_render_pass(cb);
                     continue;
                 };
-                // The characters' map is written `SUB_SIZE` texels a side in the layer's corner.
-                let side = if layer == shadow::SUB_LAYER { shadow::SUB_SIZE.min(shadow_target.size) } else { shadow_target.size };
-                let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: side, height: side } };
-                d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: side as f32, height: side as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                // The characters' map is written `SUB_SIZE` texels a side in the layer's corner; a
+                // game's own map sizes (`Frame::shadow_sides`) likewise.
+                let [width, height] = match shadow_sides {
+                    Some(sides) => sides[layer].map(|v| v.min(shadow_target.size)),
+                    None if layer == shadow::SUB_LAYER => [shadow::SUB_SIZE.min(shadow_target.size); 2],
+                    None => [shadow_target.size; 2],
+                };
+                let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
+                d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
                 d.cmd_set_scissor(cb, 0, &[area]);
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
                 d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
@@ -889,7 +897,7 @@ impl Renderer {
                 let shadow_planes = view_planes(&shadow_vp);
                 // In a far layer, casters whose box is under four of its texels across (the
                 // map's side over its size) cast nothing seen: left out.
-                let least = if layer > 0 && layer != shadow::SUB_LAYER { 4.0 * 2.0 / (shadow_vp.x_axis.x.hypot(shadow_vp.y_axis.x).hypot(shadow_vp.z_axis.x) * shadow_target.size as f32) } else { 0.0 };
+                let least = if layer > 0 && layer != shadow::SUB_LAYER { 4.0 * 2.0 / (shadow_vp.x_axis.x.hypot(shadow_vp.y_axis.x).hypot(shadow_vp.z_axis.x) * width as f32) } else { 0.0 };
                 let big = |d: &Draw| least == 0.0 || d.bounds.is_none_or(|b| b.extent(&instances[d.instance as usize].model) >= least);
                 // The characters' map takes its own casters and the cascades leave them out.
                 let own = |d: &Draw| (layer == shadow::SUB_LAYER) == (d.sub_bias.is_some() && shadow_sub.is_some());
@@ -1311,6 +1319,14 @@ impl Renderer {
                 t.mark(d, cb, 4);
             }
             // The sun flare's visibility, and the wash's settings for the post pass.
+            // The reference point is in the first cascade's map: within the layer where the map is smaller.
+            let sun_flare = sun_flare.clone().map(|mut s| {
+                if let Some([[w, h], ..]) = shadow_sides {
+                    s.reference[0] *= w as f32 / shadow_target.size as f32;
+                    s.reference[1] *= h as f32 / shadow_target.size as f32;
+                }
+                s
+            });
             self.sun.record(d, cb, sun_flare.as_ref());
             // The post pass: the scene back to its range with the glow, then the text over it.
             d.cmd_begin_render_pass(

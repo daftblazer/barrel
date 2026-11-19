@@ -69,7 +69,11 @@ pub const PUSH_INSTANCE: u32 = 112;
 /// Then the emission maps' strength ({scale}, `model.frag`'s flag 32768).
 /// Then a sky dome's sun: its colour and the way to it (95, 96: flag 4096).
 /// Then the clouds' (97 to 108), then the specular ambient's two (109, 110: `SPECULAR_SLOT`).
-pub const LOOK_SLOTS: usize = CHARA_SPECULAR_SLOT + 1;
+pub const LOOK_SLOTS: usize = SHADOW_SIDES_SLOT + 4;
+/// The three cascades' maps and the static layer's within their layers (`shadow_cascades.glsl`;
+/// `Frame::shadow_sides`): {the share of the layer's u and v the map covers, its texel in u and
+/// v}; all zero: the whole layer, its texel `shadow_info.x`.
+pub const SHADOW_SIDES_SLOT: usize = CHARA_SPECULAR_SLOT + 1;
 /// The characters' specular ambient (`model.frag`, flag 128 with 1 << 24): the cube map's light
 /// scale times its tint, {rgb}, from the set's `indirectChara_` block (its own, not the stage's), and
 /// the exposure the lights carry (the forward pass's colours are in the game's units) in w.

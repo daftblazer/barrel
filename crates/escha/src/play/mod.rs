@@ -6827,6 +6827,7 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         view_planes: view_planes_now,
         shadow_vp,
         shadow_cascades: [None, None],
+        shadow_sides: None,
         shadow_bias: None,
         shadow_sub: None,
         alpha_cutoff,

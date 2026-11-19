@@ -945,7 +945,9 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   (10000 - depth) / 3500, the weight the cascades keep before the static map takes over
   (Barrel's `shadow_ends` and `CASCADE_BLEND`; both planes agree to 1e-5). The boxes are not
   snapped to texels. The maps are 2000 × 2400, 2000 × 2400 and 1600 × 1600 (the texels
-  1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024².
+  1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024². Barrel draws each at its size in
+  the corner of a 2400² layer (`SHADOW_MAPS`, ryza play/mod.rs; `scSMD` agrees); the turn's
+  and the left view's pixels moved 4.73 to 4.69 and 4.82 to 4.79 with it.
 - **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box
   in the sun's view (u horizontal, v up the slope, the cascades' way) spans exactly the
   heightmap's square (0 to 64,000 in x and z on Rasenboden) at heights 0 to 5,000 (not the

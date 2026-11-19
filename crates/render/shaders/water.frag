@@ -67,6 +67,9 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // layer, on, layer}.
     mat4 shadow_sub;
     vec4 shadow_sub_info;
+    vec4 chara_spec; // CHARA_SPECULAR_SLOT, not read here
+    // The cascades' and the static layer's maps within their layers (lib.rs SHADOW_SIDES_SLOT).
+    vec4 shadow_sides[4];
 } look;
 layout(set = 1, binding = 5) uniform sampler2DArrayShadow shadow_map;
 layout(set = 1, binding = 6) uniform sampler2D pattern_map;

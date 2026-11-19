@@ -2,17 +2,27 @@
 // pass"). Included after `look` (with shadow_vp, shadow_info, shadow_far, shadow_far_info,
 // shadow_c1, shadow_c2, shadow_ends, shadow_fwd) and `shadow_map` are declared.
 
+// A layer's map within the layer (`shadow_sides`): the share of the layer's u and v it covers
+// and its texel; the whole layer at texel t when the game gives no sizes.
+vec4 layer_side(int k, float t) {
+    vec4 side = look.shadow_sides[k];
+    return side.x > 0.0 ? side : vec4(1.0, 1.0, t, t);
+}
+
 // One layer's light at p: the game's sixteen taps, four by four a texel apart from 1.5 texels
-// before p, each a bilinear depth comparison; or -1 outside the layer's box.
+// before p, each a bilinear depth comparison (kept in the layer's map); or -1 outside the
+// layer's box.
 float cascade_light(mat4 vp, float layer, float t, vec3 p) {
     vec4 c = vp * vec4(p, 1.0);
     vec3 s = c.xyz / c.w;
     vec2 at = s.xy * 0.5 + 0.5;
     if (any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))) || s.z > 1.0) return -1.0;
+    vec4 side = layer_side(int(layer), t);
     float lit = 0.0;
     for (int i = 0; i < 4; i++) {
         for (int k = 0; k < 4; k++) {
-            lit += texture(shadow_map, vec4(at + (vec2(float(i), float(k)) - 1.5) * t, layer, s.z));
+            vec2 q = clamp(at + (vec2(float(i), float(k)) - 1.5) * side.zw, vec2(0.0), vec2(1.0));
+            lit += texture(shadow_map, vec4(q * side.xy, layer, s.z));
         }
     }
     return lit / 16.0;
@@ -48,16 +58,17 @@ float static_light(vec3 p) {
     vec4 c = look.shadow_far * vec4(p, 1.0);
     vec2 at = (c.xy / c.w) * 0.5 + 0.5;
     float depth = clamp(c.z / c.w, 0.0, 1.0);
-    float t = look.shadow_far_info.x;
+    vec4 side = layer_side(3, look.shadow_far_info.x);
+    vec2 t = side.zw;
     vec2 first = at - 1.5 * t;
     if (any(greaterThanEqual(first, vec2(1.0))) || any(lessThanEqual(first + 3.0 * t, vec2(0.0)))) return 1.0;
-    float texels = 1.0 / t;
+    vec2 texels = 1.0 / t;
     float lit = 0.0;
     for (int i = 0; i < 4; i++) {
         for (int k = 0; k < 4; k++) {
             vec2 q = first + vec2(float(i), float(k)) * t;
             q = (floor(clamp(q, vec2(0.0), vec2(0.999999)) * texels) + 0.5) * t;
-            lit += texture(shadow_map, vec4(q, look.shadow_far_info.y, depth));
+            lit += texture(shadow_map, vec4(q * side.xy, look.shadow_far_info.y, depth));
         }
     }
     return lit / 16.0;

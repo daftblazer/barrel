@@ -88,6 +88,8 @@ layout(std140, set = 1, binding = 4) uniform Look {
     // The characters' specular ambient (lib.rs CHARA_SPECULAR_SLOT): the light's scale times
     // its tint (rgb), and the exposure the lights carry (w).
     vec4 chara_spec;
+    // The cascades' and the static layer's maps within their layers (lib.rs SHADOW_SIDES_SLOT).
+    vec4 shadow_sides[4];
 } look;
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 uv;
