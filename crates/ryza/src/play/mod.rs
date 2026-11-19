@@ -54,6 +54,8 @@ const MODEL_ALPHA_REF: f32 = 50.1 / 255.0;
 const PLANT_ALPHA_REF: f32 = 63.1 / 255.0;
 
 const UNLIT: u32 = 32;
+/// STAND-IN: How far above its path a walker's feet may find the ground (the game's own rule for its walkers is not read).
+const WALKER_STEP: f32 = 200.0;
 /// `model.vert`'s flag for a sky dome lit by the look's `DOME_LIGHT_SLOT`.
 const DOME_LIT: u32 = 4096;
 /// `model.frag`'s flag for a normal map in the mask slot (a field model's `sNMap`).
@@ -1383,7 +1385,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             let walking = walk.map(|w| w.at(field_time));
             let motion = if walking.is_some_and(|(.., moving)| !moving) { barrel_ryza::motion::STAND } else { motion };
             actor.pose_standing(instance, motion, field_time, &mut instances, &mut palette);
-            if let Some((at, yaw, _)) = walking {
+            if let Some((mut at, yaw, _)) = walking {
+                if let Some(g) = rig.as_ref().and_then(|r| r.ground.as_ref()) {
+                    at[1] = g.height(at[0], at[2], at[1], WALKER_STEP).unwrap_or(at[1]);
+                }
                 instances[instance as usize].model = barrel_render::render_space(actor.placed(Vec3::from(at), yaw.to_radians()));
             }
         }

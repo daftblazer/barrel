@@ -241,8 +241,12 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   board's clock for that frame; at 0 the two walkers in view stood at their paths' starts,
   1,200 and 3,600 units off). At that clock the townsfolk's bones are within 55 units of the
   game's (`npc29a` running on `s06_move_data_003`, 3 m/s), 41 (`npc22a/b` walking
-  `s06_move_data_005`) and under 9 for those standing; what is left is Barrel's straight line
-  between points where the game keeps them on the ground, and the pace of their motions. The story comes from a save with `--save` (`docs/formats.md`,
+  `s06_move_data_005`) and under 9 for those standing; walkers now stand on the
+  ground under their path (the field's heightmap and floors, as Ryza's; `WALKER_STEP`, a
+  stand-in, though 50 to 1,000 give the same): `npc22a/b` 41 and 40 -> 11 and 6. Left:
+  `npc29a` stays 55 off (not height: its place along the path or its pace), the game's own
+  rule for its walkers' ground (not read), and walkers on the title (no ground without
+  Ryza's rig), and the pace of their motions. The story comes from a save with `--save` (`docs/formats.md`,
   "Ryza DX saves"). Left: the object ranges' own measure and classes below
   the top setting (the placement word's bits 0-1 as the class is still a guess: nothing at
   High tells), the game's switch for levels of detail, the walkers' pauses, motions and
