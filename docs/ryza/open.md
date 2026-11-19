@@ -161,14 +161,18 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
-- **The post constants Barrel does not dump** (P2; `rasen-constants`: 665 compared, 0 differ,
-  188 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 738 compared, 0 differ,
+  172 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
   lists them by pass). They split three ways:
   - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
     shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `vSMDF`,
     `sdplane`...), the lighting pass's other draws (`litDir`/`litCol` 1 and 2, `emScl`,
-    `vAmbOccRat`), the water's own ambient and lighting (passes 14 to 16), the sky's and fog's
-    height fog (`cHFog`, `hFogParam`, `hFogFlucPrms`), the reflections (pass 21).
+    `vAmbOccRat`), the water's own ambient and lighting (passes 14 to 16), the reflections
+    (pass 21). The height fog (`cHFog`, `hFogParam`, `hFogFlucPrms`, sky pass 17 and fog pass
+    18) is off: the fog shader (`sh09135ab09a4edc1e`) weights both layers by `cHFog`'s w, and
+    the game passes all of `cHFog` as 0 although the set holds the second layer's colour
+    (0.543, 1.41, 2 at 0x110), so a switch not read turns it off; the pass's visible term is
+    the scattering (`Scat`, compared).
   - Off at the gate (weight or switch 0; only their source to read): the depth of field
     (`fKIDSDOFType` 0, `fHexScale` 0, passes 31 to 37), the star filter's result
     (`fStarWeight` 0 in the tone pass, though its chain 49 to 60 runs), the light shafts
