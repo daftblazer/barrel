@@ -175,9 +175,21 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
     (`vLightShaftPower` 0, 63 to 68), the lens flare (`fLensFlareWeight` 0), the vignette
     (`fLimbDarkeningWeight` 0). Their values sit in the set's `trueHDR_` block and its
     neighbours (`docs/formats.md`, the environment table).
-  - On at the gate, missing from Barrel: the distant blur in the tone pass
-    (`fDistantBlurIntensity` 1 past `fDistantBlurZThreshold` 10000, `fFar` 300000), the
-    sun flare and paraffin wash (pass 73 reads the cascade into a 1 × 1 sun visibility, pass 74
+  - On at the gate, missing from Barrel: the depth of field's softening. The tone pass
+    (`sh54b7a1dac8c7a203`) has three branches on `fKIDSDOFType`; the distant blur
+    (`fDistantBlurIntensity` past `fDistantBlurZThreshold`) is only type 2's, and the gate is
+    type 0: it mixes in pass 31's quarter-size blurs by the weight in alpha, a ramp
+    `saturate((1 / max(1 - 2|w - 0.5|, 0) - 1) / 4)` of `w`, the front blur (`rt480x270 #4`)
+    where `w` (`rt1920x1080 #17`'s alpha) is 0.5 or more, the back (`#3`, its own alpha) over
+    that. The chain: pass 29 (`sh7b41f1dd6f2b7f36`) writes the scene with `w` = a 512 × 1
+    curve looked up by the raw depth (`smplWeight`, `rt512x1 #5`); pass 30 makes the two
+    quarter-size layers, pass 31 blurs them in 8 taps; 32 to 37 (the hexagonal blur) feed only
+    type 1. The game's pixels at the gate (pixel mirror, scratch scenario `pix-gate`): the
+    back weight is nil, the front reaches 0.078 and averages 0.05 to 0.07 over the upper half
+    of the screen (the far view), 0 below the middle. The curve is written by the CPU at load
+    (no draw writes it in frames 1700 to 2600; the capture logs no texture uploads): what
+    builds it (the field's or camera's focus settings) is not read.
+  - Also on: the sun flare and paraffin wash (pass 73 reads the cascade into a 1 × 1 sun visibility, pass 74
     draws two screen quads with it: `fFlareAmount` 0.6, `fParaffinAmount` 0.2, `fIntensity`
     20 and 15, `vFlareColor`, `vParaffinColor`, `mRotation`; the set's lens-flare block holds
     them), the game's TAA (pass 72, `g_cbTemporalAAParam` 960, 0.1, 0.05, 0.2, `jitterScale`
