@@ -11,6 +11,12 @@ stage sky 1644-1648_rt1920x1080.26#4
 stage reflections 1653-1653_rt960x540.9#2
 stage reflections_alpha 1653-1653_rt960x540.9#2
 stage scene 1732-1732_rt1920x1080.26#4
+exposure end_rt1x1.39#5
+stage dof_weight 1733-1733_rt1920x1080.9#17
+stage dof_layers 1735-1735_rt480x270.9#3
+stage dof_layers_alpha 1735-1735_rt480x270.9#3
+stage dof_layers_back 1735-1735_rt480x270.9#4
+stage dof_layers_back_alpha 1735-1735_rt480x270.9#4
 stage bright 1747-1747_rt482x272.26#1
 stage bloom 1752-1752_rt240x135.26#1
 stage tone 1779-1779_rt1920x1080.90#7

@@ -85,12 +85,15 @@ struct Stage {
     regions: bool,
     /// Barrel's alpha is the value too (taken as grey), as the game's with `alpha`.
     own_alpha: bool,
+    /// Barrel's colour is the scene's own units, the game's has the exposure (the view's
+    /// `exposure` target) multiplied in (the depth of field's layers).
+    exposed: bool,
 }
 
 /// One view of a captured frame (a text file, `docs/ryza/views/`), a line each: `stage <name>
 /// <game file stem>`, `masks <stem>` (the game's depth and stencil before the sky), `normal
 /// <stem>` (its normal target), `strip <after stem> <before stem>` (the cloud strip's two
-/// targets), `view <nine numbers>` (the capture's `mWV` rotation, row by row) and `region <name>
+/// targets), `exposure <stem>` (the game's adapted luminance, a 1 by 1 target), `view <nine numbers>` (the capture's `mWV` rotation, row by row) and `region <name>
 /// x0 y0 x1 y1` (in the 1920 by 1080 picture's pixels, where the picture is judged by eye; `_`
 /// in the name is a space). A line starting with `#`, or a `#` after a space, is a comment (a
 /// target's own name has a `#` in it). A stage the view does not name is not compared.
@@ -99,13 +102,14 @@ struct View {
     masks: Option<String>,
     normal: Option<String>,
     strip: Option<(String, String)>,
+    exposure: Option<String>,
     rows: [[f32; 3]; 3],
     regions: Vec<(String, [usize; 4])>,
 }
 
 impl View {
     fn parse(text: &str) -> Result<View> {
-        let mut v = View { stages: HashMap::new(), masks: None, normal: None, strip: None, rows: [[0.0; 3]; 3], regions: Vec::new() };
+        let mut v = View { stages: HashMap::new(), masks: None, normal: None, strip: None, exposure: None, rows: [[0.0; 3]; 3], regions: Vec::new() };
         for raw in text.lines() {
             let line = raw.find(" #").map_or(raw, |i| &raw[..i]);
             let w: Vec<&str> = line.split_whitespace().collect();
@@ -117,6 +121,7 @@ impl View {
                 }
                 ["masks", stem] => v.masks = Some((*stem).into()),
                 ["normal", stem] => v.normal = Some((*stem).into()),
+                ["exposure", stem] => v.exposure = Some((*stem).into()),
                 ["strip", after, before] => v.strip = Some(((*after).into(), (*before).into())),
                 ["view", n @ ..] if n.len() == 9 => {
                     for (i, t) in n.iter().enumerate() {
@@ -304,22 +309,30 @@ fn chara_bands(name: &str, game: &Image, barrel: &Image, masks: &Image, own: &[b
 /// with the game's after the fog (`lit`: the game's lit scene without it, kept for the
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
-    Stage { name: "cloud_map", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "plane", barrel: "plane", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "dome1", barrel: "dome1", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "dome", barrel: "dome", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "ao", barrel: "ao", scale: 1.0, alpha: false, regions: true, own_alpha: false },
-    Stage { name: "shadow", barrel: "shadow", scale: 1.0, alpha: true, regions: true, own_alpha: false },
-    Stage { name: "lit", barrel: "lit", scale: 1.0, alpha: false, regions: true, own_alpha: false },
-    Stage { name: "lit_fogged", barrel: "sky", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "sky", barrel: "sky", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "cloud_map", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "plane", barrel: "plane", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "dome1", barrel: "dome1", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "dome", barrel: "dome", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "ao", barrel: "ao", scale: 1.0, alpha: false, regions: true, own_alpha: false, exposed: false },
+    Stage { name: "shadow", barrel: "shadow", scale: 1.0, alpha: true, regions: true, own_alpha: false, exposed: false },
+    Stage { name: "lit", barrel: "lit", scale: 1.0, alpha: false, regions: true, own_alpha: false, exposed: false },
+    Stage { name: "lit_fogged", barrel: "sky", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "sky", barrel: "sky", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
     // The reflections' march (half size): its colour, then its alpha, the weight.
-    Stage { name: "reflections", barrel: "reflections", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "reflections_alpha", barrel: "reflections", scale: 1.0, alpha: true, regions: false, own_alpha: true },
-    Stage { name: "scene", barrel: "scene", scale: 1.0, alpha: false, regions: true, own_alpha: false },
-    Stage { name: "bright", barrel: "bright", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "bloom", barrel: "bloom", scale: 1.0, alpha: false, regions: false, own_alpha: false },
-    Stage { name: "tone", barrel: "tone", scale: 255.0, alpha: false, regions: true, own_alpha: false },
+    Stage { name: "reflections", barrel: "reflections", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "reflections_alpha", barrel: "reflections", scale: 1.0, alpha: true, regions: false, own_alpha: true, exposed: false },
+    Stage { name: "scene", barrel: "scene", scale: 1.0, alpha: false, regions: true, own_alpha: false, exposed: false },
+    // The depth of field (docs/shading.md, "The depth of field (type 0)"): the weight (the
+    // scene target's alpha, full size), then the two blurred quarter-size layers (the near
+    // view's, the far view's), each as colour and as coverage (alpha).
+    Stage { name: "dof_weight", barrel: "dof_weight", scale: 1.0, alpha: true, regions: true, own_alpha: true, exposed: false },
+    Stage { name: "dof_layers", barrel: "dof_layers", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: true },
+    Stage { name: "dof_layers_alpha", barrel: "dof_layers", scale: 1.0, alpha: true, regions: false, own_alpha: true, exposed: false },
+    Stage { name: "dof_layers_back", barrel: "dof_layers_back", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: true },
+    Stage { name: "dof_layers_back_alpha", barrel: "dof_layers_back", scale: 1.0, alpha: true, regions: false, own_alpha: true, exposed: false },
+    Stage { name: "bright", barrel: "bright", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "bloom", barrel: "bloom", scale: 1.0, alpha: false, regions: false, own_alpha: false, exposed: false },
+    Stage { name: "tone", barrel: "tone", scale: 255.0, alpha: false, regions: true, own_alpha: false, exposed: false },
 ];
 
 #[derive(Default, Clone, Copy)]
@@ -578,6 +591,11 @@ pub fn run(view: &Path, game: &Path, barrel: &Path, pictures: Option<&Path>) -> 
                 println!("{}: missing ({})", stage.name, g.err().or(b.err()).map_or(String::new(), |e| e.to_string()));
                 continue;
             }
+        };
+        // The game's layers carry its exposure: Barrel's are brought to it for the comparison.
+        let b = match (stage.exposed, view.exposure.as_ref().and_then(|e| load(game, e).ok())) {
+            (true, Some(e)) => Image { px: b.px.chunks_exact(4).flat_map(|p| [p[0] * e.px[0], p[1] * e.px[0], p[2] * e.px[0], p[3]]).collect(), ..b },
+            _ => b,
         };
         let b = if stage.own_alpha { Image { px: b.px.chunks_exact(4).flat_map(|p| [p[3], p[3], p[3], 1.0]).collect(), ..b } } else { b };
         let g = if stage.alpha { Image { px: g.px.chunks_exact(4).flat_map(|p| [p[3], p[3], p[3], 1.0]).collect(), ..g } } else { g };

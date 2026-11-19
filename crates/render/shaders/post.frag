@@ -26,6 +26,11 @@ layout(set = 0, binding = 5) uniform Wash {
     vec4 extra;          // the two layers' shadow influence ratios, on (0: no wash), fIntensity
 } wash;
 layout(set = 0, binding = 6) uniform sampler2D sun_visibility;
+// Ryza's depth of field (dof.rs; screen.z 1: on): the weight (red), then the blurred near-view
+// and far-view layers at quarter size, in the scene's own units (the alpha of each a coverage).
+layout(set = 0, binding = 7) uniform sampler2D dof_weight;
+layout(set = 0, binding = 8) uniform sampler2D dof_front;
+layout(set = 0, binding = 9) uniform sampler2D dof_back;
 layout(push_constant) uniform Push { float rate; float frozen_weight; vec2 pad; vec4 overlay; vec4 saturation; vec4 screen; vec4 grade; } pc;
 layout(location = 0) in vec2 uv;
 layout(location = 0) out vec4 color;
@@ -35,6 +40,22 @@ layout(location = 0) out vec4 color;
 vec3 filmic(vec3 x) {
     return (x * (0.22 * x + 0.03) + 0.002) / (x * (0.22 * x + 0.3) + 0.06) - 0.0333;
 }
+// How much of a blur mixes in for a coverage `w` (0.5: none; toward 0 and 1: more): the game's
+// ramp, saturate((1 / max(1 - 2|w - 1/2|, 0) - 1) / 4).
+float blur_ramp(float w) {
+    return clamp((1.0 / (max(1.0 - 2.0 * abs(w - 0.5), 0.0) + 0.00001) - 1.0) * 0.25, 0.0, 1.0);
+}
+// The depth of field, type 0, on the scene `c` (already at its exposure `k`, the layers' to be
+// brought to it): the far view's layer by the weight where that is 0.5 or more, then the near
+// view's by its own alpha.
+vec3 soften(vec3 c, float k) {
+    float w = texture(dof_weight, uv).r;
+    if (w >= 0.5) {
+        c += blur_ramp(w) * (texture(dof_back, uv).rgb * k - c);
+    }
+    vec4 front = texture(dof_front, uv);
+    return c + blur_ramp(front.a) * (front.rgb * k - c);
+}
 void main() {
     // pad.x 1: the motion vectors shown instead (`--show-motion`: binding 0 holds them),
     // their size times 40 in red and green.
@@ -43,7 +64,11 @@ void main() {
         return;
     }
     float metered = pc.screen.y > 0.5 ? texelFetch(exposure, ivec2(0), 0).g : 1.0;
-    vec3 live = texture(scene, uv).rgb * 2.0 * metered + texture(glow, uv).rgb * pc.rate;
+    vec3 lit = texture(scene, uv).rgb * 2.0 * metered;
+    if (pc.screen.z > 0.5) {
+        lit = soften(lit, 2.0 * metered);
+    }
+    vec3 live = lit + texture(glow, uv).rgb * pc.rate;
     vec3 before = texture(frozen, uv).rgb * 2.0 * metered;
     vec3 c = mix(live, before, pc.frozen_weight);
     if (pc.screen.x > 0.0) {

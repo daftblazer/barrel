@@ -9,6 +9,12 @@ stage sky 1871-1875_rt1920x1080.26#4
 stage reflections 1880-1880_rt960x540.9#2
 stage reflections_alpha 1880-1880_rt960x540.9#2
 stage scene 2005-2005_rt1920x1080.26#4
+exposure end_rt1x1.39#5
+stage dof_weight 2006-2006_rt1920x1080.9#17
+stage dof_layers 2008-2008_rt480x270.9#3
+stage dof_layers_alpha 2008-2008_rt480x270.9#3
+stage dof_layers_back 2008-2008_rt480x270.9#4
+stage dof_layers_back_alpha 2008-2008_rt480x270.9#4
 stage bright 2020-2020_rt482x272.26#1
 stage bloom 2025-2025_rt240x135.26#1
 stage tone 2052-2052_rt1920x1080.90#7

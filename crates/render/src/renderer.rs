@@ -78,6 +78,9 @@ pub struct Renderer {
     /// The screen-space reflections (`reflect.rs`), when the setting is on (and the scene is
     /// single-sampled): their passes, and the targets bound to the scene's.
     pub reflect: Option<reflect::Reflections>,
+    /// The depth of field (`dof.rs`), when the setting is on (single-sampled, with the occlusion's
+    /// depth): its passes, and the targets bound to the scene's and the post pass's.
+    pub dof: Option<dof::DepthOfField>,
     ao_gbuf_pipeline: vk::Pipeline,
     ao_gbuf_two_sided_pipeline: vk::Pipeline,
     ao_gbuf_terrain_pipeline: vk::Pipeline,
@@ -534,7 +537,7 @@ impl Renderer {
         ];
         let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
         // The post pass's one texture: the scene.
-        let post_binding = [0, 1, 2, 3, 4, 5, 6].map(|b| {
+        let post_binding = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|b| {
             vk::DescriptorSetLayoutBinding::default()
                 .binding(b)
                 .descriptor_type(if b == 5 { vk::DescriptorType::UNIFORM_BUFFER } else { vk::DescriptorType::COMBINED_IMAGE_SAMPLER })
@@ -543,7 +546,7 @@ impl Renderer {
         });
         let post_set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&post_binding), None)? };
         // Two sets: GSR 2 swaps its output each frame, and the post pass reads the one just written.
-        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 12 }, vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 2 }];
+        let post_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 18 }, vk::DescriptorPoolSize { ty: vk::DescriptorType::UNIFORM_BUFFER, descriptor_count: 2 }];
         let post_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&post_sizes), None)? };
         let post_layouts = [post_set_layout, post_set_layout];
         let post_sets: [vk::DescriptorSet; 2] = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(post_pool).set_layouts(&post_layouts))? }
@@ -562,6 +565,8 @@ impl Renderer {
         let clear = [0u8; 4];
         let filter = upload_texture(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&clear[..]] }, false)?;
         write_filter(&gpu, &post_sets, post_sampler, filter.2);
+        // The depth of field's three textures (bound for real by `dof.rs`): a placeholder until then.
+        write_dof_placeholder(&gpu, &post_sets, post_sampler, filter.2);
         let sun = flare::Sun::new(&gpu, (shadow_target.view, shadow_target.sampler), post_sampler)?;
         write_wash(&gpu, &post_sets, post_sampler, &sun);
         let glow_pipelines = glow::Pipelines::new(&gpu, settings.hdr_scene)?;
@@ -824,6 +829,14 @@ impl Renderer {
         // light (`AO_PASS`), into a half-size target of one sample, back faces culled as the
         // scene's (the terrain's heightmap both ways).
         let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion, targets.scene_size)?;
+        let dof_on = settings.depth_of_field && settings.occlusion && samples == vk::SampleCountFlags::TYPE_1;
+        let dof = if dof_on {
+            let mut dof = dof::DepthOfField::new(&gpu)?;
+            dof.rebind(&gpu, &ao, &targets, &post_sets, post_sampler)?;
+            Some(dof)
+        } else {
+            None
+        };
         let reflect = if reflect_on {
             let mut r = reflect::Reflections::new(&gpu, settings.scene_format())?;
             r.rebind(&gpu, &ao, &targets)?;
@@ -846,7 +859,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { reflect, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1123,6 +1136,8 @@ impl Renderer {
             let reflect_frame = self.reflect.is_some() && self.ao.on() && occlusion && upto == dump::Stop::Full;
             // A frame with water draws the scene in two parts, the water refracting a copy of the
             // first (it needs the occlusion's depth of the opaque scene).
+            // The depth of field also needs the occlusion's depth, at the stage with the whole scene.
+            let dof_frame = self.dof.is_some() && self.ao.on() && occlusion && upto == dump::Stop::Full;
             let refract = water_pieces > 0 && upto != dump::Stop::Chara && self.ao.on() && occlusion;
             d.cmd_begin_render_pass(
                 cb,
@@ -1359,6 +1374,18 @@ impl Renderer {
             if let Some(t) = &timer {
                 t.mark(d, cb, 3);
             }
+            // The depth of field's weight, layers and blur (the post pass mixes them in).
+            if let Some(dof) = self.dof.as_ref().filter(|_| dof_frame) {
+                dof.record(gpu, cb);
+                if let (Some(dump), Some((weight, size))) = (&self.dump, dof.weight_image()) {
+                    dump.grab(gpu, cb, "dof_weight", weight, size, dump::Texels::Rgba16F, 1.0);
+                }
+                if let (Some(dump), Some(([front, back], size))) = (&self.dump, dof.layer_images()) {
+                    let k = 1.0 / (HDR_RANGE_INV * baked);
+                    dump.grab(gpu, cb, "dof_layers", front, size, dump::Texels::Rgba16F, k);
+                    dump.grab(gpu, cb, "dof_layers_back", back, size, dump::Texels::Rgba16F, k);
+                }
+            }
             // The glow from the scene's bright parts: its bright pass's threshold, and its rate in
             // the post pass.
             let (threshold, rate) = glow;
@@ -1424,6 +1451,7 @@ impl Renderer {
             post_push[48..52].copy_from_slice(&filter_strength.to_le_bytes());
             let metered = meter.is_some() && targets.glow.as_ref().is_some_and(|g| g.has_meter());
             post_push[52..56].copy_from_slice(&(if metered { 1.0f32 } else { 0.0 }).to_le_bytes());
+            post_push[56..60].copy_from_slice(&(if dof_frame { 1.0f32 } else { 0.0 }).to_le_bytes());
             post_push[..4].copy_from_slice(&rate.to_le_bytes());
             post_push[4..8].copy_from_slice(&frozen_weight.to_le_bytes());
             post_push[8..12].copy_from_slice(&(if show_motion { 1.0f32 } else { 0.0 }).to_le_bytes());
@@ -1480,6 +1508,9 @@ impl Renderer {
         write_refraction_set(&gpu.device, self.refraction_set, self.refraction_sampler, targets.refraction_view);
         if let Some(r) = self.reflect.as_mut() {
             r.rebind(gpu, &self.ao, &targets)?;
+        }
+        if let Some(dof) = self.dof.as_mut() {
+            dof.rebind(gpu, &self.ao, &targets, &self.post_sets, self.post_sampler)?;
         }
         self.targets = targets;
         Ok(())
@@ -1580,6 +1611,9 @@ impl Renderer {
         if let Some(r) = self.reflect.take() {
             r.destroy(gpu);
         }
+        if let Some(dof) = self.dof.take() {
+            dof.destroy(gpu);
+        }
         self.ao.destroy(gpu);
         unsafe {
             d.destroy_descriptor_set_layout(self.instance_layout, None);
@@ -1601,6 +1635,14 @@ fn write_wash(gpu: &Gpu, sets: &[vk::DescriptorSet; 2], sampler: vk::Sampler, su
         ]
     });
     let writes: Vec<_> = writes.collect();
+    unsafe { gpu.device.update_descriptor_sets(&writes, &[]) };
+}
+
+/// The post pass's depth-of-field bindings (the weight, the two layers) set to `view`, which the
+/// shader never reads while the frame has no depth of field.
+fn write_dof_placeholder(gpu: &Gpu, sets: &[vk::DescriptorSet; 2], sampler: vk::Sampler, view: vk::ImageView) {
+    let info = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+    let writes: Vec<_> = sets.iter().flat_map(|s| (7..=9).map(move |b| (*s, b))).map(|(s, b)| vk::WriteDescriptorSet::default().dst_set(s).dst_binding(b).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)).collect();
     unsafe { gpu.device.update_descriptor_sets(&writes, &[]) };
 }
 

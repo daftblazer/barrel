@@ -13,6 +13,7 @@ use glam::{Mat4, Vec3};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub mod ao;
+pub mod dof;
 pub mod reflect;
 pub mod clouds;
 pub mod dump;

@@ -12,7 +12,7 @@ fn main() {
             println!("cargo:rerun-if-changed={}", path.display());
         }
     }
-    for name in ["model.vert", "model.frag", "ao.frag", "reflect.frag", "reflect_mip.frag", "reflect_apply.frag", "terrain.frag", "text.vert", "text.frag", "movie.vert", "movie.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "cloud_density.frag", "cloud_map.frag", "cloud_strip.vert", "cloud_strip.frag", "water.vert", "water.frag", "glow.frag", "bright.frag", "meter.frag", "sunvis.frag", "shadow.frag", "shadow_cascade.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
+    for name in ["model.vert", "model.frag", "ao.frag", "reflect.frag", "reflect_mip.frag", "reflect_apply.frag", "dof_weight.frag", "dof_down.frag", "dof_blur.frag", "terrain.frag", "text.vert", "text.frag", "movie.vert", "movie.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "cloud_density.frag", "cloud_map.frag", "cloud_strip.vert", "cloud_strip.frag", "water.vert", "water.frag", "glow.frag", "bright.frag", "meter.frag", "sunvis.frag", "shadow.frag", "shadow_cascade.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
         let src = PathBuf::from("shaders").join(name);
         println!("cargo:rerun-if-changed={}", src.display());
         let dst = out.join(format!("{name}.spv"));
