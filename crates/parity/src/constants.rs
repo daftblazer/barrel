@@ -34,6 +34,7 @@ const ROLES: &[(&str, usize, usize)] = &[
     ("fog.sky", 18, 1),
     ("specular.stage", 22, 0),
     ("specular.chara", 22, 1),
+    ("reflections.march", 21, 0),
     ("forward.chara", 22, 59),
     ("water.first", 13, 0),
     ("water.last", 13, 9),

@@ -424,6 +424,8 @@ pub(super) fn json(i: &Inputs) -> String {
         c.insert("vAmbSpcScl", vec![Some(tint[0]), Some(tint[1]), Some(tint[2]), None]);
         // STAND-IN (as the frame's): the light's weight is 1.
         c.insert("vAmbSpcWgt", vec![Some(1.0), None, None, None]);
+        // The reflections' weight and the level their alpha is read at (reflect_apply.frag).
+        c.insert("vMerge", vec![Some(reflect::MERGE_X), Some(0.0), None, None]);
         c
     };
     let sp = look[SPECULAR_SLOT];
@@ -453,6 +455,23 @@ pub(super) fn json(i: &Inputs) -> String {
     water_light.insert("vD2Z", d2z.clone());
     water_light.insert("mRrW2T", screen.clone());
     put("lighting.water", water_light);
+
+    // The screen-space reflections' march (reflect.rs, docs/shading.md "The screen-space
+    // reflections"): the projection and its inverse as the game's rows (its x and y scales the
+    // view-projection's row lengths; depth 0 at the near plane, 1 at the far), the step, the
+    // depth's terms and the fades. `nMaxRaySmpl` is an integer word: not compared.
+    let (sx, sy) = (x.truncate().length(), y.truncate().length());
+    let zf = i.far / (i.near - i.far);
+    let v2p = [sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, zf, -1.0, 0.0, 0.0, zf * i.near, 0.0];
+    let p2v = [1.0 / sx, 0.0, 0.0, 0.0, 0.0, 1.0 / sy, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0 / (zf * i.near), 0.0, 0.0, -1.0, 1.0 / i.near];
+    let mut march = Consts::new();
+    march.insert("mV2P", some(&v2p));
+    march.insert("mP2V", some(&p2v));
+    march.insert("vReflParam", some(&reflect::REFL));
+    march.insert("vDepthParam", some(&reflect::DEPTH_PARAM));
+    march.insert("vDepthFadeParam", some(&reflect::DEPTH_FADE));
+    march.insert("vSampleEdgeFadeParam", some(&reflect::EDGE_FADE));
+    put("reflections.march", march);
     if pieces > 0 {
         for (role, piece) in [("water.first", 0), ("water.last", pieces - 1)] {
             let base = WATER_SLOT + 1 + 5 * piece;

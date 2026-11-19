@@ -178,15 +178,15 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   turn Barrel's is wider in u (`mSubW2S[0]` 0.00553 against 0.00633), her pose there not the
   game's; the pixels do not move either way. The real rule (her joints grown by a radius?)
   not found; position and facing ruled out.
-- **The post constants Barrel does not dump** (P2; `rasen-constants`: 1122 compared, 0 differ,
-  138 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 1171 compared, 0 differ,
+  131 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
   lists them by pass). They split three ways:
   - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
     shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `scSMD`,
     `scSM2D`, `vSMOf`; `vS2VZ` and `sdplane` are dumped, the planes of the first cascade's
     map), the lighting pass's other draws (`litDir`/`litCol` 1 and 2, `emScl`,
-    `vAmbOccRat`), the water's own ambient and lighting (passes 14 to 16), the reflections
-    (pass 21). The height fog (`cHFog`, `hFogParam`, `hFogFlucPrms`, sky pass 17 and fog pass
+    `vAmbOccRat`), the water's own ambient and lighting (passes 14 to 16), the reflections'
+    step count (pass 21: `nMaxRaySmpl`, an integer the board does not compare; the rest is dumped). The height fog (`cHFog`, `hFogParam`, `hFogFlucPrms`, sky pass 17 and fog pass
     18) is off: the fog shader (`sh09135ab09a4edc1e`) weights both layers by `cHFog`'s w, and
     the game passes all of `cHFog` as 0 although the set holds the second layer's colour
     (0.543, 1.41, 2 at 0x110), so a switch not read turns it off; the pass's visible term is
