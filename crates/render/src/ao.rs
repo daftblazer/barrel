@@ -267,6 +267,11 @@ impl Occlusion {
         self.maps.as_ref().map_or(vk::DescriptorSet::null(), |m| m.gbuf_set)
     }
 
+    /// The normal and depth target's view, for the reflections' march.
+    pub fn gbuf_view(&self) -> Option<vk::ImageView> {
+        self.maps.as_ref().map(|m| m.gbuf.2)
+    }
+
     /// The normal and depth target's image and size, for the stage dump (`depth`).
     pub fn gbuf_image(&self) -> Option<(vk::Image, (u32, u32))> {
         self.maps.as_ref().map(|m| (m.gbuf.0, m.size))

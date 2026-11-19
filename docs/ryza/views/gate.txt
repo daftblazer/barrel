@@ -9,6 +9,8 @@ stage shadow 1892-1894_rt1920x1080.9#15
 stage lit 1895-1898_rt1920x1080.26#4
 stage lit_fogged 1919-1919_rt1920x1080.26#4
 stage sky 1912-1916_rt1920x1080.26#4
+stage reflections 1921-1921_rt960x540.9#2
+stage reflections_alpha 1921-1921_rt960x540.9#2
 stage scene 2037-2037_rt1920x1080.26#4
 stage bright 2052-2052_rt482x272.26#1
 stage bloom 2057-2057_rt240x135.26#1

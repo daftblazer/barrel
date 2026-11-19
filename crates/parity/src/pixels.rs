@@ -83,6 +83,8 @@ struct Stage {
     alpha: bool,
     /// The mean of the regions below is printed, the game's and Barrel's.
     regions: bool,
+    /// Barrel's alpha is the value too (taken as grey), as the game's with `alpha`.
+    own_alpha: bool,
 }
 
 /// One view of a captured frame (a text file, `docs/ryza/views/`), a line each: `stage <name>
@@ -302,19 +304,22 @@ fn chara_bands(name: &str, game: &Image, barrel: &Image, masks: &Image, own: &[b
 /// with the game's after the fog (`lit`: the game's lit scene without it, kept for the
 /// ground's own error), and its finished sky with the game's after both fogs.
 const STAGES: &[Stage] = &[
-    Stage { name: "cloud_map", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "plane", barrel: "plane", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "dome1", barrel: "dome1", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "dome", barrel: "dome", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "ao", barrel: "ao", scale: 1.0, alpha: false, regions: true },
-    Stage { name: "shadow", barrel: "shadow", scale: 1.0, alpha: true, regions: true },
-    Stage { name: "lit", barrel: "lit", scale: 1.0, alpha: false, regions: true },
-    Stage { name: "lit_fogged", barrel: "sky", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "sky", barrel: "sky", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "scene", barrel: "scene", scale: 1.0, alpha: false, regions: true },
-    Stage { name: "bright", barrel: "bright", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "bloom", barrel: "bloom", scale: 1.0, alpha: false, regions: false },
-    Stage { name: "tone", barrel: "tone", scale: 255.0, alpha: false, regions: true },
+    Stage { name: "cloud_map", barrel: "cloud_map", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "plane", barrel: "plane", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "dome1", barrel: "dome1", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "dome", barrel: "dome", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "ao", barrel: "ao", scale: 1.0, alpha: false, regions: true, own_alpha: false },
+    Stage { name: "shadow", barrel: "shadow", scale: 1.0, alpha: true, regions: true, own_alpha: false },
+    Stage { name: "lit", barrel: "lit", scale: 1.0, alpha: false, regions: true, own_alpha: false },
+    Stage { name: "lit_fogged", barrel: "sky", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "sky", barrel: "sky", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    // The reflections' march (half size): its colour, then its alpha, the weight.
+    Stage { name: "reflections", barrel: "reflections", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "reflections_alpha", barrel: "reflections", scale: 1.0, alpha: true, regions: false, own_alpha: true },
+    Stage { name: "scene", barrel: "scene", scale: 1.0, alpha: false, regions: true, own_alpha: false },
+    Stage { name: "bright", barrel: "bright", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "bloom", barrel: "bloom", scale: 1.0, alpha: false, regions: false, own_alpha: false },
+    Stage { name: "tone", barrel: "tone", scale: 255.0, alpha: false, regions: true, own_alpha: false },
 ];
 
 #[derive(Default, Clone, Copy)]
@@ -574,6 +579,7 @@ pub fn run(view: &Path, game: &Path, barrel: &Path, pictures: Option<&Path>) -> 
                 continue;
             }
         };
+        let b = if stage.own_alpha { Image { px: b.px.chunks_exact(4).flat_map(|p| [p[3], p[3], p[3], 1.0]).collect(), ..b } } else { b };
         let g = if stage.alpha { Image { px: g.px.chunks_exact(4).flat_map(|p| [p[3], p[3], p[3], 1.0]).collect(), ..g } } else { g };
         // The game's bloom targets carry a border round the quarter-size picture's own.
         let g = if g.w > b.w || g.h > b.h { g.crop((g.w - b.w) / 2, (g.h - b.h) / 2, b.w, b.h) } else { g };

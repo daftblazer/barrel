@@ -563,7 +563,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         .resolved();
     // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
     // (`Frame::tone_white`) sees past the half range's 2.0.
-    let graphics = RenderSettings { hdr_scene: true, ..graphics };
+    let graphics = RenderSettings { hdr_scene: true, reflections: true, ..graphics };
     // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
     // them, the handheld setting's in the same share.
     let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };

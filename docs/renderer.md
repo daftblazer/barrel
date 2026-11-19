@@ -680,6 +680,26 @@ pass: to all the diffuse light, tinted by the colour, and to the direct and ambi
 (`--timings`: "occlusion"): the normal pass 0.3 ms for 950 draws and 680,000 triangles at half
 size, the full-screen pass 0.2.
 
+**Screen-space reflections.** Ryza's frames (the game's choice in `RenderSettings::reflections`,
+on in `ryza`'s settings; it needs the occlusion's pass and single-sampled drawing, so MSAA
+leaves it out) add the game's reflections to the specular ambient (`reflect.rs`; docs/shading.md,
+"The screen-space reflections"). The scene pass has two more colour targets (`Targets::spec`,
+rgba16f at the scene's size, written by `model.frag` and cleared to nothing): the specular
+ambient's per-pixel factor (`o' F (o' + specOcc (1 - o'))` times the fog's extinction; the gloss
+in alpha) and the scaled cube light it reflects. After the opaque scene (in a frame with water,
+before the copy the water refracts) three passes run: the march (`reflect.frag`: 256 steps of a
+half-size pixel over the occlusion's normals and view depth, the lit scene's colour at the hit, the
+alpha the fades' complement) into level 0 of a six-level rgba16f chain (960 by 540 down to 30 by
+16), the mip passes (`reflect_mip.frag`: one bilinear sample of the level above each), and the
+application (`reflect_apply.frag`), which adds `factor * w * (reflection - cube light)` to the
+scene, `w` the level 0 alpha times `vMerge.x` and the colour taken at lod `5 (1 - gloss)`. The scene
+already holds the cube light (the models add it as before), so this moves it toward the reflection
+as the game's mix does. The forward pass over her blends the factor by one minus its alpha as it
+does the scene. `BARREL_DUMP_STAGES` writes the march as `reflections` (the board's `reflections`
+and `reflections_alpha`). Against the game's march at the gate the weight over her thighs is 0.25
+(the game's 0.26) and over her boots 0.44 (0.44); the colour 0.34 0.29 0.18 against 0.38 0.31
+0.20.
+
 **`xEF_` models are not lit.** Field objects whose names hold `xEF_` (TOWN_03's
 `obj-xEF_windows_tw03`, the light through the bureau's windows; TOWN_11's `obj-xEF_einn`,
 `_eine`, `_einw`) are drawn as the distant view's clouds are: their texture on their vertex

@@ -111,6 +111,12 @@ layout(constant_id = 0) const bool AO_PASS = false;
 layout(location = 9) in vec4 cur_clip;
 layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
+// The screen-space reflections' inputs (reflect.rs; no attachment takes them without the
+// setting): the specular ambient's per-pixel factor (rgb: its Fresnel and occlusion terms times the
+// fog's extinction; a: the gloss) and the scaled cube light it reflects, for the pass that
+// mixes it toward the reflections after the scene is drawn.
+layout(location = 2) out vec4 spec_light;
+layout(location = 3) out vec4 spec_env;
 layout(location = 11) flat in vec4 tint_mul;
 layout(location = 12) flat in vec4 tint_add;
 // The mesh's tangent (turned like the normal) and the bitangent's sign; zero without one.
@@ -157,6 +163,8 @@ void specular_surface(vec3 albedo, out vec3 f0, out float gloss) {
 
 void main() {
     motion = (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
+    spec_light = vec4(0.0);
+    spec_env = vec4(0.0);
     vec4 c = texture(tex, uv);
     // The stage dump of the sun's share (`dump::Stop::Shadow`): what the shading multiplies the sun by.
     if (look.shadow_info.w > 0.5 && (pc.flags & 4096u) == 0u && ((pc.flags & 8u) == 0u || (pc.flags & 16u) != 0u)) {
@@ -254,6 +262,8 @@ void main() {
         }
         vec3 fc = (c.rgb + spec / look.chara_spec.w) * OL_COLOUR * (1.0 - OL_LIGHT_FADE + OL_LIGHT_FADE * OL_AMBIENT);
         color = vec4(tinted(mix(fog_add, fc * look.chara_spec.w, fog_keep)) * pc.params.w, clamp(c.a, 0.0, 1.0));
+        // Blended over the lit scene: what the specular ambient left under it shows by 1 - alpha.
+        spec_light.a = color.a;
         return;
     }
     vec3 n = normalize(normal);
@@ -396,7 +406,10 @@ void main() {
         }
         vec3 rgb = tinted(mix(fog_add, lit * albedo * at_color + highlights, fog_keep));
         if (specular && look.spec_amb.x > 0.0) {
-            rgb += chara ? specular_light(n, f0, gloss, spec_occlusion, look.chara_spec.rgb) : specular_light(n, f0, gloss, occlusion);
+            vec3 factor, env;
+            rgb += chara ? specular_light(n, f0, gloss, spec_occlusion, look.chara_spec.rgb, factor, env) : specular_light(n, f0, gloss, occlusion, look.spec_amb.x * look.spec_tint.rgb, factor, env);
+            spec_light = vec4(factor * fog_keep, gloss);
+            spec_env = vec4(env * pc.params.w, 0.0);
         }
         color = vec4(rgb * pc.params.w, 1.0);
         return;

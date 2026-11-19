@@ -653,6 +653,13 @@ mistake for a day). `u46` in the events does not play its movie yet.
   to the plain acceleration against the smoothed velocity) and, for now, every cloth but the
   player's (the title's and the townsfolk's characters hang at rest). The wind's strength is
   the plants' `Gust::at` stand-in times `clothWindScale`.
+- **Reflections: stand-ins** (Ryza, `docs/renderer.md`, "Screen-space reflections"). The game's
+  scene colour the march reads has no specular ambient; Barrel's holds the cube light (the
+  models add it before the reflections exist), so a reflected surface is a little brighter.
+  The march reads the occlusion's half-size normals (the game: the full-size target). The terrain
+  and the plants take no reflections (their specular ambient is the cube light alone). With
+  MSAA above 1 the reflections are left out (the extra targets are single-sampled), and a
+  frame whose stage dump stops before the finished scene has none.
 
 ## Sound
 

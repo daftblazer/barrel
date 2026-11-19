@@ -772,9 +772,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   distributions 2.8% apart). Her forward passes are built (docs/shading.md, "Her forward
   passes"): the specular ambient with her own block and her metal's diffuse (the red sheen
   on her stockings and boots, which the previous reading took for the hull's), and the hull
-  (a dark line on her silhouette and seams). Left: the half-size screen-space reflections
-  the specular ambient mixes toward (a stand-in: the boots and the thigh come out a fifth
-  too bright, 0.049 against 0.042 and 0.094 against 0.079 in red), the hull's own
+  (a dark line on her silhouette and seams). The half-size screen-space reflections
+  the specular ambient mixes toward are built (`reflect.rs`; the march's weight over her thighs
+  0.25 against the game's 0.26, the boots' 0.44 against 0.44; the board's `reflections` and
+  `reflections_alpha` stages). They explain only part of the excess: where the specular
+  ambient is brightest its weight is low (the factor-weighted weight 0.16, so the reflections
+  take 8% of her thighs' red at the gate), and her stockings and
+  boots at tone are still +8% and +4% at the gate (red; 55.0 against 50.9 and 35.9 against
+  34.4), -7% and -8% at the turn (the reflections take more there than the game's own light
+  leaves), +6% and +2% at the left. What is left is in the specular ambient's own terms, not
+  the reflections (stand-ins: the scene the march reads holds the cube light, the terrain takes
+  none). Left: the hull's own
   fog (nothing at her distance), the face's and the townsfolk's faces' forward programs
   (draws 2025 to 2031, not read), the normal map in her lighting (her G-buffer program reads it as `rgb x 2 - 1`, normalised, in the
   mesh's tangent frame, not the field models' red x alpha; her draws have no free texture slot for it: the

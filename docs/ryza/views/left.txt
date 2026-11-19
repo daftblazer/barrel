@@ -8,6 +8,8 @@ stage shadow 1625-1627_rt1920x1080.9#15
 stage lit 1628-1631_rt1920x1080.26#4
 stage lit_fogged 1651-1651_rt1920x1080.26#4
 stage sky 1644-1648_rt1920x1080.26#4
+stage reflections 1653-1653_rt960x540.9#2
+stage reflections_alpha 1653-1653_rt960x540.9#2
 stage scene 1732-1732_rt1920x1080.26#4
 stage bright 1747-1747_rt482x272.26#1
 stage bloom 1752-1752_rt240x135.26#1

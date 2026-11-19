@@ -75,6 +75,9 @@ pub struct Renderer {
     /// The ambient occlusion (`ao.rs`): its targets and passes, and the pipelines that draw the
     /// models' and the terrain's normals and depth into them.
     pub ao: ao::Occlusion,
+    /// The screen-space reflections (`reflect.rs`), when the setting is on (and the scene is
+    /// single-sampled): their passes, and the targets bound to the scene's.
+    pub reflect: Option<reflect::Reflections>,
     ao_gbuf_pipeline: vk::Pipeline,
     ao_gbuf_two_sided_pipeline: vk::Pipeline,
     ao_gbuf_terrain_pipeline: vk::Pipeline,
@@ -248,8 +251,12 @@ enum ScenePart {
 }
 
 /// The scene pass (see `ScenePart`): colour (multisampled with a resolve into the scene image, or
-/// the scene image itself with a motion target after depth) and depth.
-fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::SampleCountFlags, part: ScenePart) -> Result<vk::RenderPass> {
+/// the scene image itself with a motion target after depth) and depth. With `reflect`
+/// (single-sampled), the reflections' two per-pixel targets follow (their colour locations 2 and
+/// 3; location 1 is the motion target, or unused): they are kept for the pass that reads them
+/// after the scene, so the second part of a frame with water leaves them alone, and the first
+/// part leaves the scene image readable for the reflections' march instead of for the copy.
+fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::SampleCountFlags, part: ScenePart, reflect: bool) -> Result<vk::RenderPass> {
     use vk::{AttachmentLoadOp as Load, AttachmentStoreOp as Store, ImageLayout as Layout};
     let multisampled = samples != vk::SampleCountFlags::TYPE_1;
     let single = vk::SampleCountFlags::TYPE_1;
@@ -265,7 +272,7 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
     // Kept for GSR 2 to read, else only across the two parts.
     let depth_store = if settings.keeps_depth() || first { Store::STORE } else { Store::DONT_CARE };
     let depth = attachment(DEPTH_FORMAT, samples, load, depth_store, initial(Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL), if first { Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL } else { depth_last });
-    let scene_last = if first { Layout::TRANSFER_SRC_OPTIMAL } else { Layout::SHADER_READ_ONLY_OPTIMAL };
+    let scene_last = if first && !reflect { Layout::TRANSFER_SRC_OPTIMAL } else { Layout::SHADER_READ_ONLY_OPTIMAL };
     let mut attachments = vec![];
     if multisampled {
         // The multisampled colour, kept across the parts only.
@@ -281,11 +288,28 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
             attachments.push(attachment(MOTION_FORMAT, single, load, Store::STORE, initial(Layout::COLOR_ATTACHMENT_OPTIMAL), if first { Layout::COLOR_ATTACHMENT_OPTIMAL } else { Layout::SHADER_READ_ONLY_OPTIMAL }));
         }
     }
-    let colour_refs = [
-        vk::AttachmentReference { attachment: 0, layout: Layout::COLOR_ATTACHMENT_OPTIMAL },
-        vk::AttachmentReference { attachment: 2, layout: Layout::COLOR_ATTACHMENT_OPTIMAL },
-    ];
-    let colour = &colour_refs[..if settings.motion && !multisampled { 2 } else { 1 }];
+    // Colour locations: the scene image, the motion vectors (or nothing), the reflections' two.
+    let unused = vk::AttachmentReference { attachment: vk::ATTACHMENT_UNUSED, layout: Layout::UNDEFINED };
+    let mut colour = vec![vk::AttachmentReference { attachment: 0, layout: Layout::COLOR_ATTACHMENT_OPTIMAL }];
+    if settings.motion && !multisampled {
+        colour.push(vk::AttachmentReference { attachment: 2, layout: Layout::COLOR_ATTACHMENT_OPTIMAL });
+    }
+    if reflect && !multisampled {
+        if colour.len() == 1 {
+            colour.push(unused);
+        }
+        // Read after the scene pass (by the application), not carried into the water's part.
+        let (spec_load, spec_store, spec_initial, spec_last) = if second {
+            (Load::DONT_CARE, Store::DONT_CARE, Layout::UNDEFINED, Layout::COLOR_ATTACHMENT_OPTIMAL)
+        } else {
+            (Load::CLEAR, Store::STORE, Layout::UNDEFINED, Layout::SHADER_READ_ONLY_OPTIMAL)
+        };
+        for _ in 0..2 {
+            colour.push(vk::AttachmentReference { attachment: attachments.len() as u32, layout: Layout::COLOR_ATTACHMENT_OPTIMAL });
+            attachments.push(attachment(crate::reflect::FORMAT, single, spec_load, spec_store, spec_initial, spec_last));
+        }
+    }
+    let colour = &colour[..];
     let resolve = [vk::AttachmentReference { attachment: 2, layout: Layout::COLOR_ATTACHMENT_OPTIMAL }];
     let depth_ref = vk::AttachmentReference { attachment: 1, layout: Layout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
     let mut subpass = vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(colour).depth_stencil_attachment(&depth_ref);
@@ -474,9 +498,12 @@ impl Renderer {
         // of the pass. A frame with water draws it in two parts, the opaque scene first and the
         // rest after a copy of it (the water's refraction), which the same attachments carry on
         // through (`ScenePart`).
-        let render_pass = scene_render_pass(d, &settings, samples, ScenePart::Whole)?;
-        let water_passes = [scene_render_pass(d, &settings, samples, ScenePart::First)?, scene_render_pass(d, &settings, samples, ScenePart::Second)?];
-        let colour_targets = if settings.motion && samples == vk::SampleCountFlags::TYPE_1 { 2 } else { 1 };
+        // The reflections need the occlusion's normals and depth and single-sampled drawing.
+        let reflect_on = settings.reflections && settings.occlusion && samples == vk::SampleCountFlags::TYPE_1;
+        let render_pass = scene_render_pass(d, &settings, samples, ScenePart::Whole, reflect_on)?;
+        let water_passes = [scene_render_pass(d, &settings, samples, ScenePart::First, reflect_on)?, scene_render_pass(d, &settings, samples, ScenePart::Second, reflect_on)?];
+        // Colour locations: the scene, the motion vectors, the reflections' two.
+        let colour_targets = if reflect_on { 4 } else if settings.motion && samples == vk::SampleCountFlags::TYPE_1 { 2 } else { 1 };
         // The post pass: into the window's image or the offscreen one, no depth.
         let post_attachment = [vk::AttachmentDescription::default()
             .format(color_format)
@@ -558,7 +585,7 @@ impl Renderer {
         let refraction_sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 1 }];
         let refraction_pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(1).pool_sizes(&refraction_sizes), None)? };
         let refraction_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(refraction_pool).set_layouts(&[set_layout]))?[0] };
-        let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion, settings.scene_format())?;
+        let targets = Targets::new(&gpu, render_pass, post_pass, &target_views(presenter, color_view), width, height, settings.scene_size(width, height), post_sets, post_sampler, &glow_pipelines, upscale_pipelines.as_ref(), taa_pipelines.as_ref(), gsr2_pipelines.as_ref(), fsr3_pipelines.as_ref(), samples, settings.motion, show_motion, settings.scene_format(), reflect_on)?;
 
         // Pipeline.
         let module = |code: &[u8]| -> Result<vk::ShaderModule> {
@@ -608,8 +635,17 @@ impl Renderer {
         if colour_targets > 1 && unsafe { gpu.instance.get_physical_device_features(gpu.physical) }.independent_blend == 0 {
             return Err("motion vectors need the device's independent blending".into());
         }
-        let blend_att = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
+        // The reflections' two targets take what the model program writes (zero where it has
+        // nothing); a program without those outputs leaves them as they are.
+        let spec_written = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA);
+        let spec_kept = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::empty());
+        let opaque = vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA);
+        let blend_att = [opaque, motion_blend, spec_written, spec_written];
         let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..colour_targets]);
+        // The terrain, the sky's plane and the water (their programs have no reflections' outputs;
+        // they are drawn before the models or where nothing the reflections see is).
+        let flat_att = [opaque, motion_blend, spec_kept, spec_kept];
+        let flat_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&flat_att[..colour_targets]);
         let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT, offset: 0, size: PUSH_SIZE }];
         // Set 0 the colour, 1 the instances (and the look), 2 the mask.
         // Sets 0, 2 and 3: a draw's texture, mask and emission map.
@@ -656,7 +692,20 @@ impl Renderer {
             .src_alpha_blend_factor(vk::BlendFactor::ONE)
             .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
             .alpha_blend_op(vk::BlendOp::ADD)
-            .color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend];
+            .color_write_mask(vk::ColorComponentFlags::RGBA), motion_blend, spec_kept, spec_kept];
+        // The forward pass over the characters blends over the lit scene: the specular ambient
+        // below it (the reflections' factor) shows by one minus the hull's alpha, its gloss stays.
+        let forward_spec = vk::PipelineColorBlendAttachmentState::default()
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::ZERO)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ZERO)
+            .dst_alpha_blend_factor(vk::BlendFactor::ONE)
+            .alpha_blend_op(vk::BlendOp::ADD)
+            .color_write_mask(vk::ColorComponentFlags::RGBA);
+        let forward_att = [sky_blend_att[0], motion_blend, forward_spec, spec_kept];
+        let forward_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&forward_att[..colour_targets]);
         let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att[..colour_targets]);
         let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
         let sky_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_info], None).map_err(|(_, e)| e)?[0] };
@@ -669,7 +718,7 @@ impl Renderer {
         ];
         let sky_input = vk::PipelineVertexInputStateCreateInfo::default();
         let sky_raster = raster.cull_mode(vk::CullModeFlags::NONE);
-        let sky_plane_info = pipeline_info.stages(&sky_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).depth_stencil_state(&no_depth).color_blend_state(&blend);
+        let sky_plane_info = pipeline_info.stages(&sky_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).depth_stencil_state(&no_depth).color_blend_state(&flat_blend);
         let sky_plane_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_plane_info], None).map_err(|(_, e)| e)?[0] };
         // The sky's large clouds: a grid with no vertex buffer, blended over the sky like the
         // dome, reading the cloud map (set 0) and the look block (set 1).
@@ -689,7 +738,7 @@ impl Renderer {
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(water_modules[0]).name(c"main"),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(water_modules[1]).name(c"main"),
         ];
-        let water_info = pipeline_info.stages(&water_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster);
+        let water_info = pipeline_info.stages(&water_stages).vertex_input_state(&sky_input).rasterization_state(&sky_raster).color_blend_state(&flat_blend);
         let water_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[water_info], None).map_err(|(_, e)| e)?[0] };
         // Its far part, drawn again in the distant view's pass (on the far plane, where nothing
         // nearer is): past the far plane its vertices are pulled onto it, and the sky plane,
@@ -702,7 +751,7 @@ impl Renderer {
         let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
         let outline_info = pipeline_info.rasterization_state(&outline_raster);
         let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
-        let forward_info = outline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
+        let forward_info = outline_info.depth_stencil_state(&no_depth).color_blend_state(&forward_blend);
         let forward_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[forward_info], None).map_err(|(_, e)| e)?[0] };
 
         // The sun's shadow map pass: the same vertex shader from the sun, depth only (the alpha
@@ -765,7 +814,7 @@ impl Renderer {
             // The heightmap is wound the other way from the models and seen from above only: no
             // culling.
             let traster = raster.cull_mode(vk::CullModeFlags::NONE);
-            let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster);
+            let info = pipeline_info.stages(&tstages).layout(tpl).rasterization_state(&traster).color_blend_state(&flat_blend);
             let tpipe = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0] };
             TerrainGpu { pipeline_layout: tpl, shader: tfs, pipeline: tpipe }
         };
@@ -775,6 +824,13 @@ impl Renderer {
         // light (`AO_PASS`), into a half-size target of one sample, back faces culled as the
         // scene's (the terrain's heightmap both ways).
         let ao = ao::Occlusion::new(&gpu, set_layout, settings.occlusion, targets.scene_size)?;
+        let reflect = if reflect_on {
+            let mut r = reflect::Reflections::new(&gpu, settings.scene_format())?;
+            r.rebind(&gpu, &ao, &targets)?;
+            Some(r)
+        } else {
+            None
+        };
         let ao_pass_on = 1u32.to_le_bytes();
         let ao_entry = [vk::SpecializationMapEntry { constant_id: 0, offset: 0, size: 4 }];
         let ao_special = vk::SpecializationInfo::default().map_entries(&ao_entry).data(&ao_pass_on);
@@ -790,7 +846,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { reflect, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1056,9 +1112,15 @@ impl Renderer {
             let clear = [
                 vk::ClearValue { color: vk::ClearColorValue { float32: [0.12, 0.12, 0.14, 1.0] } },
                 vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } },
-                // The motion target's (no movement), when there is one.
+                // The motion target's (no movement), when there is one, and the reflections'
+                // two (nothing to add): the attachments after depth, whichever are there.
+                vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
+                vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
                 vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
             ];
+            // The reflections run on a frame whose normals and depth were drawn, at the stage
+            // that has the whole scene.
+            let reflect_frame = self.reflect.is_some() && self.ao.on() && occlusion && upto == dump::Stop::Full;
             // A frame with water draws the scene in two parts, the water refracting a copy of the
             // first (it needs the occlusion's depth of the opaque scene).
             let refract = water_pieces > 0 && upto != dump::Stop::Chara && self.ao.on() && occlusion;
@@ -1180,6 +1242,13 @@ impl Renderer {
                 if refract {
                     // The second part of the scene pass, after a copy of the first.
                     d.cmd_end_render_pass(cb);
+                    // The reflections go into what the water refracts; the scene is left as the copy reads it.
+                    if let Some(r) = self.reflect.as_ref().filter(|_| reflect_frame) {
+                        r.record(gpu, cb, &ao::View::of(&draw_vp), true);
+                        self.dump_reflections(gpu, cb, 1.0 / (HDR_RANGE_INV * meter.as_ref().map_or(1.0, |m| m.baked)));
+                    } else if self.reflect.is_some() {
+                        barrier(d, cb, targets.scene, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
+                    }
                     let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
                     let region = vk::ImageCopy::default().src_subresource(layers).dst_subresource(layers).extent(vk::Extent3D { width: scene_width, height: scene_height, depth: 1 });
                     barrier(d, cb, targets.refraction, vk::ImageAspectFlags::COLOR, 1, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
@@ -1273,6 +1342,11 @@ impl Renderer {
                 }
             }
             d.cmd_end_render_pass(cb);
+            // The reflections over the opaque scene (a frame with water did them before its copy).
+            if let Some(r) = self.reflect.as_ref().filter(|_| reflect_frame && !refract) {
+                r.record(gpu, cb, &ao::View::of(&draw_vp), false);
+                self.dump_reflections(gpu, cb, 1.0 / (HDR_RANGE_INV * meter.as_ref().map_or(1.0, |m| m.baked)));
+            }
             // The stage dumps: the scene in the game's units (it is stored at half and lit at
             // the exposure it was baked with).
             let baked = meter.as_ref().map_or(1.0, |m| m.baked);
@@ -1386,13 +1460,27 @@ impl Renderer {
         drawn
     }
 
+    /// The stage dump of the reflections' march (`reflections`: the colour and the alpha, in the
+    /// scene's units as stored).
+    ///
+    /// # Safety
+    /// `cb` is recording outside a render pass, after the reflections were recorded.
+    unsafe fn dump_reflections(&self, gpu: &Gpu, cb: vk::CommandBuffer, scale: f32) {
+        if let (Some(dump), Some((image, size))) = (&self.dump, self.reflect.as_ref().and_then(|r| r.image())) {
+            unsafe { dump.grab(gpu, cb, "reflections", image, size, dump::Texels::Rgba16F, scale) };
+        }
+    }
+
     /// The targets again at a new window size (after the presenter's swapchain was rebuilt).
     pub fn rebuild_targets(&mut self, gpu: &Gpu, presenter: Option<&Presenter>, width: u32, height: u32) -> Result<()> {
         self.targets.destroy(gpu);
         let s = &self.settings;
         self.ao.resize(gpu, s.scene_size(width, height))?;
-        let targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format())?;
+        let targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format(), self.reflect.is_some())?;
         write_refraction_set(&gpu.device, self.refraction_set, self.refraction_sampler, targets.refraction_view);
+        if let Some(r) = self.reflect.as_mut() {
+            r.rebind(gpu, &self.ao, &targets)?;
+        }
         self.targets = targets;
         Ok(())
     }
@@ -1489,6 +1577,9 @@ impl Renderer {
         }
         self.look_ring.destroy(gpu);
         self.shadow_target.destroy(gpu);
+        if let Some(r) = self.reflect.take() {
+            r.destroy(gpu);
+        }
         self.ao.destroy(gpu);
         unsafe {
             d.destroy_descriptor_set_layout(self.instance_layout, None);

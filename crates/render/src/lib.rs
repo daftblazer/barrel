@@ -13,6 +13,7 @@ use glam::{Mat4, Vec3};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub mod ao;
+pub mod reflect;
 pub mod clouds;
 pub mod dump;
 pub mod flare;
@@ -969,6 +970,9 @@ pub struct Targets {
     pub multisample: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     /// The motion vectors (`--motion`).
     pub motion: Option<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    /// The scene pass's two per-pixel targets for the screen-space reflections (`reflect.rs`):
+    /// the specular ambient's factor and gloss, and the cube light it reflects.
+    pub spec: Option<[(vk::Image, vk::DeviceMemory, vk::ImageView); 2]>,
 }
 
 impl Targets {
@@ -997,6 +1001,7 @@ impl Targets {
         motion: bool,
         show_motion: bool,
         scene_format: vk::Format,
+        reflections: bool,
     ) -> Result<Targets> {
         let d = &gpu.device;
         let (scene_width, scene_height) = scene_size;
@@ -1051,10 +1056,25 @@ impl Targets {
         } else {
             None
         };
-        let scene_framebuffer = match (multisample, motion_target) {
-            (Some((_, _, msaa_view)), _) => framebuffer(scene_pass, &[msaa_view, depth_view, scene_view], scene_size)?,
-            (None, Some((_, _, motion_view))) => framebuffer(scene_pass, &[scene_view, depth_view, motion_view], scene_size)?,
-            (None, None) => framebuffer(scene_pass, &[scene_view, depth_view], scene_size)?,
+        // The reflections' per-pixel targets (only with single-sampled drawing).
+        let spec_targets = if reflections && multisample.is_none() {
+            let mut make = || -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
+                let (image, memory) = image(reflect::FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+                Ok((image, memory, view(image, reflect::FORMAT, vk::ImageAspectFlags::COLOR)?))
+            };
+            Some([make()?, make()?])
+        } else {
+            None
+        };
+        let scene_framebuffer = match (multisample, motion_target, spec_targets) {
+            (Some((_, _, msaa_view)), _, _) => framebuffer(scene_pass, &[msaa_view, depth_view, scene_view], scene_size)?,
+            (None, motion, spec) => {
+                // Colour, depth, then the motion vectors and the reflections' targets as there are.
+                let mut views = vec![scene_view, depth_view];
+                views.extend(motion.map(|m| m.2));
+                views.extend(spec.iter().flatten().map(|t| t.2));
+                framebuffer(scene_pass, &views, scene_size)?
+            }
         };
         let framebuffers = output.iter().map(|&v| framebuffer(post_pass, &[v], (width, height))).collect::<std::result::Result<Vec<_>, _>>()?;
         if framebuffers.is_empty() {
@@ -1113,6 +1133,7 @@ impl Targets {
         Ok(Targets {
             post_sets,
             motion: motion_target,
+            spec: spec_targets,
             multisample,
             scene_size,
             scene,
@@ -1172,6 +1193,11 @@ impl Targets {
             d.destroy_image(self.scene, None);
             d.free_memory(self.scene_memory, None);
             if let Some((image, memory, view)) = self.motion.take() {
+                d.destroy_image_view(view, None);
+                d.destroy_image(image, None);
+                d.free_memory(memory, None);
+            }
+            for (image, memory, view) in self.spec.take().into_iter().flatten() {
                 d.destroy_image_view(view, None);
                 d.destroy_image(image, None);
                 d.free_memory(memory, None);
