@@ -161,6 +161,15 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
+- **Point lights** (P2). Barrel's Ryza has none: the shaders declare `point_pos`,
+  `point_color` and `point_ambient` but never read them, and the field fills none. The game
+  gathers them in clusters (pass 12's `fClstScl` 0.0003, `nClstPtch`, `vClstZPrm`: the grid,
+  plumbing Barrel need not copy) out to `pointlightpreset.xml`'s `ClusterFarLimitZ` 100000,
+  fading over its `LightFadeOutRange` 2000 (`vFadeDist` -98000, -100000); `IRLocalLightParam`
+  (1, 0.33) on the characters' draw. Which lights the field has, and whether any are lit at
+  noon, not read. Off at the gate but not sourced (so not dumped as zeros): the light shafts'
+  `vLightShaftPower` (it may follow the sun on screen, not a switch) and the vignette's
+  `fLimbDarkeningWeight`.
 - **The characters' map's box** (P2; `mSubW2S`, `SUB_BOX_PAD`). The game's box in the sun's
   view is a world box's (its v extent equals its depth: the sun at 45 degrees) that follows
   her pose (gate 144.5 by 220.8 in all three idle captures to 0.6; the turn 136.8 by 231.1).
