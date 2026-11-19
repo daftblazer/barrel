@@ -18,6 +18,7 @@ const ROLES: &[(&str, usize, usize)] = &[
     ("ambient.stage", 11, 0),
     ("ambient.second", 11, 1),
     ("ambient.chara", 11, 2),
+    ("ambient.water", 14, 0),
     ("lighting.stage", 12, 0),
     ("lighting.stage1", 12, 1),
     ("lighting.stage2", 12, 2),

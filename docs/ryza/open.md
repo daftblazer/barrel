@@ -178,8 +178,8 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   turn Barrel's is wider in u (`mSubW2S[0]` 0.00553 against 0.00633), her pose there not the
   game's; the pixels do not move either way. The real rule (her joints grown by a radius?)
   not found; position and facing ruled out.
-- **The post constants Barrel does not dump** (P2; `rasen-constants`: 980 compared, 0 differ,
-  155 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 1106 compared, 0 differ,
+  142 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
   lists them by pass). They split three ways:
   - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
     shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `scSMD`,

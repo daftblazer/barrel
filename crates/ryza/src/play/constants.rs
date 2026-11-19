@@ -84,6 +84,15 @@ pub(super) const FORWARD_PASS: &[(&str, &[f32])] = &[
     ("fOLCSatFade", &[0.0]),
     ("cSpec", &[1.0, 1.0, 1.0, 20.0]),
 ];
+/// How far the water's refracted ray is walked at most, in transparencies: water.frag's
+/// `RAY_TRANSPARENCIES` (the game's `vRrParam.z` over `fRrTransparency`).
+pub(super) const WATER_RAY_TRANSPARENCIES: f32 = 8.0;
+/// The ambient passes' shadow terms, the same on every kind of surface.
+const SHADOW_TERMS: [&str; 12] = ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D", "mSubW2S", "scSubSM", "mSemiStaticW2S", "scSemiStaticSM", "nLPV3DDepth", "fOverallShadow", "ilaScale"];
+/// The look block's view-projection (slots 44 to 47, the shaders' `view_proj`).
+const VIEW_PROJ_SLOT: usize = 44;
+/// Barrel's clip y against the screen's v: +1 (Vulkan's y runs down the screen, as v does).
+const SCREEN_V_SIGN: f32 = 1.0;
 /// The lighting pass's `fOccAlbScl` on the stage's draws: occlusion.glsl's `STAGE_OCC_ALBEDO`.
 pub(super) const STAGE_OCC_ALBEDO: f32 = 1.0;
 /// `vAmbOccRat`'s first two values (the others are not used).
@@ -173,7 +182,6 @@ pub(super) fn json(i: &Inputs) -> String {
     if fwd[..3] != [0.0; 3] {
         water_light.insert("vCameraDir", some(&world(fwd)));
     }
-    put("lighting.water", water_light);
     // The forward pass over the characters takes the stage's lights at the set's own colours (the
     // lighting pass's are those times the stage's key and second light scales).
     let mut forward = lighting.clone();
@@ -273,7 +281,7 @@ pub(super) fn json(i: &Inputs) -> String {
     second.insert("vAmbParam", vec![Some(0.0), Some(0.0), None, None]);
     second.insert("vAmbDifScl", vec![Some(0.0), Some(0.0), Some(0.0), None]);
     second.insert("ambLit", some(&[dome_ambient[0], dome_ambient[1], dome_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D", "mSubW2S", "scSubSM", "mSemiStaticW2S", "scSemiStaticSM", "nLPV3DDepth", "fOverallShadow", "ilaScale"] {
+    for name in SHADOW_TERMS {
         if let Some(v) = ambient.get(name) {
             second.insert(name, v.clone());
         }
@@ -286,12 +294,22 @@ pub(super) fn json(i: &Inputs) -> String {
     ch.insert("vAmbParam", vec![Some(chara.diffuse_map), Some(0.0), None, None]);
     ch.insert("vAmbDifScl", vec![Some(chara.diffuse_map_color[0]), Some(chara.diffuse_map_color[1]), Some(chara.diffuse_map_color[2]), None]);
     ch.insert("ambLit", some(&[chara_ambient[0], chara_ambient[1], chara_ambient[2], 1.0]));
-    for name in ["vSMDF", "vS2VZ", "sdplane", "scSMD", "scSM2D", "mSubW2S", "scSubSM", "mSemiStaticW2S", "scSemiStaticSM", "nLPV3DDepth", "fOverallShadow", "ilaScale"] {
+    for name in SHADOW_TERMS {
         if let Some(v) = ambient.get(name) {
             ch.insert(name, v.clone());
         }
     }
     put("ambient.chara", ch);
+    // The water's ambient and shadow pass (after its surface goes into the G-buffer): the same
+    // shadow maps and terms. Its ambient is not compared: Barrel's water takes the cube map's
+    // in its own lighting (docs/shading.md, "Ryza DX: the water").
+    let mut water = Consts::new();
+    for name in SHADOW_TERMS {
+        if let Some(v) = ambient.get(name) {
+            water.insert(name, v.clone());
+        }
+    }
+    put("ambient.water", water);
 
     // The scene's fog (the lighting passes' and the specular ambient's), the sky's, and the sky's
     // own light and haze.
@@ -423,10 +441,29 @@ pub(super) fn json(i: &Inputs) -> String {
     // The water: the first and the last piece's body (its albedo and reflectance at normal
     // incidence, from the slots the water's vertex program reads).
     let pieces = look[WATER_SLOT][0] as usize;
+    // The view depth from the depth buffer's (`vD2Z`), and world to the screen's texture
+    // coordinates times w (`mRrW2T`: rows u w, v w, w; game space is x mirrored).
+    let d2z = some(&[1.0 / i.near, 1.0 / i.far - 1.0 / i.near]);
+    let vp = glam::Mat4::from_cols_array_2d(&[look[VIEW_PROJ_SLOT], look[VIEW_PROJ_SLOT + 1], look[VIEW_PROJ_SLOT + 2], look[VIEW_PROJ_SLOT + 3]]) * glam::Mat4::from_diagonal(glam::Vec4::new(-1.0, 1.0, 1.0, 1.0));
+    let row = |k: usize| glam::Vec4::new(vp.x_axis[k], vp.y_axis[k], vp.z_axis[k], vp.w_axis[k]);
+    let (x, y, w) = (row(0), row(1), row(3));
+    let screen: Vec<Option<f32>> = [(x + w) * 0.5, (w + SCREEN_V_SIGN * y) * 0.5, w].iter().flat_map(|r| r.to_array()).map(Some).collect();
+    water_light.insert("vD2Z", d2z.clone());
+    water_light.insert("mRrW2T", screen.clone());
+    put("lighting.water", water_light);
     if pieces > 0 {
         for (role, piece) in [("water.first", 0), ("water.last", pieces - 1)] {
-            let body = look[WATER_SLOT + 1 + 5 * piece + 4];
+            let base = WATER_SLOT + 1 + 5 * piece;
+            let body = look[base + 4];
             let mut c = Consts::new();
+            // The refraction: the index (slot c.w holds it less 1) and the transparency (d.w),
+            // with `vRrParam` built from them as the game packs it.
+            let (index, clear) = (look[base + 2][3] + 1.0, look[base + 3][3]);
+            c.insert("fRrRefractiveIndex", some(&[index]));
+            c.insert("fRrTransparency", some(&[clear]));
+            c.insert("vRrParam", some(&[1.0 / index, index - 1.0, WATER_RAY_TRANSPARENCIES * clear, -1.0 / clear]));
+            c.insert("vD2Z", d2z.clone());
+            c.insert("mRrW2T", screen.clone());
             c.insert("vAlbedoColor", vec![Some(body[0]), Some(body[1]), Some(body[2]), None]);
             c.insert("vReflectance", vec![Some(body[3]), None, None, None]);
             c.insert("vEye", v_eye.clone());
@@ -587,6 +624,8 @@ mod tests {
         assert_eq!(numbers("RIM"), RIM_ENTRY);
         let occlusion = include_str!("../../../render/shaders/occlusion.glsl");
         assert!(occlusion.contains(&format!("const float STAGE_OCC_ALBEDO = {STAGE_OCC_ALBEDO:?};")));
+        let water = include_str!("../../../render/shaders/water.frag");
+        assert!(water.contains(&format!("const float RAY_TRANSPARENCIES = {WATER_RAY_TRANSPARENCIES:?};")));
     }
 
     #[test]

@@ -1465,6 +1465,14 @@ On the pixel board the water's scene values (game, Barrel) are: left view, the r
 view's sea region 0.335 0.333 0.471 and 0.325 0.309 0.441; the gate view's river region
 0.259 0.760 2.295 and 0.270 0.735 2.149. The wave normal's shape does not move these means.
 
+The game packs each body's refraction as `vRrParam` = (1 / index, index − 1, 8 × transparency,
+−1 / transparency): the river 1.3689 and 1000, the sea 1.333 and 315.534. The ray's 8 is
+water.frag's `RAY_TRANSPARENCIES`. `vD2Z` is (1 / near, 1 / far − 1 / near), and `mRrW2T` maps
+world space to the screen's texture coordinates times w: rows 0.5 (x + w), 0.5 (w − y) and w of
+the view-projection, in the game's clip space. The water's ambient-and-shadow pass (pass 14)
+takes the same shadow terms as the stage's (pass 11); its own ambient is black (`ambLit` 0),
+since the lighting pass adds the cube map's ambient.
+
 Not done: the wave volume's normals (a few travelling sines stand in), the shore bubbles
 (`wavebubbles-sequence-a01.g1t`), the caustics' light on what is seen through, the piece's skirt,
 the surface's scroll.

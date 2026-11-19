@@ -85,6 +85,8 @@ layout(location = 0) out vec4 colour;
 layout(location = 1) out vec4 motion;
 
 const float HDR_RANGE_INV = 0.5;
+// How far the refracted ray is walked at most, in transparencies (the game's `vRrParam.z`).
+const float RAY_TRANSPARENCIES = 8.0;
 
 #include "environment_light.glsl"
 #include "specular_direct.glsl"
@@ -139,7 +141,7 @@ void main() {
         float behind = min(min(around.x, around.y), min(around.z, around.w));
         float thickness = max(behind - fog_depth, 0.0);
         vec3 ray = normalize((vec3(0.0, 1.0, 0.0) - n) * index - to_eye);
-        vec3 end = world + ray * min(thickness, 8.0 * transparency);
+        vec3 end = world + ray * min(thickness, RAY_TRANSPARENCIES * transparency);
         mat4 view_proj = mat4(look.vertex_only[7], look.vertex_only[8], look.vertex_only[9], look.vertex_only[10]);
         vec4 clip = view_proj * vec4(end, 1.0);
         vec2 there = clamp(clip.xy / clip.w * 0.5 + 0.5, vec2(0.0), vec2(1.0));
