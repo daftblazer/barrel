@@ -247,8 +247,11 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   `npc29a` stays 55 off (not height: `DIFF3D_POSES=root` has its root 28 and 50 off in x
   and z, along its path: at clock 13.5 instead of 13.7166 it is 7.6 off, but `npc22a` is
   then 40; no one clock fits all three, so its pace, its pauses' lengths (random between
-  `interval_min` and `interval_max`) or its start differ; one frame cannot tell, the game's
-  root over several frames would), the game's own
+  `interval_min` and `interval_max`) or its start differ; the capture's frames 1750 to 2550
+  (every 50) settle it: the game runs it at 301 units a second (3 m/s, as Barrel) and covers
+  140 fewer units between 1750 and 1850 than its pace gives: a pause at a point, whose length
+  the game draws at random between the row's bounds; Barrel cannot match it without the
+  game's random numbers, so this one stays), the game's own
   rule for its walkers' ground (not read), and walkers on the title (no ground without
   Ryza's rig), and the pace of their motions. The story comes from a save with `--save` (`docs/formats.md`,
   "Ryza DX saves"). Left: the object ranges' own measure and classes below
