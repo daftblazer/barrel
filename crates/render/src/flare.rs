@@ -45,6 +45,9 @@ pub struct Settings {
     pub flare: Layer,
     pub paraffin: Layer,
     pub intensity: f32,
+    /// The wash's strength over the sky (where the depth is the far plane's). Not applied yet:
+    /// the post pass has no depth, so the sky takes `intensity` (docs/ryza/open.md).
+    pub sky_intensity: f32,
 }
 
 /// The settings buffer's layout as `post.frag` declares it (std140: six vectors).
@@ -258,7 +261,7 @@ mod tests {
     fn no_settings_switch_the_wash_off() {
         assert_eq!(Block::of(None).extra[2], 0.0);
         let layer = Layer { color: [0.1; 4], amount: 0.5, curve_center: 0.5, curve_coefficient: -0.2, shadow_influence: 1.0 };
-        let s = Settings { reference: [0.5, 0.5, 0.5, 1.0], up_speed: 0.1, down_speed: 0.1, rotation: [1.0, 0.0, 0.0, 1.0], flare: layer, paraffin: layer, intensity: 15.0 };
+        let s = Settings { reference: [0.5, 0.5, 0.5, 1.0], up_speed: 0.1, down_speed: 0.1, rotation: [1.0, 0.0, 0.0, 1.0], flare: layer, paraffin: layer, intensity: 15.0, sky_intensity: 15.0 };
         let b = Block::of(Some(&s));
         assert_eq!((b.extra[2], b.extra[3], b.flare[0]), (1.0, 15.0, 0.5));
     }

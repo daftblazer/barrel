@@ -457,14 +457,13 @@ pub(super) fn json(i: &Inputs) -> String {
                 ("fShadowIntensityDownSpeed", some(&[s.down_speed])),
             ]),
         );
-        put(
-            "flare",
+        let flare = |intensity: f32| {
             Consts::from([
                 ("mRotation", some(&rotation)),
                 ("fFlareCurveCoefficient", some(&[s.flare.curve_coefficient])),
                 ("fFlareCurveCenter", some(&[s.flare.curve_center])),
                 ("fFlareAmount", some(&[s.flare.amount])),
-                ("fIntensity", some(&[s.intensity])),
+                ("fIntensity", some(&[intensity])),
                 ("fFlareShadowInfluenceRatio", some(&[s.flare.shadow_influence])),
                 ("fParaffinCurveCoefficient", some(&[s.paraffin.curve_coefficient])),
                 ("fParaffinCurveCenter", some(&[s.paraffin.curve_center])),
@@ -472,8 +471,11 @@ pub(super) fn json(i: &Inputs) -> String {
                 ("fParaffinShadowInfluenceRatio", some(&[s.paraffin.shadow_influence])),
                 ("vFlareColor", some(&s.flare.color)),
                 ("vParaffinColor", some(&s.paraffin.color)),
-            ]),
-        );
+            ])
+        };
+        // The game draws the scene and the sky apart, the sky at its own intensity.
+        put("flare", flare(s.intensity));
+        put("flare.sky", flare(s.sky_intensity));
     }
 
     let mut out = String::from("{\n");

@@ -1248,8 +1248,12 @@ depth; Barrel's cascade is the game's mirrored, so the dump turns its uv back. T
 from a small uniform buffer written every frame with `cmd_update_buffer` (no settings: off, which
 is Escha's case). The tilt of the screen is the angle of the sun's direction on screen from
 vertical with the uv square's aspect (`atan(-x / (y * aspect))`, fitted to three views). The
-lighting sets hold none of the flare's numbers (checked in all twelve of Rasenboden's), so colours,
-amount and intensity are stand-ins from the capture; the executable's defaults supply the curves.
+numbers are the environment template's (`saves/fieldmap/cameraparam/env/envtemplate.xml`, block
+`flare_paraffin`, a row per time and weather; `barrel_ryza::flare::look`), read by the
+executable's key names: it spells two `..._corve_center`, and the file's `Paraffin_amount` is not
+its key, so the paraffin amount stays the default 0.2 (as the game's constants show). The game
+draws the wash twice, the scene at `intensity` and the sky (depth at the far plane) at
+`sky_intensity`; Barrel's post pass has no depth yet, so the sky takes `intensity` too.
 
 ## The forward pass over Ryza's characters
 

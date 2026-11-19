@@ -56,6 +56,7 @@ const ROLES: &[(&str, usize, usize)] = &[
     ("tone", 69, 0),
     ("sunvis", 73, 0),
     ("flare", 74, 0),
+    ("flare.sky", 74, 1),
 ];
 
 /// The lighting and post passes: from the ambient-and-shadow pass to the last pass before the
@@ -81,13 +82,6 @@ const CASCADE_FIT: &[(&str, f32)] = &[("vShadowReferenceUV", 5e-3)];
 fn agree(name: &str, a: f32, b: f32) -> bool {
     CASCADE_FIT.iter().find(|c| c.0 == name).map_or_else(|| same(a, b), |c| (a - b).abs() <= c.1)
 }
-
-/// Draws of the game's frame Barrel does not make: the flare pass's two draws cover the same quad
-/// and the second overwrites the first, so Barrel makes one. Its constants are the capture's
-/// first draw's: the image the second draw leaves has the flare at the first's fIntensity (20; the
-/// second's recorded 15 gives half again too little), so the capture appears to attach the two
-/// draws' constants the other way round (docs/ryza/open.md).
-const OVERWRITTEN: &[(usize, usize)] = &[(74, 1)];
 
 /// `3.4560e-1`-free text of a float.
 fn text(v: f32) -> String {
@@ -160,7 +154,7 @@ pub fn constants(dir: &Path, frame: u64, barrel: &Path) -> Result<()> {
         }
         sizes.insert(p, b - a);
         for (d, g) in ds[*a..*b].iter().enumerate() {
-            if (p == FORWARD_PASS && d >= FORWARD_KEPT) || OVERWRITTEN.contains(&(p, d)) {
+            if p == FORWARD_PASS && d >= FORWARD_KEPT {
                 continue;
             }
             for (name, ..) in &g.vars {

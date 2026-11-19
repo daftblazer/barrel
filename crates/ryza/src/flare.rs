@@ -8,11 +8,13 @@
 //! second lays a warm flare along the top of the screen, along a curve tilted toward the sun,
 //! and a paraffin tint where the sun is not blocked.
 //!
-//! The lighting sets hold none of these numbers (all twelve of Rasenboden's carry no lens-flare
-//! values), and no other file was found that does; the executable's reader of the block
-//! (`EnvFlareParaffin`) has defaults for some, which are used where they agree with the
-//! capture, and the rest are stand-ins.
+//! The numbers are the environment template's (`envtemplate.xml`, its `flare_paraffin` block: a
+//! row per time of day and weather), read as the executable's `EnvFlareParaffin` reads them: by
+//! its own key names (two are spelled `..._corve_center`, and the file writes `Paraffin_amount`,
+//! which it does not match), the block's defaults standing in for any key a row leaves out.
 
+use crate::environment::{Time, Weather};
+use barrel_formats::table::Element;
 use barrel_render::flare::{Layer, Settings};
 use glam::{Mat4, Vec3};
 
@@ -23,28 +25,86 @@ pub const SPEED: f32 = 1.0 / 60.0;
 // STAND-IN: 0 as the game's pass has it at the gate; its source is not found.
 pub const REVERSE_FLAG: f32 = 0.0;
 
-/// The flare's colour (0 to 255 and a weight): `vFlareColor` as the game's pass has it, over 255.
-// STAND-IN: The colour and weight the game's pass has at Rasenboden's gate (30, 40, 50 and 25); the lighting sets do not hold them and the executable's default is set at start-up (not read).
-const FLARE_COLOR: [f32; 4] = [30.0 / 255.0, 40.0 / 255.0, 50.0 / 255.0, 25.0 / 255.0];
-/// `vParaffinColor`: the same for the paraffin tint.
-// STAND-IN: As above (50, 65, 60 and 20).
-const PARAFFIN_COLOR: [f32; 4] = [50.0 / 255.0, 65.0 / 255.0, 60.0 / 255.0, 20.0 / 255.0];
-/// `fFlareAmount`: how far down the screen the flare reaches.
-// STAND-IN: The game's pass has 0.6 at Rasenboden's gate; the executable's default is 0.1, and the sets hold no value.
-const FLARE_AMOUNT: f32 = 0.6;
-/// `fIntensity`: the flare's strength. The executable's default of the setting is 20.
-// STAND-IN: 20, from the picture: the game's final image has the flare at 20 (the second draw's recorded constant says 15, the first's 20; see `barrel-parity`'s `OVERWRITTEN`); the sets hold no value.
-const INTENSITY: f32 = 20.0;
+/// The environment template, whose `flare_paraffin` block holds the wash's settings.
+pub const TEMPLATE_PATH: &str = "\\saves\\fieldmap\\cameraparam\\env\\envtemplate.xml";
 
-/// The curves and the shadow influence: the executable's defaults for the block (`flare` curve
-/// centre 0.5 and coefficient -0.2, `paraffin` amount 0.2, centre 0.5 and coefficient 0.2, both
-/// influence ratios 1), which are also what the capture has.
-const FLARE_CENTER: f32 = 0.5;
-const FLARE_COEFFICIENT: f32 = -0.2;
-const PARAFFIN_AMOUNT: f32 = 0.2;
-const PARAFFIN_CENTER: f32 = 0.5;
-const PARAFFIN_COEFFICIENT: f32 = 0.2;
-const SHADOW_INFLUENCE: f32 = 1.0;
+/// One row of the template's `flare_paraffin` block: the two layers and the strengths.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look {
+    pub flare: Layer,
+    pub paraffin: Layer,
+    /// `intensity`: the wash's strength over the scene.
+    pub intensity: f32,
+    /// `sky_intensity`: its strength over the sky (the game's second draw, where the depth is
+    /// the far plane's).
+    pub sky_intensity: f32,
+}
+
+impl Default for Look {
+    /// The block's defaults (the reader's, `EnvFlareParaffin`): curve centres 0.5, coefficients
+    /// -0.2 and 0.2, amounts 0.1 and 0.2, influence ratios 1, intensity 20.
+    fn default() -> Look {
+        // STAND-IN: The colours' defaults are set at start-up and not read; a zero weight leaves the picture as it is.
+        let color = [0.0; 4];
+        Look {
+            flare: Layer { color, amount: 0.1, curve_center: 0.5, curve_coefficient: -0.2, shadow_influence: 1.0 },
+            paraffin: Layer { color, amount: 0.2, curve_center: 0.5, curve_coefficient: 0.2, shadow_influence: 1.0 },
+            intensity: 20.0,
+            // STAND-IN: The sky's default is not read; the scene's intensity is taken.
+            sky_intensity: 20.0,
+        }
+    }
+}
+
+/// The template's row for `time` in `weather` (the block's defaults if it has none).
+pub fn look(bytes: &[u8], time: Time, weather: Weather) -> Result<Look, String> {
+    let root = barrel_formats::table::parse(bytes).map_err(|e| format!("environment template: {e}"))?;
+    let times = ["morning", "noon", "evening", "night"];
+    let weathers = ["sunny", "cloudy", "foggy"];
+    let mut rows: Vec<&Element> = vec![&root];
+    let mut found = None;
+    while let Some(e) = rows.pop() {
+        if e.name == "flare_paraffin" {
+            found = e.children.iter().find(|r| {
+                r.attr("time").is_some_and(|t| t.eq_ignore_ascii_case(times[time as usize])) && r.attr("weather").is_some_and(|w| w.eq_ignore_ascii_case(weathers[weather as usize]))
+            });
+            break;
+        }
+        rows.extend(e.children.iter());
+    }
+    let mut l = Look::default();
+    let Some(row) = found else { return Ok(l) };
+    let numbers = |key: &str| -> Result<Option<Vec<f32>>, String> {
+        row.attr(key).map(|v| v.split(',').map(|c| c.trim().parse::<f32>().map_err(|_| format!("environment template: {key} = {v}"))).collect()).transpose()
+    };
+    let one = |key: &str, into: &mut f32| -> Result<(), String> {
+        if let Some(v) = numbers(key)?.and_then(|v| v.first().copied()) {
+            *into = v;
+        }
+        Ok(())
+    };
+    // Colours are 0 to 255 with a weight, as the pass takes them over 255.
+    let color = |key: &str, into: &mut [f32; 4]| -> Result<(), String> {
+        if let Some(v) = numbers(key)? {
+            let v: [f32; 4] = v.try_into().map_err(|_| format!("environment template: {key} is not four numbers"))?;
+            *into = v.map(|c| c / 255.0);
+        }
+        Ok(())
+    };
+    color("flare_color", &mut l.flare.color)?;
+    one("flare_amount", &mut l.flare.amount)?;
+    one("flare_corve_center", &mut l.flare.curve_center)?;
+    one("flare_curve_coefficient", &mut l.flare.curve_coefficient)?;
+    one("flare_shadow_influence_ratio", &mut l.flare.shadow_influence)?;
+    color("paraffin_color", &mut l.paraffin.color)?;
+    one("paraffin_amount", &mut l.paraffin.amount)?;
+    one("paraffin_corve_center", &mut l.paraffin.curve_center)?;
+    one("paraffin_curve_coefficient", &mut l.paraffin.curve_coefficient)?;
+    one("paraffin_shadow_influence_ratio", &mut l.paraffin.shadow_influence)?;
+    one("intensity", &mut l.intensity)?;
+    one("sky_intensity", &mut l.sky_intensity)?;
+    Ok(l)
+}
 
 /// The screen's tilt toward the sun as the 2x2 of the game's `mRotation` (row 0, then row 1).
 ///
@@ -66,10 +126,10 @@ pub fn reference(cascade: Mat4, world: Vec3) -> [f32; 4] {
     [p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, p.z, 1.0]
 }
 
-/// The frame's settings. `probe` is the point the sun's shadow is asked about and `cascade`
+/// The frame's settings, `look` the template's row. `probe` is the point the sun's shadow is asked about and `cascade`
 /// the first cascade's view-projection (both in render space); `view` the camera's view
 /// matrix, `sun` the direction the sunlight travels (render space), `aspect` the screen's.
-pub fn settings(probe: Vec3, cascade: Mat4, view: Mat4, sun: Vec3, aspect: f32) -> Settings {
+pub fn settings(look: &Look, probe: Vec3, cascade: Mat4, view: Mat4, sun: Vec3, aspect: f32) -> Settings {
     // Render space is the game's with x negated, and the picture is mirrored back by the
     // projection: the screen's right is the view's -x.
     let v = view.transform_vector3(-sun);
@@ -79,9 +139,10 @@ pub fn settings(probe: Vec3, cascade: Mat4, view: Mat4, sun: Vec3, aspect: f32) 
         up_speed: SPEED,
         down_speed: SPEED,
         rotation: rotation(to_sun, aspect),
-        flare: Layer { color: FLARE_COLOR, amount: FLARE_AMOUNT, curve_center: FLARE_CENTER, curve_coefficient: FLARE_COEFFICIENT, shadow_influence: SHADOW_INFLUENCE },
-        paraffin: Layer { color: PARAFFIN_COLOR, amount: PARAFFIN_AMOUNT, curve_center: PARAFFIN_CENTER, curve_coefficient: PARAFFIN_COEFFICIENT, shadow_influence: SHADOW_INFLUENCE },
-        intensity: INTENSITY,
+        flare: look.flare,
+        paraffin: look.paraffin,
+        intensity: look.intensity,
+        sky_intensity: look.sky_intensity,
     }
 }
 
@@ -108,5 +169,22 @@ mod tests {
     fn a_point_at_the_maps_centre_is_at_half() {
         let r = reference(Mat4::IDENTITY, Vec3::new(0.0, 0.0, 0.5));
         assert_eq!(r, [0.5, 0.5, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn the_template_row_by_time_and_weather_keys_as_the_game_spells_them() {
+        let xml = br#"<?xml version="1.0" encoding="SHIFT-JIS"?>
+<root><flare_paraffin>
+<param time="Noon" weather="SUNNY" flare_color="30, 40, 50, 25" paraffin_color="50, 65, 60, 20" intensity="20.00" sky_intensity="15.00" flare_amount="0.6" Paraffin_amount="0.5"/>
+<param time="Noon" weather="CLOUDY" flare_color="30, 40, 50, 25" paraffin_color="50, 65, 60, 20" intensity="15.00" flare_amount="0" Paraffin_amount="0.5"/>
+</flare_paraffin></root>"#;
+        let l = look(xml, Time::Noon, Weather::Sunny).unwrap();
+        assert_eq!(l.flare.color, [30.0 / 255.0, 40.0 / 255.0, 50.0 / 255.0, 25.0 / 255.0]);
+        assert_eq!((l.flare.amount, l.intensity, l.sky_intensity), (0.6, 20.0, 15.0));
+        // `Paraffin_amount` is not the reader's key: the default stays.
+        assert_eq!(l.paraffin.amount, 0.2);
+        let c = look(xml, Time::Noon, Weather::Cloudy).unwrap();
+        assert_eq!((c.flare.amount, c.intensity, c.sky_intensity), (0.0, 15.0, 20.0));
+        assert_eq!(look(xml, Time::Night, Weather::Foggy).unwrap(), Look::default());
     }
 }

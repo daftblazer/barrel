@@ -724,6 +724,8 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The saturation after the gamma, from the light sets' table.
     let tone_vivid = install.read(barrel_ryza::environment::SATURATION_PATH).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::environment::saturation_ex(&b, barrel_ryza::environment::SATURATION_SET, a.time, a.weather)).map_err(|e| eprintln!("{e}")).unwrap_or(0.0);
     eprintln!("saturation after the gamma: {tone_vivid}");
+    // The sun flare's settings, from the environment template's row for the time and weather.
+    let flare_look = install.read(barrel_ryza::flare::TEMPLATE_PATH).map_err(|e| e.to_string()).and_then(|b| barrel_ryza::flare::look(&b, a.time, a.weather)).map_err(|e| eprintln!("{e}")).unwrap_or_default();
     // Her model and mesh outlive the loop: her cloth's vertices are built from the mesh each frame.
     let ryza_model = ryza_files.as_ref().map(|(m, _, _)| Elixir::parse(m)).transpose()?;
     let mut ryza_mesh = match &ryza_model {
@@ -1525,7 +1527,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // The point the sun's shadow is asked about for the sun flare: where the camera looks
         // behind her (the player and her look height), else where it is aimed.
         let sun_probe = rig.as_ref().map_or(center, |r| (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0));
-        let mut view = look_for(sub_box, center, sun_probe, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), shadow_size, presets.shadow, static_box, title_clip, sky_clock);
+        let mut view = look_for(sub_box, center, sun_probe, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), &flare_look, shadow_size, presets.shadow, static_box, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -1923,7 +1925,7 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
 /// scale of the far layer's reach, `clip` the near and far planes where the scene fixes them). With no environment, a
 /// white ambient alone (the terrain shows its colours as they are).
 #[allow(clippy::too_many_arguments)]
-fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, shadow_size: Option<u32>, shadow_reach: f32, (world, terrain_box): ((Vec3, Vec3), bool), clip: Option<(f32, f32)>, seconds: f32) -> View {
+fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, pitch: f32, dist: f32, fov: f32, (width, height): (u32, u32), prev_vp: Option<Mat4>, environment: Option<&Environment>, flare_look: &barrel_ryza::flare::Look, shadow_size: Option<u32>, shadow_reach: f32, (world, terrain_box): ((Vec3, Vec3), bool), clip: Option<(f32, f32)>, seconds: f32) -> View {
     let (y, p) = (yaw.to_radians(), pitch.to_radians());
     let eye = center + Vec3::new(y.sin() * p.cos(), p.sin(), y.cos() * p.cos()) * dist;
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
@@ -2104,7 +2106,7 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, 
             };
             shadow_vp = slice(0.0, ends[0]);
             shadow_cascades = [Some(slice(ends[0], ends[1])), Some(slice(ends[1], ends[2]))];
-            sun_flare = Some(barrel_ryza::flare::settings(probe, shadow_vp, view, sun, width as f32 / height as f32));
+            sun_flare = Some(barrel_ryza::flare::settings(flare_look, probe, shadow_vp, view, sun, width as f32 / height as f32));
             for (k, col) in shadow_vp.to_cols_array_2d().into_iter().enumerate() {
                 look[27 + k] = col;
             }
