@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🛢️ Barrel
+# Barrel
 
-### A native, open-source game engine for Gust's Atelier games, rebuilt from scratch in Rust and Vulkan
+### An Atelier Game Engine
 
 **Atelier Escha & Logy DX** · **Atelier Ryza DX** · and more of the series to come
 
@@ -48,20 +48,20 @@ that is **clean, fast and open**.
 
 ## Why
 
-- 🐧 **Native on Linux.** No Proton, no Wine, no DXVK. One `barrel` program that finds your
+- **Native on Linux.** No Proton, no Wine, no DXVK. One `barrel` program that finds your
   Steam library and starts the game.
-- 🎮 **Built for low-end hardware.** Barrel is written for low-power devices: ARM (aarch64)
+- **Built for low-end hardware.** Barrel is written for low-power devices: ARM (aarch64)
   Linux handhelds, older laptops, and Steam Deck-class machines. It has graphics presets for
   each tier (`desktop`, `desktop-high`, `handheld`) and a renderer tuned for small GPUs.
   Making the games run *faster than the original* on that hardware is a main goal.
-- ✨ **Modern graphics features.** AMD FidelityFX Super Resolution 1 and 3, Snapdragon Game
+- **Modern graphics features.** AMD FidelityFX Super Resolution 1 and 3, Snapdragon Game
   Super Resolution 1 and 2, temporal anti-aliasing, uncapped frame rates, any aspect ratio,
   and UI scaling for small screens. All of it is set in the game's own Options screen, not a
   launcher.
-- 🧩 **Mod support as a core feature.** Every file the game reads goes through a layered file
+- **Mod support as a core feature.** Every file the game reads goes through a layered file
   system, so mods can replace any table, event, script or asset by load order. More is
-  planned (see [Mods](#-mods)).
-- 📖 **Documented.** Every file format, table and rule that was worked out is written down in
+  planned (see [Mods](#mods)).
+- **Documented.** Every file format, table and rule that was worked out is written down in
   [`docs/`](docs/): thousands of lines on Gust's formats, the renderer and the game logic.
 
 ## Status
@@ -91,7 +91,7 @@ cover the title, menus, HUD, fields, battles and movement. The method is in
 Where Barrel differs from the original on purpose (a crash fixed, a limit lifted), the change
 is listed in [`docs/engine.md`](docs/engine.md).
 
-## 🎮 Playing
+## Playing
 
 You need **your own copy** of the game (Steam). Barrel ships none of the game's files.
 
@@ -127,7 +127,7 @@ BARREL_GAME=ryza tools/deploy.sh     # the same for Ryza DX
 On an aarch64 device the first start is fullscreen with the handheld preset. After that, the
 in-game Options page decides. The log is `~/.local/state/barrel/barrel.log`.
 
-## 🧩 Mods
+## Mods
 
 Mod support is built into Barrel's foundations, not bolted on.
 
@@ -152,7 +152,7 @@ mods/better-items/Data/ZZ_extra.PAK              an extra archive
 
 Details: [`docs/mods.md`](docs/mods.md).
 
-## 🔧 Building
+## Building
 
 Rust (stable), plus:
 - `glslc` (shaderc, part of the Vulkan SDK) to compile the shaders (set `GLSLC` to use another path);
@@ -167,7 +167,7 @@ Release packages: `tools/package.sh release` (Linux x86_64 and aarch64, Windows 
 Cross-building for aarch64 needs an arm64 root filesystem in `BARREL_AARCH64_SYSROOT` and arm64
 SDL3 in `BARREL_AARCH64_DEPS` (see `tools/package.sh`).
 
-## 🗂️ How it's built
+## How it's built
 
 One Cargo workspace: one engine shared by every game, and each game's rules in its own crate.
 
@@ -196,7 +196,7 @@ barrel-tool xml-scan "<install>"                     # every XML table and its r
 barrel-tool recipes  "<install>/Atelier_Escha_and_Logy_EN.exe"   # the synthesis recipes
 ```
 
-## 📚 Documentation
+## Documentation
 
 | Doc | About |
 |---|---|
@@ -208,7 +208,7 @@ barrel-tool recipes  "<install>/Atelier_Escha_and_Logy_EN.exe"   # the synthesis
 | [`docs/survey.md`](docs/survey.md) | The seven games and what each is built on |
 | [`docs/escha/`](docs/escha/), [`docs/ryza/`](docs/ryza/) | Per-game scoreboards and open problems |
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome. Good places to start are the open problems in
 [`docs/escha/open.md`](docs/escha/open.md), [`docs/ryza/open.md`](docs/ryza/open.md) and
@@ -246,6 +246,6 @@ The renderer carries ports of two upscalers' shaders, with their notices in the 
 
 <div align="center">
 
-*The name comes from the series' running "Barrel!" joke.* 🛢️
+*The name comes from the series' running "Barrel!" joke.*
 
 </div>
