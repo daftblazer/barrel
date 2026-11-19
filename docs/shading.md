@@ -1473,6 +1473,26 @@ the view-projection, in the game's clip space. The water's ambient-and-shadow pa
 takes the same shadow terms as the stage's (pass 11); its own ambient is black (`ambLit` 0),
 since the lighting pass adds the cube map's ambient.
 
+**The surface's normal, read** (vertex program `sh3b59ff800bd4a704`, pixel program
+`sh307bbe2b1903717c`; constants by name). The vertex program evaluates the piece's cubic
+(`d + c t + b t² + a t³` from four per-draw streams, its derivative the direction along)
+and lays the grid's point across it; the normal map's coordinates are, when
+`vSurfaceNormalUVScale.z > 0` (both bodies), `((t + stream offset) × scale.z, (across + 0.5)
+× scale.w) + vSurfaceNormalUVOffset` along the piece (river 33.33, sea 400 a piece), else
+world xz × `scale.xy` + offset. The offset scrolls at a constant rate: the river (−0.05, 0) a
+second, the sea (−0.02, −0.02) (capture frames 1750, 2150, 2550: −0.0192, −0.3525, −0.6858
+and −0.0077, −0.1410, −0.2743). The pixel program samples the wave texture (`wavevolume.g1t`,
+`sRiverNormalMap`) at that point and the layer `vNormalNoiseParam.z`, which moves 3/64 a
+second (0.018, 0.3305, 0.643 at the same frames). Within 1000 units of the eye it takes five
+taps, the centre and four offset by `(1000 − distance) × (2⁻²⁰, 2⁻¹⁹)` in the four sign
+patterns, averaged; past 1000 the centre alone. The normal is `normalize(vertex normal +
+(2 × tap.xy − 1) × fNomalBlendRate on x and z)` (`fNomalBlendRate` 1). The refraction then
+bends `−view` by `vRrParam.y` along `up − normal`. The shore bubbles (`sRiverBubbleMap`,
+`vBubbleParamArray`: 10 vectors, the bubbles' strength, depth range and fades) and the
+height mask (`sRiverHeightMask`, `vHeightMaskUV` 0 at Rasenboden: off) are not read in
+detail; the G-buffer writes are the albedo (mixed toward the bubbles' colour), the
+reflectance, gloss 0.125, the octahedral normal and `fRrRefractiveIndex` in target 3.
+
 The game draws only the pieces in view: 10 of Rasenboden's 12 at the gate (3 river, 7 sea), 9
 in the left view, 7 in the turn view (the sea's alone). Barrel tests each piece's box (its two
 end points padded by their widths) against the view's side and near planes: 10, 9 and 8 (one
