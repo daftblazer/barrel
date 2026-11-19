@@ -914,6 +914,18 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   structural cost of Barrel's: its AO, reflections and depth of field need a second geometry
   pass (normals and depth at half size, `ao.rs`) where the game's deferred G-buffer already
   holds them; on the RP6 that pre-pass and AO are 15 ms of the played 87.
+- **Optimised on the PC, not yet timed on the RP6 (2026-11-19).** Four changes, the gate after
+  the opening at 1920x1080 with the handheld's own `Setting.ini` (`--setting-ini`): the shadow
+  lookups as gathers (54f6857), the reflections' and depth of field's normals and depth from the
+  scene pass so the second geometry pass runs only with AO (9d3ce8d), the bloom's passes
+  skipped with a glow rate of 0 (c1da9fd), the casters' bias in the raster state so the shadow
+  pass writes no depth per pixel (1a0af32). The GPU's stages went from 3.68 to 2.66 ms (shadow
+  1.62 to 0.91, occlusion 0.22 to 0.01); High from 5.27 to 4.34. A tiler should gain more (the
+  geometry no longer drawn twice, the casters' depth test early). Next on the RP6: time the
+  handheld's file against the 87.5 ms played and the bisect's numbers, then split
+  5204466..eb78689 (+4.4 ms there). Left on the PC: the casters' alpha test (0.55 ms with none:
+  a texture with no texel under the reference could skip it, the plants cannot); the scene
+  stage grew 0.06 ms (0.3 at 4K) with the normals written in the scene pass, not explained.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
