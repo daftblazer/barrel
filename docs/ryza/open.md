@@ -214,8 +214,17 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   Barrel's draws 975 -> 934, field parts the game does not draw 78 -> 38, matched 859 -> 858.
   Left: (1) the stump `obj-A21-COMMON-STUMP-01` (object 1147) is wholly inside kept quads 7
   and 13 by 213 units yet the game draws it. The query is skipped for an object whose byte
-  `+0x249` is set or whose list has no occlusion object (`[r14+0x10]`): likely the stump is
-  in such a list (a gathering spot?), not checked. (2) Of the 38, some 28 are
+  `+0x249` is set or whose list has no occlusion object (`[r14+0x10]`), but the stump is
+  queried: a hook on `0x140a39fc0` at frame 2550 (`RYZA_HOOKS`, field `flt*20:rdx`: centre,
+  three unit axes, half sizes) logs 364 queries, the stump's box among them (centre 34633,
+  4984, 37882; half sizes 219, 91, 215; turned 0.31 rad). Against the game's own boxes and eye
+  the rule as read (scratch `occg.py`, game space) hides that stump, and 103 of the 364 (78 to
+  119 with the boxes halved or doubled): the rule is missing a step. Likely the pass's unread
+  second half (`0x140a3d3a9` to `0x140a3dd9d`): it finds the kept quads' extreme corners in a
+  2D camera basis (the eye, the look point and the up at the camera's `+0x0`, `+0x10`,
+  `+0x20`), notes which quad gives each, and rewrites bits of each record's `+0x5c` flags
+  (`0x3`, `0xc`, `0x30`, `0xc0`, set beside each of the four edge planes when built); the
+  query itself skips only all-zero planes. Read that half next. (2) Of the 38, some 28 are
   `event_titleback`-named parts (Rasenboden's cliffs sharing the title's texture names);
   the mountain (8), cliff blocks 78, 95, 96, 586, 587 and the stair and kudzu (828, 972)
   lie partly outside every single kept quad (the game may join quads, not read), and 6 to 7
