@@ -161,6 +161,29 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
 
 ## Fields
 
+- **The post constants Barrel does not dump** (P2; `rasen-constants`: 502 compared, 0 differ,
+  231 (pass, name) pairs not dumped at the gate; `barrel-parity constants ... consts.json`
+  lists them by pass). They split three ways:
+  - Passes Barrel draws, names not yet dumped (passes 11 to 22 and the tone pass 69): the
+    shadow terms of the ambient-and-shadow pass (`mW2S`, `mSemiStaticW2S`, `mSubW2S`, `vSMDF`,
+    `sdplane`...), the lighting pass's other draws (`litDir`/`litCol` 1 and 2, `emScl`,
+    `vAmbOccRat`), the water's own ambient and lighting (passes 14 to 16), the sky's and fog's
+    height fog (`cHFog`, `hFogParam`, `hFogFlucPrms`), the reflections (pass 21).
+  - Off at the gate (weight or switch 0; only their source to read): the depth of field
+    (`fKIDSDOFType` 0, `fHexScale` 0, passes 31 to 37), the star filter's result
+    (`fStarWeight` 0 in the tone pass, though its chain 49 to 60 runs), the light shafts
+    (`vLightShaftPower` 0, 63 to 68), the lens flare (`fLensFlareWeight` 0), the vignette
+    (`fLimbDarkeningWeight` 0). Their values sit in the set's `trueHDR_` block and its
+    neighbours (`docs/formats.md`, the environment table).
+  - On at the gate, missing from Barrel: the distant blur in the tone pass
+    (`fDistantBlurIntensity` 1 past `fDistantBlurZThreshold` 10000, `fFar` 300000), the
+    sun flare and paraffin wash (pass 73 reads the cascade into a 1 × 1 sun visibility, pass 74
+    draws two screen quads with it: `fFlareAmount` 0.6, `fParaffinAmount` 0.2, `fIntensity`
+    20 and 15, `vFlareColor`, `vParaffinColor`, `mRotation`; the set's lens-flare block holds
+    them), the game's TAA (pass 72, `g_cbTemporalAAParam` 960, 0.1, 0.05, 0.2, `jitterScale`
+    0.5; Barrel's TAA is an option of its own) and two textured screen quads (pass 76,
+    `materialColor` 1, not identified).
+
 - **Water** (P2). Barrel draws Rasenboden's river and sea (`docs/shading.md`, "Ryza DX: the
   water"; the file `_river.bin`, `docs/formats.md`): the ribbons of its two bodies from the file's
   points and widths, lit by the field's sun, mixed with the sky's colour by the Fresnel term, fogged
