@@ -934,8 +934,11 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   sun (the same for all three: 36900 to 37500 deep) to the slice's far side. Cascade 2 (11672
   wide) is no slice from 3600: its bottom edge is the 3600 slice's (v 0 exactly at its near
   lower corner), but the slice to 10000 reaches past its other three sides (u -0.107 to 1.025,
-  v to 1.066) and no other far distance fits all three; read as the slice's box cropped to the
-  casters' bounds (the usual crop), not yet checked. The boxes are not
+  v to 1.066) and no other far distance fits all three (u max needs about 8050, u min 8930, v
+  max 9415). Ruled out: a crop to the casters' bounds (the game's map is covered to all four
+  borders, the terrain casting everywhere), an older frame's camera (the box is the same
+  over frames 1728 to 1751 with the camera still), a far cap that is a sphere about the eye
+  (3% off at best). Not found. The boxes are not
   snapped to texels. The maps are 2000 × 2400, 2000 × 2400 and 1600 × 1600 (the texels
   1.06 × 0.80, 2.38 × 1.98 and 7.3 world units); the sub map 1024².
 - **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box
