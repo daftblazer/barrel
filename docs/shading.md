@@ -954,6 +954,13 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   `vSMOf`, 1, 1, 0, 0: the map's own uv), as Barrel's comparison sampler does. `scSM2D.zw`
   (2 texels) is never read. `vSMOf` is not dumped: Barrel's maps sit in a larger layer, its
   scale is the layer share (`shadow_sides`), not the game's 1.
+- **What the pass has off** (the gate's captures): the light volume (`mTrsW2LPV` and
+  `mTrsW2LPVSR` identities, `nLPV3DDepth` 0, no volume texture bound at t4, so its term is 0
+  whatever `fDiffuseScale` is: 0 on the stage, 0.2 / pi on the characters; `fNormalDir` -1,
+  `fSHBlendRegion` 0.3 only shape it), `fOverallShadow` 0 (the shadow is cut by it: lit only
+  where the shadow term is above it; 0 takes the shadow whole) and `ilaScale` 0 (two terms
+  1 + depth x scale on the output). `nNumCascadeLevels` (0) is never read; `nSubSdw` is 1 (an
+  int: the `draws` listing prints ints as floats, 0.0000).
 - **The static map** (`mSemiStaticW2S`, `sSemiStaticShadow`, 2048² at `scSemiStaticSM`). Its box
   in the sun's view (u horizontal, v up the slope, the cascades' way) spans exactly the
   heightmap's square (0 to 64,000 in x and z on Rasenboden) at heights 0 to 5,000 (not the
