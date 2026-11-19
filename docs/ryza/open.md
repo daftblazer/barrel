@@ -820,7 +820,12 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   pieces, docs/formats.md "Cloth pieces"). Not done there: the parent's rotation limit and the
   game's smoothing of the parent's acceleration (plain differences stand in), and the other
   characters' cloth. The `.swg` settings (10 records over 652 swing bones, docs/formats.md
-  "Swing settings") are a separate system the field does not run for her.
+  "Swing settings") are a separate system the field does not run for her. Seen by eye against
+  the game (P2's end): her hair passes through her hat, one strand bends outward at idle, and
+  her jacket hem stays lifted while she runs. Likely causes are the missing rotation limit and
+  acceleration smoothing (a raw per-frame acceleration throws the hem up), no collision against
+  the hat, and the swing bones not run. Each wants a capture of the game's pieces during a run
+  start and at idle to compare against.
 
 ## On handhelds
 
