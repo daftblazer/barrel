@@ -595,6 +595,11 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   against 0.030, 0.053, 0.032; trunk 0.024, 0.034, 0.038 against 0.019, 0.028, 0.031). The shadow pass
   is 1.9 ms (6.9 before the geometry moved into device memory, docs/renderer.md); which draws
   cast is still the open part (160, 235 and 687 against the game's 104, 177 and 669).
+  The turn view's far tree crown (region `crown`, about 7,500 units out: inside the fade from
+  the third cascade to the static map) has the game's sun share 0.151 against Barrel's 0.085,
+  and its final colour is 20% darker (0.152 0.330 0.396 against 0.219 0.397 0.419): it waits on
+  the third cascade's box and the static map's contents above. The draw trace names each
+  shadow layer (`shadow0`..`shadow2`, `shadow-static`, `shadow-sub`) to compare casters per map.
 - **The sky.** `barrel` draws the sky plane with the game's own constants (the set's
   `skyFog_`, the sun times its power, the path through the atmosphere, the horizon haze of
   the glow block) and the set's cloud dome where the set places it, lit by the set's ambient

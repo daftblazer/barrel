@@ -304,6 +304,10 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
     Ok(unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachments).subpasses(&subpasses).dependencies(&done), None)? })
 }
 
+/// The draw trace's pass names of the shadow layers (the three cascades, the static map, the
+/// characters' map), in layer order.
+const SHADOW_TRACE_PASSES: [&str; shadow::CASCADES] = ["shadow0", "shadow1", "shadow2", "shadow-static", "shadow-sub"];
+
 impl Renderer {
     /// This frame's static shadow layer (`shadow::Far::plan`): `want` where the game has it
     /// (drawn whole when it changes); gives the view-projection and layer for the look
@@ -922,7 +926,7 @@ impl Renderer {
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                     if trace3d.on() {
-                        trace3d.add("shadow", draw.index_count, &[Some(draw.texture)], &instances[draw.instance as usize].model);
+                        trace3d.add(SHADOW_TRACE_PASSES[layer], draw.index_count, &[Some(draw.texture)], &instances[draw.instance as usize].model);
                     }
                     drawn[1] += 1;
                 }
