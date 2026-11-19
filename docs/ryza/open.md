@@ -584,6 +584,16 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   program knows no `camera_ct` name; the field template's note calls it "things in front of
   the camera turn see-through", with a speed and a radius), and whether it fades or cuts is
   not known (one frame, 300 frames after the camera stopped).
+  Read so far (pass `0x140728150`, per object `rsi`): drawn (`+0x247`) needs `+0x245` set,
+  the float `+0x1cc` (and its parent's at `+0x2c8`) non-zero, byte `+0x249` clear, the
+  frustum test (`0x14099a3d0` on the box at `+0x1d0`) and the occluders; the shadow flag
+  (`+0x248`) is worked out after, apart from all that (`+0x246`, then the shadow view's planes
+  at `[r14+0x8]`). In the left view's frame 2150 (hook on the frustum test) 463 objects reach
+  that test, none with `+0x249` set, and the post is not among them: it is stopped before,
+  by `+0x245` clear or `+0x1cc` zero, which leaves its shadow. Who sets it is not found: the
+  thirteen functions that store to `+0x1cc` and the small setter `0x140a67960` do not touch
+  it in that frame (it was set earlier, or it is `+0x245`). Next: a hook over several frames
+  as the camera turns toward the post (frames 1850 to 2150), or the stores to `+0x245`.
 - **What moves in the wind.** The trees' leaves are not physics: each tree is a field object
   that plays a looping motion (docs/formats.md, "Shared field motions"), 4 or 8 s long,
   turning its leaf joints by up to about a degree; the leaf meshes are skinned one joint a
