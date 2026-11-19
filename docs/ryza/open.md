@@ -14,6 +14,13 @@ is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run no
 checks are `runchecks docs/ryza/checks.txt` (44 rows; frames are the exact capture's) and
 `docs/escha/checks.txt` (17).
 
+- **The boot before the title (seen by eye, 2026-11-19).** The game shows a black screen while it
+  boots, before the title menu. Barrel shows the title's characters and screen, badly broken,
+  in that time. Likely the title's backdrop drawn before its event, models and textures are
+  ready (or before the game's fade in). Where to start: the game's boot frames in a capture of
+  the title (which frame the first title draw lands on, and what is drawn before), against
+  Barrel's first frames. Solved when Barrel's frames before the title's first draw are black.
+
 1. **The title backdrop's cast: what is left** (P1). Ryza, Lent and Tao and the three
    weapons lying by them are drawn from the event `tt01_010` (docs/renderer.md, "The
    backdrop"; docs/events.md, "Timing and loops"): diff3d at frame 1400 matches 615 of 995
