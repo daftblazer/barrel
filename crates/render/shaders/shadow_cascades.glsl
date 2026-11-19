@@ -18,11 +18,61 @@ float cascade_light(mat4 vp, float layer, float t, vec3 p) {
     vec2 at = s.xy * 0.5 + 0.5;
     if (any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))) || s.z > 1.0) return -1.0;
     vec4 side = layer_side(int(layer), t);
+    // The taps are a texel apart, so they share one bilinear weight: together the five by
+    // five texels from two texels before p, the edge rows and columns weighted by it. Inside
+    // the map that is nine gathers (the comparisons of six by six texels, the sixth row and
+    // column at weight 0), the weight's fraction kept to the filter's 8 bits.
+    vec2 texels = 1.0 / side.zw;
+    vec2 u = at * texels - 2.0;
+    vec2 b = floor(u);
+    if (all(greaterThanEqual(b, vec2(0.0))) && all(lessThanEqual(b + 5.0, texels - 1.0))) {
+        vec2 f = floor((u - b) * 256.0 + 0.5) / 256.0;
+        float wx[6] = float[6](1.0 - f.x, 1.0, 1.0, 1.0, f.x, 0.0);
+        float wy[6] = float[6](1.0 - f.y, 1.0, 1.0, 1.0, f.y, 0.0);
+        float sum = 0.0;
+        for (int j = 0; j < 3; j++) {
+            for (int i = 0; i < 3; i++) {
+                vec2 corner = (b + 1.0 + 2.0 * vec2(float(i), float(j))) * side.zw * side.xy;
+                // A gather's order: (0, 1), (1, 1), (1, 0), (0, 0) of its square.
+                vec4 g = textureGather(shadow_map, vec3(corner, layer), s.z);
+                vec2 x = vec2(wx[2 * i], wx[2 * i + 1]);
+                sum += dot(vec2(g.w, g.z), x) * wy[2 * j] + dot(vec2(g.x, g.y), x) * wy[2 * j + 1];
+            }
+        }
+        return sum / 16.0;
+    }
     float lit = 0.0;
     for (int i = 0; i < 4; i++) {
         for (int k = 0; k < 4; k++) {
             vec2 q = clamp(at + (vec2(float(i), float(k)) - 1.5) * side.zw, vec2(0.0), vec2(1.0));
             lit += texture(shadow_map, vec4(q * side.xy, layer, s.z));
+        }
+    }
+    return lit / 16.0;
+}
+
+// Sixteen point comparisons over the four by four texels from `first` (the block's first texel
+// in a map of `texels` texels a side, which takes `share` of the layer's side), the texel
+// indices kept in the map: their mean. Inside the map the block is four gathers (each the
+// four comparisons of a two by two texel square, read at the square's shared corner): the same
+// comparisons as sixteen taps at the texels' centres, in a quarter of the fetches. A block
+// over the map's edge repeats its edge texels as the taps do.
+float point_block(vec2 first, vec2 texels, vec2 share, float layer, float depth) {
+    vec2 t = 1.0 / texels;
+    float lit = 0.0;
+    if (all(greaterThanEqual(first, vec2(0.0))) && all(lessThanEqual(first + 3.0, texels - 1.0))) {
+        for (int i = 0; i < 2; i++) {
+            for (int k = 0; k < 2; k++) {
+                vec2 corner = (first + 1.0 + 2.0 * vec2(float(i), float(k))) * t * share;
+                lit += dot(textureGather(shadow_map, vec3(corner, layer), depth), vec4(1.0));
+            }
+        }
+        return lit / 16.0;
+    }
+    for (int i = 0; i < 4; i++) {
+        for (int k = 0; k < 4; k++) {
+            vec2 n = clamp(first + vec2(float(i), float(k)), vec2(0.0), texels - 1.0);
+            lit += texture(shadow_map, vec4((n + 0.5) * t * share, layer, depth));
         }
     }
     return lit / 16.0;
@@ -39,16 +89,8 @@ float sub_light(vec3 p) {
     float depth = clamp(c.z, 0.0, 1.0);
     float t = look.shadow_sub_info.x;
     if (any(greaterThanEqual(at - 1.5 * t, vec2(1.0))) || any(lessThanEqual(at + 1.5 * t, vec2(0.0)))) return 1.0;
-    float texels = 1.0 / t;
-    float lit = 0.0;
-    for (int i = 0; i < 4; i++) {
-        for (int k = 0; k < 4; k++) {
-            vec2 q = at + (vec2(float(i), float(k)) - 1.5) * t;
-            q = (floor(clamp(q, vec2(0.0), vec2(0.999999)) * texels) + 0.5) * t;
-            lit += texture(shadow_map, vec4(q * look.shadow_sub_info.y, look.shadow_sub_info.w, depth));
-        }
-    }
-    return lit / 16.0;
+    vec2 texels = vec2(1.0 / t);
+    return point_block(floor(at * texels - 1.5), texels, vec2(look.shadow_sub_info.y), look.shadow_sub_info.w, depth);
 }
 
 // The static layer's light at p (the game's `sSemiStaticShadow`, mode 2): sixteen point taps
@@ -63,15 +105,7 @@ float static_light(vec3 p) {
     vec2 first = at - 1.5 * t;
     if (any(greaterThanEqual(first, vec2(1.0))) || any(lessThanEqual(first + 3.0 * t, vec2(0.0)))) return 1.0;
     vec2 texels = 1.0 / t;
-    float lit = 0.0;
-    for (int i = 0; i < 4; i++) {
-        for (int k = 0; k < 4; k++) {
-            vec2 q = first + vec2(float(i), float(k)) * t;
-            q = (floor(clamp(q, vec2(0.0), vec2(0.999999)) * texels) + 0.5) * t;
-            lit += texture(shadow_map, vec4(q * side.xy, look.shadow_far_info.y, depth));
-        }
-    }
-    return lit / 16.0;
+    return point_block(floor(at * texels - 1.5), texels, side.xy, look.shadow_far_info.y, depth);
 }
 
 // The sun's light at p: the cascade of p's distance along the view (the next one where p

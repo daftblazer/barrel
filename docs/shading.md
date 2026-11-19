@@ -954,6 +954,14 @@ horizontal, v up the slope, depth along the sun), the static map (`mSemiStaticW2
   `vSMOf`, 1, 1, 0, 0: the map's own uv), as Barrel's comparison sampler does. `scSM2D.zw`
   (2 texels) is never read. `vSMOf` is not dumped: Barrel's maps sit in a larger layer, its
   scale is the layer share (`shadow_sides`), not the game's 1.
+- **How Barrel fetches them** (`shadow_cascades.glsl`): the same sums in fewer reads. The
+  cascade's sixteen bilinear taps share one sub-texel weight, so they are the five by five
+  texels from two before the point, edge rows and columns weighted: nine gathers, the weight
+  rounded to the filter's 8 bits (against the taps, at most 3 of 255 on 0.02% of the gate's
+  pixels on the PC, within what GPUs' filters differ by). The characters' and static maps'
+  sixteen point comparisons are four gathers, exactly. Both fall back to the taps where the
+  block leaves the map. At the handheld's settings on the PC the scene pass went from 1.70 to
+  1.56 ms (at 4K the shadows' share of it from 1.25 to 0.85 ms).
 - **What the pass has off** (the gate's captures): the light volume (`mTrsW2LPV` and
   `mTrsW2LPVSR` identities, `nLPV3DDepth` 0, no volume texture bound at t4, so its term is 0
   whatever `fDiffuseScale` is: 0 on the stage, 0.2 / pi on the characters; `fNormalDir` -1,
