@@ -230,8 +230,16 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   box; one draw at the gate). (2) The rest of the extra parts
   (20 objects at the gate) are not the occluders' doing. The game keeps quads 98, 8, 3, 6,
   2, 1, 0, 4, 9, 5, 11, 14 (its records matched to the file's by plane); the dropped ones
-  in view are mostly inside a nearer kept quad as Barrel's rule has it, but 15 and 16 (inside
-  only by the edge planes) and the four big far quads 92, 95, 96, 97 go for a reason not read.
+  in view are mostly inside a nearer kept quad as Barrel's rule has it, but 15, 16, 92, 95,
+  96 and 97 are not. Both programs take the same 26 quads in view, in the same order (the
+  update `0x140a3cac0`'s stale records past its count hold all 26, depths Barrel's less the
+  near distance 50), and the game's count is already 12 right after its covered-quad drop
+  (hook on its `sqrt` call, `0x140d70164` from `0x140a3d284`, reading `rdi+0xc8`). That drop
+  as read (`0x140a3d090`..`0x140a3d17d`: a later quad goes when its four corners lie strictly
+  inside all five planes of a nearer kept one) keeps those six: none of the 12 holds one by
+  85 to 2,300 units. So the drop does more than read (2 tries; the view test `0x14099c7f0`,
+  the enable byte `+0x45` (all 1), the frustum (the camera's) and a count cap are ruled out).
+  Barrel keeping quad 15 hides 5 objects the game draws (899 to 901, 958, 1137).
   The mountain (8), the cliffs 78, 95, 96, 586, 587 and the kudzu 972 reach the game's query
   and its own records leave them visible (the best quad misses each by 397 to 3,108 units),
   yet it draws none of them: something after the query leaves them out (per part, or a
