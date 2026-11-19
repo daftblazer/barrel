@@ -238,8 +238,9 @@ with the display's timing; the exact clock gives 51 every time, and 91 for the p
   as the models; the sea runs to the horizon. Left: the game's wave volume normals, the refraction
   and the depth fade (the sea is opaque), shore bubbles, the planar reflection, and the cubic the
   game makes of each piece from the points (Catmull-Rom stands in: the draw's own stream is not in
-  the capture). Barrel's draws still do not match the game's 10 water draws in `diff3d` (they are
-  not in Barrel's trace); at the gate the sea lies behind the camera, so the horizon's white haze
+  the capture). Barrel's pieces are in its draw trace and pair with the game's 10 at the gate (`diff3d`
+  pairs water with water); which pieces are drawn and the grid's levels of detail are in
+  docs/shading.md ("Ryza DX: the water"); at the gate the sea lies behind the camera, so the horizon's white haze
   there is the sky's, not the water's.
 - **Rasenboden against the game's draws** (P2). From the game's own camera at the gate after
   loading a save (ryza-recomp's `load-rasen`, frame 2550: eye 32526.8, 6363.3, 29944.7;

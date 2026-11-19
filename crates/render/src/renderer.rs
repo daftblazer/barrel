@@ -1207,6 +1207,12 @@ impl Renderer {
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[if refract { self.refraction_set } else { sets[white] }], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[if refract { self.ao.gbuf_set() } else { sets[white] }], &[]);
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
+                // One trace entry a piece (the game draws each on its own).
+                if trace3d.on() {
+                    for _ in 0..water_pieces {
+                        trace3d.add("water", WATER_PIECE_VERTICES, &[], &Mat4::IDENTITY);
+                    }
+                }
             }
             // The sky's large clouds, over the dome (on the far plane too, so where nothing covers it).
             if pass_sky && upto.clouds() && cloud_frame.is_some() && let Some(m) = self.clouds.borrow().as_ref() {

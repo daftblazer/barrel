@@ -479,9 +479,16 @@ pub fn diff3d(dir: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&
     let (names, _) = index(idx)?;
     let game: Vec<GameDraw> = game_draws(&t, gframe)?.into_iter().filter(|d| d.rt.len() >= 4 && d.ds != "-").collect();
     let (bdraws, bvp) = barrel_frame(barrel, bframe)?;
-    let bdraws: Vec<&BarrelDraw> = bdraws.iter().filter(|d| d.pass == "scene" || d.pass == "sky" || d.pass == "terrain").collect();
-    let gkeys: Vec<Key> = game.iter().map(|d| key(&names, d.textures.iter().map(|x| x.1.clone()), d.count)).collect();
-    let bkeys: Vec<Key> = bdraws.iter().map(|d| key(&names, d.tex.iter().cloned(), d.idx)).collect();
+    let bdraws: Vec<&BarrelDraw> = bdraws.iter().filter(|d| d.pass == "scene" || d.pass == "sky" || d.pass == "terrain" || d.pass == "water").collect();
+    // The water's pieces pair as pieces: the game's sample the wave volume and Barrel's are its
+    // `water` entries (a grid made in the vertex program: no textures, other index counts).
+    let water: Key = (vec!["(water piece)".into()], 0);
+    let gkeys: Vec<Key> = game
+        .iter()
+        .map(|d| key(&names, d.textures.iter().map(|x| x.1.clone()), d.count))
+        .map(|k| if k.0.iter().any(|n| n.contains("wavevolume")) { water.clone() } else { k })
+        .collect();
+    let bkeys: Vec<Key> = bdraws.iter().map(|d| if d.pass == "water" { water.clone() } else { key(&names, d.tex.iter().cloned(), d.idx) }).collect();
     let mut bused = vec![false; bdraws.len()];
     let (mut matched, mut worst, mut compared) = (0usize, 0f32, 0usize);
     let mut worst_at = String::new();

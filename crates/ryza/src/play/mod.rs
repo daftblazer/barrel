@@ -1584,6 +1584,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         // The water, where the set has a sky to reflect and the field has water.
         let water_pieces = match &water {
             Some(w) if view.sky_plane => {
+                let w = &water_in_view(w, &barrel_render::view_planes(&view.vp));
                 view.look[WATER_SLOT..WATER_SLOT + w.len()].copy_from_slice(w);
                 view.look[WATER_SLOT][1] = sky_clock;
                 view.look[WATER_SLOT][0] as u32
@@ -1932,6 +1933,31 @@ fn water_slots(bodies: &[barrel_ryza::river::Body]) -> Vec<[f32; 4]> {
     }
     slots[0][0] = ((slots.len() - 1) / 5) as f32;
     slots
+}
+
+/// The water slots of the pieces that may be in view (the game draws only those): each
+/// piece boxed by its two end points padded by their widths, against the view's side and near
+/// planes (not the far one: the sea runs to the horizon past it). STAND-IN: the game's own box
+/// is not read (it draws one river piece fewer in the turn view).
+fn water_in_view(slots: &[[f32; 4]], planes: &[glam::Vec4; 6]) -> Vec<[f32; 4]> {
+    let mut kept = vec![[0.0; 4]];
+    for piece in slots[1..].chunks_exact(5) {
+        let [a, b, c, d] = [0, 1, 2, 3].map(|k| Vec3::from_slice(&piece[k][..3]));
+        let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        for (p, w) in [(d, piece[0][3]), (a + b + c + d, piece[1][3])] {
+            lo = lo.min(p - Vec3::new(w, 0.0, w));
+            hi = hi.max(p + Vec3::new(w, 0.0, w));
+        }
+        let seen = planes[..5].iter().all(|p| {
+            let far = Vec3::new(if p.x >= 0.0 { hi.x } else { lo.x }, if p.y >= 0.0 { hi.y } else { lo.y }, if p.z >= 0.0 { hi.z } else { lo.z });
+            p.truncate().dot(far) + p.w >= 0.0
+        });
+        if seen {
+            kept.extend_from_slice(piece);
+        }
+    }
+    kept[0] = [((kept.len() - 1) / 5) as f32, slots[0][1], slots[0][2], slots[0][3]];
+    kept
 }
 
 /// The view from `dist` away from `center` (render space) at `yaw` and `pitch` degrees, and

@@ -1473,6 +1473,13 @@ the view-projection, in the game's clip space. The water's ambient-and-shadow pa
 takes the same shadow terms as the stage's (pass 11); its own ambient is black (`ambLit` 0),
 since the lighting pass adds the cube map's ambient.
 
+The game draws only the pieces in view: 10 of Rasenboden's 12 at the gate (3 river, 7 sea), 9
+in the left view, 7 in the turn view (the sea's alone). Barrel tests each piece's box (its two
+end points padded by their widths) against the view's side and near planes: 10, 9 and 8 (one
+river piece more in the turn view; the game's box is not read). The game's grid is not always
+65 by 67: in the turn view two far sea pieces are drawn with 646 indices and one with 8,806,
+so it has levels of detail by distance (not read; Barrel's grid is one size).
+
 Not done: the wave volume's normals (a few travelling sines stand in), the shore bubbles
 (`wavebubbles-sequence-a01.g1t`), the caustics' light on what is seen through, the piece's skirt,
 the surface's scroll.
