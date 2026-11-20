@@ -1903,7 +1903,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 tool: 0,
                 map: a.field == barrel_ryza::field_hud::MAP_FIELD,
             };
-            layer.set(&gpu, &view.quads(&state, (width, height)))?;
+            let (quads, clips) = view.quads(&state, (width, height));
+            layer.set_clipped(&gpu, &quads, &clips)?;
         }
         let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref()) {
             (true, Some((l, _, _))) => vec![l],

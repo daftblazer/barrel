@@ -128,10 +128,12 @@ What the capture shows (read, not in a table):
   per-map bounds are not in its tables). The map does not turn with the camera; only her arrow does.
 - Her arrow turns about its middle by 180 minus her turn, kept within a quarter either side and
   with the texture coordinates flipped for the other half (all six frames).
-- The two mask quads (the minimap's and the tool disc's `alpha_mask`) are drawn by the game into
-  a stencil; the layer has none, so Barrel draws them as pictures and the terrain overflows the
-  ring at the minimap's corners. Needs a stencil or alpha mask in `barrel_render::text` (not
-  touched here).
+- The minimap's mask is a stencil (`hud-walk` 2230, draws 1946-1955): the grid writes stencil 255,
+  the mask quad writes 1 with no colour, the terrain, markers and arrow test equal to 1; the 2D
+  shader drops pixels under 1/255 alpha. The tool disc's mask goes to a target of its own
+  (cleared to 0) that the tool's picture is multiplied by (and the clock's pieces by its
+  inverse). Barrel: `barrel_render::text::Clip` (the mask not drawn, the clipped quads only
+  where its picture is not clear); the tool disc's mask hides only (the tool sits inside it).
 
 Left:
 - Markers: the 6 icons (3 townsfolk, `mmap_icon` picture 5, and 3 gimmicks, picture at

@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use barrel_formats::table::{self, Element};
-use barrel_render::text::{Glyph, Quad, Spin};
+use barrel_render::text::{Clip, Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
 use crate::load_view::TEXT_TOP;
@@ -234,8 +234,12 @@ impl Hud {
         self.strings.get(&(STR_UI_BASE + n)).map_or("", String::as_str)
     }
 
-    /// The HUD's quads for `state` on a `screen` of pixels, in the order the game draws them.
-    pub fn quads(&self, state: &State, screen: (u32, u32)) -> Vec<Quad> {
+    /// The HUD's quads for `state` on a `screen` of pixels, in the order the game draws them, and
+    /// its clips: the minimap's mask is a stencil the terrain and her arrow draw inside (ryza-recomp
+    /// `hud-walk`: the mask quad writes stencil 1 with no colour, the terrain, markers and arrow
+    /// test equal to 1); the tool disc's mask goes to a target of its own the tool's picture is
+    /// multiplied by, drawn here as a mask that clips nothing (the tool sits inside the disc).
+    pub fn quads(&self, state: &State, screen: (u32, u32)) -> (Vec<Quad>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { hud: self, k, left, out: Vec::new() };
@@ -243,12 +247,14 @@ impl Hud {
 
         // The minimap.
         pen.picture(FIELD, self.grid.0, self.grid.1, 1.0, white);
+        let map_mask = pen.out.len();
         pen.picture(FIELD, self.mask.0, self.mask.1, self.mask.2, white);
         let center = self.arrow_center();
         if state.map {
             pen.terrain(state.at, center);
         }
         pen.arrow(self.arrow, center, state.turn);
+        let mut clips = vec![Clip { mask: map_mask, quads: map_mask + 1..pen.out.len() }];
         pen.picture(FIELD, self.gmd.0, self.gmd.1, 1.0, white);
         pen.picture(FIELD, self.frame.0, self.frame.1, 1.0, white);
         pen.picture(FIELD, self.north.0, self.north.1, 1.0, white);
@@ -264,6 +270,7 @@ impl Hud {
 
         // The equipped tool.
         pen.picture(FIELD, self.disc.0, self.disc.1, 1.0, white);
+        clips.push(Clip { mask: pen.out.len(), quads: 0..0 });
         pen.picture(FIELD, self.disc_mask.0, self.disc.1, self.disc_mask.1, white);
         if let Some(tool) = self.tools.get(state.tool) {
             pen.sized(ICON, *tool, [self.disc.1[0] + self.tool_at[0], self.disc.1[1] + self.tool_at[1]], self.tool_size, [26.0 / 255.0, 0.0, 0.0, 1.0]);
@@ -290,7 +297,7 @@ impl Hud {
             h => h,
         };
         pen.text(&self.time, self.time_origin, &shown.to_string(), white);
-        pen.out
+        (pen.out, clips)
     }
 
     /// Where her arrow is: the middle of the minimap's window, which the terrain is moved under.

@@ -45,6 +45,15 @@ pub struct Quad {
     pub texture: usize,
 }
 
+/// A stencil drawn with a quad, as the games draw a minimap's round edge: the `mask` quad marks
+/// the screen where its picture is not clear and is not drawn itself (it stays in the draw
+/// trace); the quads in `quads` draw only there. The mask is upright (no `turn` or `spin`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Clip {
+    pub mask: usize,
+    pub quads: std::ops::Range<usize>,
+}
+
 /// How a quad's rectangle is placed other than upright.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Spin {
@@ -94,14 +103,19 @@ impl Font {
 const TEXT_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/text.vert.spv"));
 const TEXT_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/text.frag.spv"));
 
-/// A vertex: position (pixels), atlas coordinates, colour.
+/// A vertex: position (pixels), atlas coordinates, colour, and its clip's mask (where it falls in
+/// the mask's rectangle, the mask's texture coordinates; `NO_MASK` without one).
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
     color: [f32; 4],
+    mask_at: [f32; 2],
+    mask_uv: [f32; 4],
 }
+
+const NO_MASK: [f32; 4] = [-1.0; 4];
 
 /// What draws text and the window: its textures ([`FONT`], [`UI`]), a pipeline (no depth,
 /// alpha blending) and vertex buffers rewritten when what it shows changes: one per frame in
@@ -113,8 +127,8 @@ pub struct Layer {
     set_layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
     sets: Vec<vk::DescriptorSet>,
-    /// Runs of vertices by texture: (texture, first vertex, count).
-    runs: Vec<(usize, u32, u32)>,
+    /// Runs of vertices by texture and mask texture: (texture, mask, first vertex, count).
+    runs: Vec<(usize, usize, u32, u32)>,
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     modules: [vk::ShaderModule; 2],
@@ -161,7 +175,8 @@ impl Layer {
                     &[],
                 );
             }
-            let layouts = [set_layout];
+            // Set 0: the picture; set 1: a clip's mask (the picture's own set when unclipped).
+            let layouts = [set_layout, set_layout];
             let push = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::VERTEX, offset: 0, size: 8 }];
             let layout = d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts).push_constant_ranges(&push), None)?;
             let module = |code: &[u8]| {
@@ -178,6 +193,8 @@ impl Layer {
                 vk::VertexInputAttributeDescription { location: 0, binding: 0, format: vk::Format::R32G32_SFLOAT, offset: 0 },
                 vk::VertexInputAttributeDescription { location: 1, binding: 0, format: vk::Format::R32G32_SFLOAT, offset: 8 },
                 vk::VertexInputAttributeDescription { location: 2, binding: 0, format: vk::Format::R32G32B32A32_SFLOAT, offset: 16 },
+                vk::VertexInputAttributeDescription { location: 3, binding: 0, format: vk::Format::R32G32_SFLOAT, offset: 32 },
+                vk::VertexInputAttributeDescription { location: 4, binding: 0, format: vk::Format::R32G32B32A32_SFLOAT, offset: 40 },
             ];
             let vinput = vk::PipelineVertexInputStateCreateInfo::default().vertex_binding_descriptions(&vbind).vertex_attribute_descriptions(&vattr);
             let assembly = vk::PipelineInputAssemblyStateCreateInfo::default().topology(vk::PrimitiveTopology::TRIANGLE_LIST);
@@ -216,20 +233,40 @@ impl Layer {
 
     /// Sets what the next frames draw (the buffer grows as needed).
     pub fn set(&mut self, gpu: &Gpu, quads: &[Quad]) -> Result<()> {
+        self.set_clipped(gpu, quads, &[])
+    }
+
+    /// As [`Layer::set`], with some quads clipped by others ([`Clip`]).
+    pub fn set_clipped(&mut self, gpu: &Gpu, quads: &[Quad], clips: &[Clip]) -> Result<()> {
         if let Some((_, _, pending)) = &self.trace {
             *pending.borrow_mut() = Some((gpu.frame.get(), quads.to_vec()));
         }
         let mut verts = Vec::with_capacity(quads.len() * 6);
         self.runs.clear();
-        for q in quads {
-            let texture = q.texture.min(self.textures.len().saturating_sub(1));
+        let last = self.textures.len().saturating_sub(1);
+        for (i, q) in quads.iter().enumerate() {
+            if clips.iter().any(|c| c.mask == i) {
+                continue;
+            }
+            let texture = q.texture.min(last);
+            let mask = clips.iter().find(|c| c.quads.contains(&i)).and_then(|c| quads.get(c.mask));
+            let mask_texture = mask.map_or(texture, |m| m.texture.min(last));
             match self.runs.last_mut() {
-                Some((t, _, count)) if *t == texture => *count += 6,
-                _ => self.runs.push((texture, verts.len() as u32, 6)),
+                Some((t, m, _, count)) if *t == texture && *m == mask_texture => *count += 6,
+                _ => self.runs.push((texture, mask_texture, verts.len() as u32, 6)),
             }
             let [tl, tr, br, bl] = q.corners();
             let [u0, v0, u1, v1] = q.uv;
-            let v = |[x, y]: [f32; 2], u, w| Vertex { pos: [x, y], uv: [u, w], color: q.color };
+            let v = |[x, y]: [f32; 2], u, w| {
+                let (mask_at, mask_uv) = match mask {
+                    Some(m) => {
+                        let [l, t, r, b] = m.rect;
+                        ([(x - l) / (r - l), (y - t) / (b - t)], m.uv)
+                    }
+                    None => ([0.0; 2], NO_MASK),
+                };
+                Vertex { pos: [x, y], uv: [u, w], color: q.color, mask_at, mask_uv }
+            };
             let (u1, v1) = if u0 < 0.0 { (u0, v0) } else { (u1, v1) };
             if q.turn {
                 // Clockwise: the picture's bottom-left at the top-left, its top-left at the
@@ -283,8 +320,8 @@ impl Layer {
             let screen = [width as f32, height as f32];
             d.cmd_push_constants(cb, self.layout, vk::ShaderStageFlags::VERTEX, 0, std::slice::from_raw_parts(screen.as_ptr() as *const u8, 8));
             d.cmd_bind_vertex_buffers(cb, 0, &[buf], &[0]);
-            for &(texture, first, count) in &self.runs {
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[self.sets[texture]], &[]);
+            for &(texture, mask, first, count) in &self.runs {
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[self.sets[texture], self.sets[mask]], &[]);
                 d.cmd_draw(cb, count, 1, first, 0);
             }
         }
