@@ -140,6 +140,17 @@ layout(location = 12) flat in vec4 tint_add;
 layout(location = 13) in vec4 tangent;
 
 // The instance's colour transform on its lit colour, in display (sRGB) terms; none unless on.
+// HALF (the program's second build, `FRAG_HALF`): the colour arithmetic at 16 bits where the
+// GPU has them (RelaxedPrecision: Adreno's twice-as-fast half floats, half the registers). The
+// positions, texture coordinates, derivatives, shadows and the highlights' powers stay 32-bit.
+#ifdef HALF
+#define HALF_ON precision mediump float;
+#define HALF_OFF precision highp float;
+#else
+#define HALF_ON
+#define HALF_OFF
+#endif
+HALF_ON
 vec3 tinted(vec3 c) {
     if (tint_add.w < 0.5) return c;
     vec3 s = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
@@ -160,6 +171,7 @@ vec3 soft_light(vec3 a, vec4 kw) {
 
 // The sun's shadow at a render-space point: MapSTD's 16 taps (four 2 × 2 comparisons a texel
 // and a half apart), 1 lit to 0 shadowed (atColor white: the full strength).
+HALF_OFF
 layout(set = 1, binding = 6) uniform sampler2D pattern_map;
 // The field's specular environment cube map (the game's axes: x not mirrored).
 layout(set = 1, binding = 7) uniform samplerCube spec_cube;
@@ -169,13 +181,16 @@ layout(set = 1, binding = 7) uniform samplerCube spec_cube;
 void put_normal(vec3 n) {
     if (NORMAL_AS_MOTION) motion = octahedral_encode(n);
 }
+HALF_ON
 #include "environment_light.glsl"
+HALF_OFF
 #include "specular_direct.glsl"
 #include "specular_ambient.glsl"
 
 #include "sun_light.glsl"
 // A field model's specular colour and gloss from its specular map as the G-buffer program
 // writes them (green: reflectance, blue: metal; alpha: gloss).
+HALF_ON
 void specular_surface(vec3 albedo, out vec3 f0, out float gloss) {
     vec4 sp = texture(spec_map, uv);
     f0 = sp.b >= 0.5 ? albedo * (1.0 - sp.g) : vec3(sp.g);
@@ -231,10 +246,10 @@ void main() {
                     bt = cross(dn, tg) * tangent.w;
                 } else {
                     // A mesh without a tangent: the frame from the screen derivatives.
-                    vec3 dp1 = dFdx(world), dp2 = dFdy(world);
-                    vec2 du1 = dFdx(uv), du2 = dFdy(uv);
-                    tg = (cross(dp2, dn) * du1.x + cross(dn, dp1) * du2.x);
-                    tg = normalize(tg - dn * dot(dn, tg));
+                    highp vec3 dp1 = dFdx(world), dp2 = dFdy(world);
+                    highp vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+                    highp vec3 t0 = cross(dp2, dn) * du1.x + cross(dn, dp1) * du2.x;
+                    tg = normalize(t0 - dn * dot(dn, t0));
                     bt = cross(tg, dn);
                 }
                 sn = tg * xy.y + bt * xy.x + dn * sqrt(max(1.0 - dot(xy, xy), 0.0));
@@ -324,12 +339,12 @@ void main() {
             } else {
                 // A mesh without a tangent: the frame from the screen derivatives of the
                 // position and UV, green against the texture's v.
-                vec3 dp1 = dFdx(world), dp2 = dFdy(world);
-                vec2 du1 = dFdx(uv), du2 = dFdy(uv);
-                vec3 p2 = cross(dp2, n), p1 = cross(n, dp1);
-                vec3 tg = p2 * du1.x + p1 * du2.x;
-                vec3 bt = p2 * du1.y + p1 * du2.y;
-                float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
+                highp vec3 dp1 = dFdx(world), dp2 = dFdy(world);
+                highp vec2 du1 = dFdx(uv), du2 = dFdy(uv);
+                highp vec3 p2 = cross(dp2, n), p1 = cross(n, dp1);
+                highp vec3 tg = p2 * du1.x + p1 * du2.x;
+                highp vec3 bt = p2 * du1.y + p1 * du2.y;
+                highp float inv = inversesqrt(max(max(dot(tg, tg), dot(bt, bt)), 1e-20));
                 nm = normalize(mat3(tg * inv, -bt * inv, n) * tn);
             }
             float after = max(dot(nm, -normalize(look.sun_dir.xyz)), 0.0);

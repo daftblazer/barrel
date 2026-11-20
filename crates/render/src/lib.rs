@@ -43,6 +43,9 @@ pub mod graphics_options;
 
 pub const VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv"));
 pub const FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv"));
+/// `FRAG` with its colour arithmetic at 16 bits (`model.frag`'s HALF), for the GPUs that run
+/// RelaxedPrecision at half width.
+pub const FRAG_HALF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model_half.frag.spv"));
 pub const SKY_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.vert.spv"));
 pub const SKY_FRAG: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv"));
 pub const WATER_VERT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/water.vert.spv"));

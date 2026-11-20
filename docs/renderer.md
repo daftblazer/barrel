@@ -1381,6 +1381,13 @@ reflections, the scene image (B10G11R11, 4 bytes), depth (4), the normals (R16G1
 reflections' two inputs (`reflect::TARGET_FORMATS`, 4 each: 8-bit sRGB and B10G11R11, where
 two 16-bit floats were 16), 20 bytes where it was 28.
 
+The model program is built twice (`build.rs`): as written, and with `-DHALF` (`FRAG_HALF`), its
+colour arithmetic marked mediump (RelaxedPrecision), which Turnip runs at 16 bits (Adreno's
+half floats: twice the rate, half the registers). Positions, texture coordinates, the
+derivative tangent frames, the shadows and the highlights' powers stay 32-bit. RADV ignores the
+marking, so on the PC the two draw the same pixels. For now `BARREL_HALF=1` picks it, to be
+timed and compared on a handheld before it becomes any setting's default.
+
 ## Foliage
 
 `RenderSettings::foliage` (full, reduced, least; config `foliage`) is how much of a field's

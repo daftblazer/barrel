@@ -15,15 +15,20 @@ fn main() {
     for name in ["model.vert", "model.frag", "ao.frag", "gbuf_derive.frag", "reflect.frag", "reflect_mip.frag", "reflect_apply.frag", "dof_weight.frag", "dof_down.frag", "dof_blur.frag", "terrain.frag", "text.vert", "text.frag", "movie.vert", "movie.frag", "post.vert", "post.frag", "sky.vert", "sky.frag", "cloud_density.frag", "cloud_map.frag", "cloud_strip.vert", "cloud_strip.frag", "water.vert", "water.frag", "glow.frag", "bright.frag", "meter.frag", "sunvis.frag", "shadow.frag", "shadow_cascade.frag", "easu.frag", "rcas.frag", "taa.frag", "gsr1.frag", "gsr2_convert.frag", "gsr2_upscale.frag"] {
         let src = PathBuf::from("shaders").join(name);
         println!("cargo:rerun-if-changed={}", src.display());
-        let dst = out.join(format!("{name}.spv"));
-        let status = Command::new(std::env::var("GLSLC").unwrap_or_else(|_| "glslc".into()))
-            .arg("-O")
-            .arg(&src)
-            .arg("-o")
-            .arg(&dst)
-            .status()
-            .expect("glslc not found: install shaderc (or set GLSLC)");
-        assert!(status.success(), "glslc failed on {}", src.display());
+        // The model program twice: as written, and with its colour arithmetic at 16 bits (HALF).
+        let builds: &[(&str, &[&str])] = if name == "model.frag" { &[("model.frag", &[]), ("model_half.frag", &["-DHALF"])] } else { &[(name, &[])] };
+        for (built, defines) in builds {
+            let dst = out.join(format!("{built}.spv"));
+            let status = Command::new(std::env::var("GLSLC").unwrap_or_else(|_| "glslc".into()))
+                .arg("-O")
+                .args(*defines)
+                .arg(&src)
+                .arg("-o")
+                .arg(&dst)
+                .status()
+                .expect("glslc not found: install shaderc (or set GLSLC)");
+            assert!(status.success(), "glslc failed on {}", src.display());
+        }
     }
     // FSR 3.1's upscaler passes (shaders/ffx, vendored from the FidelityFX SDK), as compute
     // shaders with Barrel's permutation: LDR colour, render-size motion vectors without the

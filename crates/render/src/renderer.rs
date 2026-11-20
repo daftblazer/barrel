@@ -626,7 +626,9 @@ impl Renderer {
             let words: Vec<u32> = code.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
             Ok(unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None)? })
         };
-        let (vs, fs) = (module(VERT)?, module(FRAG)?);
+        // EXPERIMENT (BARREL_HALF=1): the model program's 16-bit colour build, to time on a handheld.
+        let half = std::env::var("BARREL_HALF").is_ok_and(|v| v == "1");
+        let (vs, fs) = (module(VERT)?, module(if half { crate::FRAG_HALF } else { FRAG })?);
         // The models' and the terrain's programs write the world normal in the motion vectors'
         // attachment where the scene pass feeds the half-size target (`NORMAL_AS_MOTION`).
         let normal_entry = [vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 }];
