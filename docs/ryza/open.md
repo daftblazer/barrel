@@ -967,6 +967,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   5204466..eb78689 (+4.4 ms there). Left on the PC: the casters' alpha test (0.55 ms with none:
   a texture with no texel under the reference could skip it, the plants cannot); the scene
   stage grew 0.06 ms (0.3 at 4K) with the normals written in the scene pass, not explained.
+- **Timed on the RP6 after the four (2026-11-19, d27631b).** The gate after the opening,
+  offscreen at 1920x1080, 240 frames, medians; GPU pinned at 680 MHz, the device cool. The
+  handheld's own `Setting.ini`: 52.4 ms at scale 1 (shadow 6.3, scene 45.3), 37.2 at 0.75 with
+  FSR 1 (shadow 3.3, scene 32.2), 27.8 at 0.5 (scene 23.0). `--preset handheld` alone is now
+  the game's High (AO, depth of field, bloom) at 0.75: 44.8 ms, against 87.5 played before the
+  four; it is not last week's 34.9 test any more. The scene pass fits about 15.6 ms that no
+  scale removes plus about 30 ms per full 1080p frame of pixels. The fixed part is geometry:
+  3,974 draws and 2.3M triangles at every setting, where the original's handheld file draws
+  1,346: the `Setting.ini` draw range and LOD (`objects`, `lod`, `ranged` in the log's
+  graphics line) do not cut Barrel's draws yet. Next: make the ranges cut, then the scene
+  shader's cost per pixel.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
