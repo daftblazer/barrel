@@ -93,6 +93,10 @@ struct Args {
     story: barrel_ryza::story::Story,
     /// A save file to take the story's progress from (`--save`).
     save: Option<String>,
+    /// `--hud`: the field's HUD over a field she stands in (a `--save` shows it too).
+    hud: bool,
+    /// The hour the save's clock word gives (`--save`).
+    save_hour: Option<u32>,
     /// `--no-skyline`: objects behind the ground are drawn too.
     no_skyline: bool,
     no_occluders: bool,
@@ -161,7 +165,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -229,6 +233,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
             "--save" => a.save = Some(value()?),
+            "--hud" => a.hud = true,
             "--no-skyline" => a.no_skyline = true,
             "--no-occluders" => a.no_occluders = true,
             "--ryza" => {
@@ -365,6 +370,41 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     })?;
     let all = [font, ui, tex[0], tex[1], tex[2], tex[3], tex[4], tex[5], cursor];
     Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &all)?, title, menu(barrel_ryza::boot::TEXTURES)?, Some(boot)))
+}
+
+/// The field HUD's layer (the textures of `barrel_ryza::field_hud`) and its view.
+fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::field_hud::Hud)> {
+    use barrel_ryza::field_hud as fh;
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = |va| barrel_ryza::font::glyphs_at(&exe, va).ok_or("the executable's font table");
+    // (file, texture number) in the layer's order (`field_hud`'s constants).
+    let wanted = [
+        ("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\font\\mainfont00_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_field.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21_minimap_image_006.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_common.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_icon.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_various.g1t", 0),
+    ];
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let size = |i: usize| (tex[i].width, tex[i].height);
+    let hud = fh::Hud::read(fh::Sources {
+        minimap: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_fm_minimap.xml")?,
+        time: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_time_display.xml")?,
+        collect: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_collect_item.xml")?,
+        field_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_field.xml")?,
+        icon_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_icon.xml")?,
+        common_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_common.xml")?,
+        various_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
+        strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
+        glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
+        sizes: [size(2), size(3), size(4), size(5), size(6)],
+    })?;
+    let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fh::TEXTURES])?;
+    Ok((layer, hud))
 }
 
 /// The load screen's layer (the textures of `barrel_ryza::load_view`), its view and the saving
@@ -716,6 +756,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
         a.story = barrel_ryza::save::story(&state, &pe).map_err(|e| format!("{save}: {e}"))?;
+        a.save_hour = barrel_ryza::save::clock(&state).map(barrel_ryza::save::hour_of);
         eprintln!("{save}: {} story events played", barrel_ryza::save::events_done(&state).map_or(0, |e| e.len()));
         // FIELD `-` without an event: the save's field and her place in it, as the game loads it.
         if a.field == "-" && a.event.is_none() {
@@ -1490,6 +1531,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         false if a.title => Some(load_layer(&install, &gpu, &renderer)?),
         _ => None,
     };
+    // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
+    let mut hud = match (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some() {
+        true => Some(hud_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
     let mut handoff: Option<std::path::PathBuf> = None;
     let mut showing_load = false;
     // The title's music and voice (on the device in a window; offscreen only the cue log).
@@ -1848,9 +1894,20 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 layer.set(&gpu, &quads)?;
             }
         }
+        if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
+            let state = barrel_ryza::field_hud::State {
+                at: r.player.at.into(),
+                turn: r.player.turn.to_degrees(),
+                hour: a.save_hour.unwrap_or(10),
+                basket: barrel_ryza::field_hud::BASKET,
+                tool: 0,
+                map: a.field == barrel_ryza::field_hud::MAP_FIELD,
+            };
+            layer.set(&gpu, &view.quads(&state, (width, height)))?;
+        }
         let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref()) {
             (true, Some((l, _, _))) => vec![l],
-            _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).collect(),
+            _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
         let frame = Frame {
             image,

@@ -110,6 +110,42 @@ key) and the two lists behind `0x140069c00`; solved when a save at another story
 with the game's set and weather. A field whose info record (table `0x141a940f0`) has byte +0x44
 or +0x45 set takes `0x14037b669`'s fixed (0, 1) on its own path (`0x14037b590`).
 
+## Field HUD
+
+Built (`crates/ryza/src/field_hud.rs`, its layer drawn over the field in a run with `--save` or
+`--hud`, not over the title or the load screen): the minimap's grid, terrain, her arrow, glass
+layer, frame and north mark (`uil_a21_fm_minimap.xml`, `a21_minimap_image_006`), the basket's disc,
+picture and count with the game's nine-copy shadow (the same file's `cage`), the equipped tool's
+disc (`uil_a21_collect_item.xml`) and the clock (`uil_a21_time_display.xml`: disc, period picture,
+plate, AM or PM, hour), positions from the layouts and pictures from `uis_gen_a21_field`, `_icon`,
+`_a21v2_common`, `_a21v2_various`. Rows `hud-2030, 2230, 2530, 2830, 3330` (hud-walk, 61 quads):
+every quad matches but the minimap's markers (9 left); `hud-3130` has 12 (three more markers).
+
+What the capture shows (read, not in a table):
+- The terrain picture is drawn twice over (uv 0 to 2, 1,024 layout pixels) and slides under her
+  fixed arrow: its corner moves 1 layout pixel per 120 game units in x and per 125 in z
+  (`TERRAIN_PER_UNIT`, `TERRAIN_ORIGIN`: fitted to the six frames, Rasenboden only; the game's
+  per-map bounds are not in its tables). The map does not turn with the camera; only her arrow does.
+- Her arrow turns about its middle by 180 minus her turn, kept within a quarter either side and
+  with the texture coordinates flipped for the other half (all six frames).
+- The two mask quads (the minimap's and the tool disc's `alpha_mask`) are drawn by the game into
+  a stencil; the layer has none, so Barrel draws them as pictures and the terrain overflows the
+  ring at the minimap's corners. Needs a stencil or alpha mask in `barrel_render::text` (not
+  touched here).
+
+Left:
+- Markers: the 6 icons (3 townsfolk, `mmap_icon` picture 5, and 3 gimmicks, picture at
+  (1902, 3127) of the field atlas) and one destination marker with two additive glows
+  (`a21_field.g1t#1`, pulsing alpha) drawn above the frame. Their centres follow
+  `(1729 + (Mx - X) / 80, 886 + (Mz - Z) / 83.3)` pixels for a thing at world (Mx, Mz) and her at
+  (X, Z); which townsfolk and gimmicks show (the tables name no minimap flag) is not found.
+- STAND-INs: the basket's count (225 in the capture), the clock hour from the save's `time` word
+  (50 to the hour fits the one capture: 493 shows AM 10; the game's clock does not advance in the
+  50 seconds walked), the clock picture by period (picture 2 for 10 AM; the others guessed), the
+  tool (the first) and the arrow's middle (1729, 886 on 1080 lines, read off the capture).
+- The area name (`current_place`, hidden in the steady HUD) and the message popups at arrival
+  (1760-1930) and from 3430 are not built or identified.
+
 ## The load screen (title menu, Load Game)
 
 Built (2026-11-20, `crates/ryza/src/{load,saves}.rs`, `title_menu.rs`, `play/mod.rs`): the button on

@@ -808,7 +808,7 @@ order. Read so far: `event` / `execFlag`, 1,683 bytes, the story's events
 big-endian words) is where a load puts her: a 0, the field map (`FIELDMAP_*` number), her turn in
 degrees (about y, 0 toward +z), her feet in metres, then words not read (ryza-recomp `load-path`:
 an autosave's 5, -1.0, 325.2, 61.80, 303.34 arrive as (32520, 6180, 30334) facing 1 degree off
-+z, `save::place`). `time` holds one word (493 in that save); the load then sets the noon
++z, `save::place`). `time` holds one word (493 in that save, 337 in a slot saved earlier; the HUD's clock shows AM 10 after loading the 493 one, so about 50 to the hour: `save::hour_of`, one point); the load then sets the noon
 light set and sunny weather (`0x14071e970 (env, 1, ...)`, `0x14071e9d0 (env, 0, 1)` at frame
 1728), how the word picks the set not yet read. Continue loads `AutoSaveData`.
 

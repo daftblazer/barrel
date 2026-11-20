@@ -73,6 +73,18 @@ pub fn place(state: &[u8]) -> Result<Place, Error> {
     Ok(Place { map: word(1)? as usize, turn: f32::from_bits(word(2)?), at: [metres(3)?, metres(4)?, metres(5)?] })
 }
 
+/// The save's clock word (`time`: a big-endian count of 4 bytes, then one big-endian word).
+pub fn clock(state: &[u8]) -> Option<u32> {
+    let d = find(state, &["time"])?;
+    d.get(4..8).map(|w| u32::from_be_bytes(w.try_into().unwrap()))
+}
+
+// STAND-IN: The hour the clock word shows is read off one capture (an autosave's 493 shows 10 AM on the HUD); a word of 50 to the hour fits that one point, the game's own rule is not read.
+/// The hour (0 to 23) a clock word shows.
+pub fn hour_of(word: u32) -> u32 {
+    ((word as f32 / 50.0).round() as u32) % 24
+}
+
 /// The story a save is at: its played events named by the executable's `EVENT_*` enum.
 pub fn story(state: &[u8], pe: &barrel_formats::pe::Pe) -> Result<crate::story::Story, Error> {
     const FIRST: &str = "EVENT_AA01_010";
@@ -89,6 +101,12 @@ mod tests {
     use super::*;
 
     /// `global` as the autosave of ryza-recomp's `load-path` has it.
+    #[test]
+    fn the_clock_word_gives_the_hud_hour() {
+        assert_eq!(hour_of(493), 10);
+        assert_eq!(hour_of(1250), 1);
+    }
+
     #[test]
     fn place_reads_global() {
         let words = [0, 5, (-1.0f32).to_bits(), 325.2f32.to_bits(), 61.8001f32.to_bits(), 303.3401f32.to_bits()];

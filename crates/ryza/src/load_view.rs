@@ -34,7 +34,7 @@ pub const TEXTURES: usize = 11;
 // STAND-IN: The text line's offset (TEXT_TOP) is the title's, fitted to the capture; the real thing is the game's own text layout rule.
 /// How far above a text node's `pos.y` its line top sits, in layout pixels (`title`'s fit; the
 /// load screen's lines match it).
-const TEXT_TOP: f32 = -4.0;
+pub(crate) const TEXT_TOP: f32 = -4.0;
 /// The text colour of the template `TEXTCOLOR_BROWN` (26, 0, 0).
 const BROWN: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
 /// Frames the common fade takes (`anm_common_fade_in`).
