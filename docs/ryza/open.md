@@ -980,6 +980,28 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   forward shader (the plants' alpha-tested layers) on a tiler, where the original is
   deferred. Next, a few runs to split it: no plants, a trivial fragment shader, a depth
   pre-pass.
+- **For the tiler, on the PC (2026-11-19, d6fd963 to 1992738).** What the pass's cost was
+  on the PC: 9.0 million pixel-program runs for 2.07 million pixels, 5.2 million of them the
+  far trees' alpha-tested cards. Now the scene pass is in three parts (opaque textures without
+  the alpha test; the tested draws' depth alone; their shading over it, no depth write) with
+  1.21 + 1.05 million runs of the whole program and 4.94 million of the test alone; the field
+  models and the others have their own pipelines (`KIND`: on RADV 1,903 instructions and 48
+  registers where every draw's program had 7,018 and 72); the scene keeps 20 bytes a pixel
+  where it kept 28 (the reflections' inputs at 4 bytes each); shadow casters with opaque
+  textures are drawn without a fragment program; each shadow pass covers only its map; textures
+  are bound only on a change (about half the binds, which a tiler replays in every bin); without
+  motion vectors the vertex program writes no clip positions and skins once. On the PC the
+  gate is 1.92 ms where it was about 2.7 (shadow 0.76, scene 0.68, reflections and water
+  0.38). Every check holds; the format change moves 1.2% of the pixels by at most 4 levels but
+  5 (docs/engine.md). Turnip's sources (26.2.4): the statistics query does not turn GMEM off
+  (only primitives-generated queries do), and the depth part's draws do not cost LRZ its test.
+  Not tried on the device yet: the model program's 16-bit colour build (`BARREL_HALF=1`; RADV
+  ignores RelaxedPrecision, so only the device can time it and show its pixels). Next on the
+  device: `work/rp6-time.sh` (Low, Low with HALF and the two images compared, the handheld
+  preset), then `MODE=trace work/rp6-time.sh 30` (Turnip's u_trace per render pass: GMEM or
+  sysmem and why, bins, LRZ, GPU time; `work/rp6-trace.py`). That says whether the 15.6 ms no
+  scale removes is the bins replaying draws, the vertex program, or a pass Turnip runs in
+  sysmem.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
