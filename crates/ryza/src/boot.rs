@@ -77,6 +77,45 @@ pub const TITLE_START: f32 = (875.0 - CAPTURE_START) / FPS;
 /// The seconds of the boot sequence (the title starts at [`TITLE_START`]).
 pub const LENGTH: f32 = TITLE_START;
 
+// The boot with saves present: another schedule (the capture `boot-saves`, every 5th frame from 0
+// to 760, no input), counted in seconds from the capture's frame 0 (the process's first frame).
+// STAND-IN: Like the no-save schedule, its times are read off the capture's frame numbers; the real thing is the boot moving on as each load finishes.
+/// The loading screen's first frame (the capture shows it at 5 and not at 0), and the frame the
+/// notice starts at (its opacity at 10 is 3/15 and at 15 8/15, the common fade from 7). The loading
+/// screen goes as the notice's first visible frame (8) comes: when exactly it goes between 5 and
+/// 10 is not in the capture's every-fifth-frame samples.
+const SAVES_LOADING_AT: f32 = 5.0;
+const SAVES_NOTICE_AT: f32 = 7.0;
+const SAVES_NOTICE_SEEN: f32 = 8.0;
+/// The common fade's length in frames, and the frame the notice fades out from (its opacity at 125
+/// is 3/15 down from full).
+const NOTICE_FADE_FRAMES: f32 = 15.0;
+const SAVES_NOTICE_OUT: f32 = 113.0;
+/// The logos' fade-ins start at 161 and 341 (opacity 4/30 at 165 and at 345), as in the no-save
+/// boot a logo takes 30 frames each way and 120 between.
+const SAVES_KT_START: f32 = 161.0;
+const SAVES_GUST_START: f32 = 341.0;
+/// The black fade over the title's backdrop rises 1/18 a frame from 522 (3/18 at 525, full at 540).
+const SAVES_FADE_AT: f32 = 522.0;
+const SAVES_FADE_FRAMES: f32 = 18.0;
+/// The title's first frame (the title rows that start from saves count their frames from 543).
+pub const SAVES_TITLE_START: f32 = 543.0 / FPS;
+
+/// A time given in seconds to four places is a hair short of its frame: counted up to it.
+const FRAME_EPSILON: f32 = 0.01;
+
+/// The seconds into the boot at which the title starts, with saves present or not.
+pub fn title_start(saves: bool) -> f32 {
+    if saves { SAVES_TITLE_START } else { TITLE_START }
+}
+
+/// `t` seconds into the with-saves boot: the loading screen's age in frames while it is up (the
+/// load screen's own layer draws it, `load_view::View::loading`), else `None`.
+pub fn saves_loading(t: f32) -> Option<i32> {
+    let frame = t * FPS + FRAME_EPSILON;
+    (SAVES_LOADING_AT..SAVES_NOTICE_SEEN).contains(&frame).then(|| (frame - SAVES_LOADING_AT).floor() as i32)
+}
+
 /// One animation attribute: keys of (seconds, value), easing between them. Unlike the title's
 /// reader this keeps a key that repeats the one before's frame: that is a jump (the pen's
 /// move), the value then the later key's.
@@ -461,6 +500,34 @@ impl Boot {
         }
     }
 
+    /// The quads `t` seconds into the boot with saves present: the loading screen (not here: see
+    /// [`saves_loading`]), the notice of the saves being read ("Processing..."), the two logos, the black fade.
+    pub fn quads_with_saves(&self, t: f32, screen: (u32, u32)) -> Vec<Quad> {
+        let frame = t * FPS;
+        let at = frame + FRAME_EPSILON;
+        let logo_frames = (2.0 * LOGO_FADE + LOGO_HOLD) * FPS;
+        let fade = |f: f32| (f / NOTICE_FADE_FRAMES).clamp(0.0, 1.0);
+        if at < SAVES_NOTICE_AT {
+            Vec::new()
+        } else if at < SAVES_KT_START {
+            let alpha = fade(frame - SAVES_NOTICE_AT).min(1.0 - fade(frame - SAVES_NOTICE_OUT));
+            if alpha > 0.0 {
+                self.loading_notice(NoticeWord::Processing, (frame - SAVES_NOTICE_AT) / FPS, alpha, screen)
+            } else {
+                Vec::new()
+            }
+        } else if at < SAVES_KT_START + logo_frames {
+            vec![logo(LOGO_KT, logo_alpha((frame - SAVES_KT_START) / FPS), screen)]
+        } else if (SAVES_GUST_START..SAVES_GUST_START + logo_frames).contains(&at) {
+            vec![logo(LOGO_GUST, logo_alpha((frame - SAVES_GUST_START) / FPS), screen)]
+        } else if at >= SAVES_FADE_AT {
+            let alpha = ((frame - SAVES_FADE_AT) / SAVES_FADE_FRAMES).clamp(0.0, 1.0);
+            vec![Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32, screen.1 as f32], uv: [-1.0; 4], color: [0.0, 0.0, 0.0, alpha], texture: LOGO_GUST }]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn quad(&self, atlas: usize, texture: usize, uvwh: [f32; 4], rect: [f32; 4], color: [f32; 4], spin: Option<Spin>) -> Quad {
         let (aw, ah) = self.atlas[atlas];
         let [x, y, w, h] = uvwh;
@@ -709,6 +776,14 @@ mod tests {
 
     fn near(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-4
+    }
+
+    #[test]
+    fn the_saves_boot_opens_on_the_loading_screen_and_ends_before_the_title() {
+        assert_eq!(saves_loading(5.0 / FPS), Some(0));
+        assert_eq!(saves_loading(10.0 / FPS), None);
+        assert_eq!(saves_loading(0.0), None);
+        assert!(title_start(true) < title_start(false));
     }
 
     #[test]

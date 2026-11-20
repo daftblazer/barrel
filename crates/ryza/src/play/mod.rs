@@ -661,6 +661,18 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         raw.splice(0..0, start);
     }
     let mut a = args(raw)?;
+    // The saves the title's Load Game lists: `--saves`, else (in a window) the original's own
+    // folder; the save the player chose goes on into the field. With saves the boot is the one
+    // the game has with them (`boot::SAVES_TITLE_START`), else the one without.
+    let save_slots = match (a.title, &a.saves, a.window) {
+        (true, Some(dir), _) => barrel_ryza::saves::find(Some(Path::new(dir))),
+        (true, None, true) => barrel_ryza::saves::find(None),
+        _ => None,
+    }
+    .map(|d| barrel_ryza::saves::slots(&d))
+    .unwrap_or_default();
+    let boot_saves = a.boot && !save_slots.is_empty();
+    let title_start = barrel_ryza::boot::title_start(boot_saves);
     // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
     // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
@@ -807,7 +819,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
     let mut cast_files: Vec<actors::Files> = Vec::new();
     if let (Some(motions), Some(play)) = (title_motions, title_play.as_mut()) {
         // after the boot the title's own time starts where the boot ends
-        let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
+        let boot_ahead = if a.boot { a.boot_at - title_start } else { 0.0 };
         actors::advance(play, a.title_at + boot_ahead - actors::EVENT_START);
         // Before the event has placed anyone (the boot's logos, the title's first frames) the
         // stage is run on to where it has, so its people are loaded and in the scene by the
@@ -1472,15 +1484,6 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
     // The keys pressed this frame, for the title's menu, and what the player has done there.
     let mut title_keys: Vec<winit::keyboard::KeyCode> = Vec::new();
     let mut title_input = a.title_input.clone();
-    // The saves the title's Load Game lists: `--saves`, else (in a window) the original's own
-    // folder; the save the player chose goes on into the field.
-    let save_slots = match (a.title, &a.saves, pump.is_some()) {
-        (true, Some(dir), _) => barrel_ryza::saves::find(Some(Path::new(dir))),
-        (true, None, true) => barrel_ryza::saves::find(None),
-        _ => None,
-    }
-    .map(|d| barrel_ryza::saves::slots(&d))
-    .unwrap_or_default();
     title_input.saves |= !save_slots.is_empty();
     // The load screen's own layer, with the views of its screens (built when there are saves to list).
     let mut load_screen = match save_slots.is_empty() {
@@ -1601,7 +1604,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         // The title's characters on the event's stage at this frame's moment.
         if let Some(play) = title_play.as_mut().filter(|_| !cast.is_empty()) {
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
-            let boot_ahead = if a.boot { a.boot_at - barrel_ryza::boot::TITLE_START } else { 0.0 };
+            let boot_ahead = if a.boot { a.boot_at - title_start } else { 0.0 };
             actors::advance(play, a.title_at + boot_ahead + clock - actors::EVENT_START);
             for actor in &cast {
                 if let Some(body) = play.stage.characters.get(&actor.slot) {
@@ -1746,7 +1749,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         if let Some((layer, title, menu, boot)) = title_layer.as_mut() {
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
             let title_seconds = match boot {
-                Some(_) => a.boot_at + clock - barrel_ryza::boot::TITLE_START + a.title_at,
+                Some(_) => a.boot_at + clock - title_start + a.title_at,
                 None => a.title_at + clock,
             };
             // The player's keys in a window (the pad's buttons stand for them): Enter at the
@@ -1783,8 +1786,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 // The boot sequence, then the title from its own start.
                 Some(boot) => {
                     let t = a.boot_at + clock;
-                    scene_on.set(t >= barrel_ryza::boot::TITLE_START);
-                    if t < barrel_ryza::boot::TITLE_START { boot.quads(t, (width, height)) } else { title.quads_with(title_seconds, (width, height), with_menu) }
+                    scene_on.set(t >= title_start);
+                    if t < title_start { if boot_saves { boot.quads_with_saves(t, (width, height)) } else { boot.quads(t, (width, height)) } } else { title.quads_with(title_seconds, (width, height), with_menu) }
                 }
                 None => title.quads_with(title_seconds, (width, height), with_menu),
             };
@@ -1795,6 +1798,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             let mut quads = quads;
             let cover_texture = if boot.is_some() { barrel_ryza::boot::LOGO_GUST } else { 2 };
             let mut own_layer = false;
+            // The loading screen the boot with saves opens on, in the load screen's layer.
+            if let (true, Some(age), Some((layer, view, _))) = (boot_saves, barrel_ryza::boot::saves_loading(a.boot_at + clock), load_screen.as_mut()) {
+                quads = vec![text::Quad { turn: false, spin: None, rect: [0.0, 0.0, width as f32, height as f32], uv: [-1.0; 4], color: [0.0, 0.0, 0.0, 1.0], texture: 0 }];
+                quads.extend(view.loading(age, (width, height)));
+                layer.set(&gpu, &quads)?;
+                own_layer = true;
+            }
             match flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame) {
                 flow::Stage::Title => {}
                 flow::Stage::Cover(alpha) => quads.push(flow::cover(alpha, (width, height), cover_texture)),
@@ -1828,7 +1838,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             }
             showing_load = own_layer;
             // The event's fade over the title: black from a point of the Gust logo.
-            let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= barrel_ryza::boot::TITLE_START);
+            let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= title_start);
             let alpha = title_play.as_ref().filter(|_| showing_title).map_or(0.0, |p| actors::cover(&p.stage));
             if alpha > 0.0 {
                 let texture = if boot.is_some() { barrel_ryza::boot::LOGO_GUST } else { 2 };

@@ -34,14 +34,23 @@ is solved. ryza-recomp is ../ryza-recomp (its CLAUDE.md has the build and run no
 checks are `runchecks docs/ryza/checks.txt` (44 rows; frames are the exact capture's) and
 `docs/escha/checks.txt` (17).
 
-- **The boot with saves present** (B1). With saves the game's boot is another one (ryza-recomp
-  `boot-saves`, frames 0-760 every 5, no input): a loading frame at 5 (`a21_loading`), the
-  `a21_saveload` notice at 10-125 (15 quads, the load screen's notice), the two logos at 130-520
-  (3 and 4 draws), a white fade at 525 (`sys_white`), the title from 545 (its scene's draws
-  2091, 1014, about 500 at 585-595, then 1922 from 600: built up over its first frames).
-  Barrel's `boot.rs` schedule is the no-save one (title at 875). Solved when Barrel picks the
-  schedule by the saves found and `boot-saves` diffs to 0 in 2D at sampled frames. (Fixed
-  2026-11-20, 14b16f2: the boot screens showed the field behind them; now over black.)
+- **The boot with saves present** (B1). Done in 2D (2026-11-20): with saves found (`--saves DIR`,
+  or the Steam library's own folder in a window) `boot::quads_with_saves` runs the game's
+  with-saves boot (ryza-recomp `boot-saves`, frames 0-760 every 5, no input): the loading screen at
+  5 (the load screen's layer), the notice at 7-128 ("Processing...", the load screen's
+  `loading_notice`: fade in from 7, out from 113), the logos from 161 and 341, a black fade from
+  522 (the game's `sys_white` texture is drawn black), the title from 543. Without saves the
+  schedule is the old one. Rows `boot-saves-N` (docs/ryza/parity.md) are at 0 except two with a
+  stated cause. Left, all stand-ins named in `boot.rs`: (a) the loading screen's frames (shown from
+  5; the capture samples 0 and 5 and 10 only, so its end between 5 and 8 is a guess); (b) the title
+  scene's first frames (draws 2091 at 545, 1014 at 550-580, about 500 at 585-595, 1922 from 600)
+  are not built up: at 545 the game draws one more 2D quad (a full-screen `[0,0,1,1]` from
+  shader `shb323822a9767bc95`, a pass of the scene's first frames; row `boot-saves-545` has 1
+  mismatch for it) and the 3D draw counts are not compared (not seen: needs
+  `barrel-parity draws ... --summary` on 545-600 against the scene's own first frames); (c) the
+  pulse of the prompt (`title.rs` `PULSE_FROM`) counts from the no-save boot's start, as the
+  existing `menu-saves-*` rows pass with it; its phase over a real with-saves boot is unverified.
+  (Fixed 2026-11-20, 14b16f2: the boot screens showed the field behind them; now over black.)
 
 1. **The title backdrop's cast: what is left** (P1). Ryza, Lent and Tao and the three
    weapons lying by them are drawn from the event `tt01_010` (docs/renderer.md, "The
