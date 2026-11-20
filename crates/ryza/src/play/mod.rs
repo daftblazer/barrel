@@ -367,6 +367,66 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &all)?, title, menu(barrel_ryza::boot::TEXTURES)?, Some(boot)))
 }
 
+/// The load screen's layer (the textures of `barrel_ryza::load_view`), its view and the saving
+/// notice drawn over the black while saves are read and one loads.
+fn load_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::load_view::View, barrel_ryza::boot::Boot)> {
+    use barrel_ryza::load_view as lv;
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = |va| barrel_ryza::font::glyphs_at(&exe, va).ok_or("the executable's font table");
+    // (file, texture number) in the layer's order (`load_view`'s constants).
+    let wanted = [
+        ("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\font\\mainfont00_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_saveload.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_saveload.g1t", 2),
+        ("\\data\\x64\\res_en\\ui\\a21_saveload.g1t", 1),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 2),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21_bg07.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_caption.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_loading.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_loading.g1t", 1),
+        // The notice's window and spinner (only their sizes are read).
+        ("\\data\\x64\\res_en\\ui\\a21_memorymap.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_saveload.g1t", 0),
+    ];
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let size = |t: &&barrel_formats::g1t::Texture| (t.width, t.height);
+    // The styles count 2160-line pixels: twice the texture's.
+    let style_size = |i: usize| (tex[i].width * 2, tex[i].height * 2);
+    let boot = barrel_ryza::boot::Boot::read(barrel_ryza::boot::Sources {
+        progress: &install.read("\\saves\\ui_en\\a21_saveload\\uil_a21_saveload_progress.xml")?,
+        saveload_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_saveload.xml")?,
+        saveload_anims: &install.read("\\saves\\ui_en\\a21_saveload\\uia_a21_saveload.xml")?,
+        common_anims: &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        notification: &install.read("\\saves\\ui_cmn\\a21_saveload\\uil_a21_notification_display.xml")?,
+        window_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_memorymap.xml")?,
+        spinner_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_saveload.xml")?,
+        strings: &install.read("\\saves\\text_en\\str_ui.xml")?,
+        glyphs: glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?,
+        sizes: [size(&tex[2]), size(&tex[3]), size(&tex[11]), size(&tex[12]), size(&tex[0])],
+    })?;
+    let view = lv::View::read(lv::Sources {
+        layout: &install.read("\\saves\\ui_en\\a21_saveload\\uil_a21_saveload.xml")?,
+        styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_saveload.xml")?,
+        common_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
+        caption_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_caption.xml")?,
+        help: &install.read("\\saves\\ui_en\\a21_button_help\\uil_a21_shade.xml")?,
+        anims: &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
+        glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
+        atlases: [style_size(4), style_size(5), style_size(6), style_size(8)],
+        loading_layout: &install.read("\\saves\\ui_cmn\\a21_loading\\uil_a21_loading.xml")?,
+        loading_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_loading.xml")?,
+        loading_anims: &install.read("\\saves\\ui_cmn\\a21_loading\\uia_a21_loading.xml")?,
+        loading_atlases: [style_size(9), style_size(10)],
+    })?;
+    let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..lv::TEXTURES])?;
+    Ok((layer, view, boot))
+}
+
 /// The way a directional light travels, in render space: from `elevation` degrees above the
 /// horizon and `azimuth` degrees around y from +z toward +x (game space: the lighting pass's
 /// `litDir` read from the running game matches both lights, docs/shading.md), x mirrored.
@@ -1421,7 +1481,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
     .map(|d| barrel_ryza::saves::slots(&d))
     .unwrap_or_default();
     title_input.saves |= !save_slots.is_empty();
+    // The load screen's own layer, with the views of its screens (built when there are saves to list).
+    let mut load_screen = match save_slots.is_empty() {
+        false if a.title => Some(load_layer(&install, &gpu, &renderer)?),
+        _ => None,
+    };
     let mut handoff: Option<std::path::PathBuf> = None;
+    let mut showing_load = false;
     // The title's music and voice (on the device in a window; offscreen only the cue log).
     let mut title_sound = a.title.then(|| barrel_ryza::sound::TitleSound::new(&install.root, pump.is_some()));
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
@@ -1689,7 +1755,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             let loads = |input: &barrel_ryza::title_menu::Input, at: i32| menu.chosen(input, at) == Some("load_game") && !save_slots.is_empty();
             if let Some(p) = pump.as_ref() {
                 use winit::keyboard::KeyCode as K;
-                let listing = matches!(flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame), flow::Stage::List(_));
+                let listing = matches!(flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame), flow::Stage::Screen { list: Some((_, None)), .. });
                 if title_keys.contains(&K::Enter) {
                     if menu.pressed(&title_input).is_none() {
                         title_input.press = Some(frame);
@@ -1727,18 +1793,39 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             // The path from the menu's Load Game to the field (`barrel_ryza::load`).
             let mut quads = quads;
             let cover_texture = if boot.is_some() { barrel_ryza::boot::LOGO_GUST } else { 2 };
+            let mut own_layer = false;
             match flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame) {
                 flow::Stage::Title => {}
                 flow::Stage::Cover(alpha) => quads.push(flow::cover(alpha, (width, height), cover_texture)),
                 flow::Stage::Black => quads = vec![flow::cover(1.0, (width, height), cover_texture)],
-                flow::Stage::List(on) => quads = flow::list_quads(title, &save_slots, on, false, (width, height)),
-                flow::Stage::Loading(on, done) => {
-                    quads = vec![flow::cover(1.0, (width, height), cover_texture)];
+                flow::Stage::Screen { on, list, notice } => {
+                    if let Some((layer, view, boot)) = load_screen.as_mut() {
+                        quads = vec![text::Quad { turn: false, spin: None, rect: [0.0, 0.0, width as f32, height as f32], uv: [-1.0; 4], color: [0.0, 0.0, 0.0, 1.0], texture: 0 }];
+                        if let Some((age, leaving)) = list {
+                            quads.extend(view.quads(&save_slots, barrel_ryza::load_view::Moment { age, leaving, on }, (width, height)));
+                        }
+                        if let Some((age, alpha)) = notice {
+                            quads.extend(boot.saving_notice(age as f32 / 60.0, alpha, (width, height)));
+                        }
+                        layer.set(&gpu, &quads)?;
+                        own_layer = true;
+                    }
+                }
+                flow::Stage::Loading { on, since, done } => {
+                    if let Some((layer, view, _)) = load_screen.as_mut() {
+                        quads = vec![text::Quad { turn: false, spin: None, rect: [0.0, 0.0, width as f32, height as f32], uv: [-1.0; 4], color: [0.0, 0.0, 0.0, 1.0], texture: 0 }];
+                        quads.extend(view.loading(since - flow::LOADING_AT, (width, height)));
+                        layer.set(&gpu, &quads)?;
+                        own_layer = true;
+                    } else {
+                        quads = vec![flow::cover(1.0, (width, height), cover_texture)];
+                    }
                     if done {
                         handoff = save_slots.get(on).map(|s| s.file.clone());
                     }
                 }
             }
+            showing_load = own_layer;
             // The event's fade over the title: black from a point of the Gust logo.
             let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= barrel_ryza::boot::TITLE_START);
             let alpha = title_play.as_ref().filter(|_| showing_title).map_or(0.0, |p| actors::cover(&p.stage));
@@ -1746,9 +1833,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 let texture = if boot.is_some() { barrel_ryza::boot::LOGO_GUST } else { 2 };
                 quads.push(text::Quad { turn: false, spin: None, rect: [0.0, 0.0, width as f32, height as f32], uv: [0.5; 4], color: [0.0, 0.0, 0.0, alpha], texture });
             }
-            layer.set(&gpu, &quads)?;
+            if !own_layer {
+                layer.set(&gpu, &quads)?;
+            }
         }
-        let layers: Vec<&text::Layer> = telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).collect();
+        let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref()) {
+            (true, Some((l, _, _))) => vec![l],
+            _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).collect(),
+        };
         let frame = Frame {
             image,
             width,

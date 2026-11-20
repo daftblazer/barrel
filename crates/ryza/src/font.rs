@@ -32,10 +32,20 @@ pub const ATLAS_SIZE: f32 = 36.0;
 
 const RECORD: usize = 28;
 
+/// The `MainFont00_HD1080` table's first record: its 1,774 records end 8 bytes before the
+/// `MainFont01` table's (the load screen's heading and figures are set in it; found by matching
+/// the capture's glyphs to the records, as for the other).
+pub const MAIN_FONT_00_HD1080: u64 = MAIN_FONT_01_HD1080 - 0xC210;
+
 /// The glyphs by character, from the executable at `exe`'s bytes.
 pub fn glyphs(exe: &[u8]) -> Option<HashMap<char, Glyph>> {
+    glyphs_at(exe, MAIN_FONT_01_HD1080)
+}
+
+/// The glyphs of the table whose first record is at virtual address `va`.
+pub fn glyphs_at(exe: &[u8], va: u64) -> Option<HashMap<char, Glyph>> {
     let pe = Pe::parse(exe).ok()?;
-    let at = pe.offset(MAIN_FONT_01_HD1080)?;
+    let at = pe.offset(va)?;
     let table = exe.get(at..at + MAIN_FONT_01_HD1080_COUNT * RECORD)?;
     let u16_at = |r: &[u8], o: usize| u16::from_le_bytes([r[o], r[o + 1]]);
     let u32_at = |r: &[u8], o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());

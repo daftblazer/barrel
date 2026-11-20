@@ -8,19 +8,27 @@
 
 use barrel_render::text::Quad;
 
-use crate::saves::Slot;
-use crate::title::Title;
 use crate::title_menu::{Hold, Input};
 
 /// The black cover over the menu rises by 1/18 a frame from the button and is full 20 frames
 /// after it (the capture's 1/18, 6/18 ... 16/18 at 0, 5 ... 15, full at 20).
 const COVER_RISE: f32 = 18.0;
 const COVER_FULL: i32 = 20;
-// STAND-IN: The wait before the list (160 frames after the button) is the time the game spent reading the saves in the capture; the real thing is the reading itself.
-const LIST_AT: i32 = 160;
-// STAND-IN: The list leaves 15 frames after the button on a save and the field follows 130 frames after it (the loading's own time in the capture); the real thing is the load job.
-const LEAVE: i32 = 15;
+// STAND-IN: The notice, the list and the loading come at the frames the capture has them (counted from the button on Load Game and from the button on a save); the real thing is the reading of the saves and the load job, which these waits stand for.
+/// The notice (the saving icon over the black) fades in from this many frames after the button
+/// on the menu (capture 1448 from 1400).
+const NOTICE_AT: i32 = 48;
+/// The list fades in from this many frames after the button, as the notice fades out (1556).
+const LIST_AT: i32 = 156;
+/// After the button on a save: the list fades out over the common fade, the notice fades in a
+/// frame later, holds, and fades out again from `NOTICE_OUT` (capture 1600, 1601, 1707) to
+/// `LOADING_AT` (1725), where the loading screen takes over; the field follows at `FIELD_AT`.
+const NOTICE_IN: i32 = 1;
+const NOTICE_OUT: i32 = 107;
+pub const LOADING_AT: i32 = 125;
 const FIELD_AT: i32 = 130;
+/// Frames of the common fade (`anm_common_fade_in`).
+const FADE: i32 = 15;
 
 /// Where the run is on the path.
 #[derive(Clone, Debug, PartialEq)]
@@ -29,12 +37,15 @@ pub enum Stage {
     Title,
     /// Under the rising black cover, with this opacity.
     Cover(f32),
-    /// Black, waiting for the saves to be read.
+    /// Black.
     Black,
-    /// The list, the cursor on this slot.
-    List(usize),
-    /// A save was chosen and is loading; `Some(slot)` once the run is to go on into the field.
-    Loading(usize, bool),
+    /// The load screen's own drawing: the list (with its age and, once a save was chosen, the
+    /// frames since) and the notice over it (its animation's frames and opacity), the cursor on
+    /// slot `on`.
+    Screen { on: usize, list: Option<(i32, Option<i32>)>, notice: Option<(i32, f32)> },
+    /// The loading screen after a save was chosen, in frames since the choice; `true` once the
+    /// run is to go on into the field.
+    Loading { on: usize, since: i32, done: bool },
 }
 
 /// The slot the cursor is on at `frame`: one step a press, a held direction repeating as the
@@ -60,14 +71,24 @@ impl Stage {
     pub fn at(input: &Input, count: usize, frame: i32) -> Stage {
         let Some(c) = input.choose.filter(|&c| frame >= c) else { return Stage::Title };
         let from_c = frame - c;
+        let fade = |frames: i32| (frames as f32 / FADE as f32).clamp(0.0, 1.0);
         if let Some(k) = input.confirm.filter(|&k| k >= c + LIST_AT && frame >= k) {
             let on = cursor(&input.list_holds, count, k);
-            return Stage::Loading(on, frame - k >= FIELD_AT);
+            let since = frame - k;
+            if since >= LOADING_AT {
+                return Stage::Loading { on, since, done: since >= FIELD_AT };
+            }
+            let notice = (since >= NOTICE_IN).then(|| (since - NOTICE_IN, if since >= NOTICE_OUT { 1.0 - fade(since - NOTICE_OUT) } else { fade(since - NOTICE_IN) }));
+            return Stage::Screen { on, list: (since < FADE).then_some((from_c - LIST_AT, Some(since))), notice };
         }
         match from_c {
             f if f < COVER_FULL => Stage::Cover(((f + 1) as f32 / COVER_RISE).min(1.0)),
-            f if f < LIST_AT => Stage::Black,
-            _ => Stage::List(cursor(&input.list_holds, count, frame)),
+            f if f < NOTICE_AT => Stage::Black,
+            f if f < LIST_AT + FADE => {
+                let notice = Some((f - NOTICE_AT, if f < LIST_AT { fade(f - NOTICE_AT) } else { 1.0 - fade(f - LIST_AT) }));
+                Stage::Screen { on: cursor(&input.list_holds, count, frame), list: (f >= LIST_AT).then_some((f - LIST_AT, None)), notice }
+            }
+            f => Stage::Screen { on: cursor(&input.list_holds, count, frame), list: Some((f - LIST_AT, None)), notice: None },
         }
     }
 }
@@ -75,34 +96,6 @@ impl Stage {
 /// The cover: the whole screen black at `alpha` (drawn from `texture`, which the plain fill does not read).
 pub fn cover(alpha: f32, screen: (u32, u32), texture: usize) -> Quad {
     Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32, screen.1 as f32], uv: [-1.0; 4], color: [0.0, 0.0, 0.0, alpha], texture }
-}
-
-/// The list: the caption, each save's name and time of saving, the cursor's row lit and the
-/// chosen save's figures at the right.
-// STAND-IN: The list is drawn from the title's font alone (no frames or pictures yet), in the layout's places (`uil_a21_saveload.xml`: the list at 115, 80 with rows 111 apart, the info at 727, 129); the real thing is the screen's own styles, which are not read yet.
-pub fn list_quads(title: &Title, slots: &[Slot], on: usize, leaving: bool, screen: (u32, u32)) -> Vec<Quad> {
-    let ink = [1.0, 1.0, 1.0, if leaving { 0.0 } else { 1.0 }];
-    let (k, left) = (screen.1 as f32 / 720.0, (screen.0 as f32 - 1280.0 * screen.1 as f32 / 720.0) * 0.5);
-    let mut out = vec![Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32, screen.1 as f32], uv: [-1.0; 4], color: [0.1, 0.07, 0.05, ink[3]], texture: 0 }];
-    out.extend(title.text_quads("Load", (48.0, 17.0), 28.0, ink, screen));
-    for (i, s) in slots.iter().enumerate().take(5) {
-        let y = 80.0 + 111.0 * i as f32;
-        if i == on {
-            out.push(Quad { turn: false, spin: None, rect: [left + 115.0 * k, y * k, left + 625.0 * k, (y + 100.0) * k], uv: [-1.0; 4], color: [1.0, 1.0, 1.0, 0.25 * ink[3]], texture: 0 });
-        }
-        out.extend(title.text_quads(&s.name, (115.0 + 234.0, y + 40.0), 17.0, ink, screen));
-        out.extend(title.text_quads(&s.header.saved_at(), (115.0 + 234.0, y + 68.0), 17.0, ink, screen));
-    }
-    if let Some(s) = slots.get(on) {
-        let h = &s.header;
-        let rows = [("Playtime", h.play_time()), ("Alchemy Level", h.alchemy_level.to_string()), ("Money", h.money.to_string()), ("Gold Coin", h.gold_coins.to_string())];
-        for (i, (label, value)) in rows.iter().enumerate() {
-            let y = 129.0 + 48.0 + 27.0 * i as f32;
-            out.extend(title.text_quads(label, (727.0 + 38.0, y), 17.0, ink, screen));
-            out.extend(title.text_quads(value, (727.0 + 38.0 + 200.0, y), 17.0, ink, screen));
-        }
-    }
-    out
 }
 
 #[cfg(test)]

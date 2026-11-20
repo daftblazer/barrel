@@ -26,6 +26,7 @@ pub mod solids;
 pub mod save;
 pub mod saves;
 pub mod load;
+pub mod load_view;
 pub mod story;
 pub mod event;
 pub mod telop;

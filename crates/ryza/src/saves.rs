@@ -47,7 +47,7 @@ impl Header {
         format!("{:03}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
     }
 
-    /// The time of saving in the machine's time zone as the screen writes it: `4/4/2026 6:57`.
+    /// The time of saving in the machine's time zone as the screen writes it: `4/4/2026  6:57` (the hour padded to two places).
     pub fn saved_at(&self) -> String {
         const EPOCH_DIFF: u64 = 11_644_473_600;
         let secs = (self.saved / 10_000_000).saturating_sub(EPOCH_DIFF) as libc::time_t;
@@ -57,7 +57,7 @@ impl Header {
             libc::localtime_r(&secs, &mut tm);
             tm
         };
-        format!("{}/{}/{} {}:{:02}", tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min)
+        format!("{}/{}/{} {:2}:{:02}", tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min)
     }
 }
 

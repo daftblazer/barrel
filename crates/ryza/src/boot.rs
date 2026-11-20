@@ -428,6 +428,17 @@ impl Boot {
     /// hopping letters and the writing pen, fading out at the end.
     fn notice(&self, t: f32, k: f32, left: f32) -> Vec<Quad> {
         let alpha = if t < NOTICE_FADE_OUT_AT { 1.0 } else { self.fade_out.at(t - NOTICE_FADE_OUT_AT)[3] / 255.0 };
+        self.notice_at(t, alpha, k, left)
+    }
+
+    /// The notice `t` seconds into its animations at opacity `alpha` on a `screen` of pixels
+    /// (the load path shows it while the saves are read and while one loads).
+    pub fn saving_notice(&self, t: f32, alpha: f32, screen: (u32, u32)) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        self.notice_at(t, alpha, k, (screen.0 as f32 - 1280.0 * k) * 0.5)
+    }
+
+    fn notice_at(&self, t: f32, alpha: f32, k: f32, left: f32) -> Vec<Quad> {
         let color = [1.0, 1.0, 1.0, alpha];
         let px = |p: [f32; 2]| [left + p[0] * k, p[1] * k];
         let mut out = Vec::new();
