@@ -22,6 +22,8 @@ pub struct Npc {
     pub yaw: f32,
     /// It stays at its marker's height rather than dropping to the ground.
     pub no_gravity: bool,
+    /// She can talk to it (`talk` of its people row): the minimap marks these.
+    pub talk: bool,
     /// The times of day and the weathers it is there for, as bit masks.
     pub timezone: u32,
     pub weather: u32,
@@ -176,6 +178,7 @@ pub fn read(basedata: &[u8], people: &[u8], marker: &[u8], condition: &[u8], evr
             position: [x * 100.0, y * 100.0, z * 100.0],
             yaw,
             no_gravity: int(p, "no_gravity") == 1,
+            talk: int(p, "talk") == 1,
             timezone: int(c, "timezone") as u32,
             weather: int(c, "weather") as u32,
             ranges: spans_of(c, "ev_range")?,

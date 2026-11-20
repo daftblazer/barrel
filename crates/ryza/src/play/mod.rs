@@ -97,6 +97,8 @@ struct Args {
     hud: bool,
     /// The hour the save's clock word gives (`--save`).
     save_hour: Option<u32>,
+    /// The frame of the game's capture the HUD's pulse starts at (`--hud-at`), to line a frame up with it.
+    hud_at: f32,
     /// `--no-skyline`: objects behind the ground are drawn too.
     no_skyline: bool,
     no_occluders: bool,
@@ -165,7 +167,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -234,6 +236,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
             "--save" => a.save = Some(value()?),
             "--hud" => a.hud = true,
+            "--hud-at" => a.hud_at = value()?.parse()?,
             "--no-skyline" => a.no_skyline = true,
             "--no-occluders" => a.no_occluders = true,
             "--ryza" => {
@@ -386,6 +389,7 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         ("\\data\\x64\\res_cmn\\ui\\a21v2_common.g1t", 0),
         ("\\data\\x64\\res_cmn\\ui\\a21_icon.g1t", 0),
         ("\\data\\x64\\res_cmn\\ui\\a21v2_various.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_field.g1t", 1),
     ];
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -401,7 +405,7 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         various_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
         strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
-        sizes: [size(2), size(3), size(4), size(5), size(6)],
+        sizes: [size(2), size(3), size(4), size(5), size(6), size(7)],
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fh::TEXTURES])?;
     Ok((layer, hud))
@@ -494,6 +498,31 @@ fn standing_gimmicks(install: &barrel_ryza::install::Install, field: &str, time:
             eprintln!("gimmicks of {field}: {e}");
             Vec::new()
         }
+    }
+}
+
+/// What the minimap marks in `field` at this point of the `story`: the exits open, the
+/// `townsfolk` standing, and where the story goes next.
+fn minimap_markers(install: &barrel_ryza::install::Install, field: &str, story: &barrel_ryza::story::Story, townsfolk: &[barrel_ryza::npc::Npc]) -> barrel_ryza::field_hud::Markers {
+    use barrel_ryza::{gimmick, mapmarker};
+    let exits = install
+        .read(&format!("\\saves\\fieldmap\\gimmick\\gimmick_fieldmap_{}.xml", field.to_ascii_lowercase()))
+        .map_err(|e| e.to_string())
+        .and_then(|b| gimmick::exits(&b))
+        .unwrap_or_else(|e| {
+            eprintln!("exits of {field}: {e}");
+            Vec::new()
+        });
+    let exits: Vec<_> = exits.into_iter().filter(|x| story.within(&x.story, false)).collect();
+    let rows = install.read("\\saves\\mapmarker\\mapmarker.xml").map_err(|e| e.to_string()).and_then(|b| mapmarker::read(&b)).unwrap_or_default();
+    let destination = mapmarker::current(&rows, story).and_then(|row| match row.target {
+        Some(at) if row.field.eq_ignore_ascii_case(field) => Some(at),
+        _ => mapmarker::exit_toward(field, &row.field).and_then(|id| exits.iter().find(|x| x.id == id)).map(|x| [x.position[0], x.position[2]]),
+    });
+    barrel_ryza::field_hud::Markers {
+        exits: exits.iter().map(|x| [x.position[0], x.position[2]]).collect(),
+        folk: townsfolk.iter().filter(|n| n.talk).map(|n| [n.position[0], n.position[2]]).collect(),
+        destination,
     }
 }
 
@@ -907,6 +936,19 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
     // The field's townsfolk, the ones standing there now (`barrel_ryza::npc`, docs/tables.md).
     let townsfolk = if a.title { Vec::new() } else { standing_npcs(&install, &a.field, a.time, a.weather, &a.story) };
     let gimmicks = if a.title { Vec::new() } else { standing_gimmicks(&install, &a.field, a.time, &a.story) };
+    // The minimap's people are the ones out at the hour of the save's clock (the clock's own periods), not the scene's `--time`.
+    let hud_markers = match (a.title, a.save_hour) {
+        (true, _) => Default::default(),
+        (false, hour) => {
+            let time = hour.map_or(a.time, |h| match h {
+                5..=10 => Time::Morning,
+                11..=16 => Time::Noon,
+                17..=19 => Time::Evening,
+                _ => Time::Night,
+            });
+            minimap_markers(&install, &a.field, &a.story, &standing_npcs(&install, &a.field, time, a.weather, &a.story))
+        }
+    };
     let ramp_bytes = match ryza_files.is_some() || a.title || !townsfolk.is_empty() || !gimmicks.is_empty() {
         true => Some(install.read("\\data\\x64\\shader\\texture\\chara_rmp.g1t")?),
         false => None,
@@ -1902,9 +1944,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 basket: barrel_ryza::field_hud::BASKET,
                 tool: 0,
                 map: a.field == barrel_ryza::field_hud::MAP_FIELD,
+                tick: a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 },
             };
-            let (quads, clips) = view.quads(&state, (width, height));
-            layer.set_clipped(&gpu, &quads, &clips)?;
+            let (quads, clips, glows) = view.quads(&state, &hud_markers, (width, height));
+            layer.set_blended(&gpu, &quads, &clips, glows)?;
         }
         let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref()) {
             (true, Some((l, _, _))) => vec![l],

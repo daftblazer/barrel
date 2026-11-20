@@ -86,6 +86,32 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Gimmick>, String> {
     Ok(out)
 }
 
+/// A way out of a field (a `FIELDMAP_CHANGE_EX` row), which the minimap marks.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Exit {
+    /// Its row's `fixID`.
+    pub id: u32,
+    /// Where it stands, in world units (the row's metres times 100).
+    pub position: [f32; 3],
+    /// The stretch of the story it is open for (`startEvent` to `endEvent`).
+    pub story: Span,
+}
+
+/// The exits of a field, from the table's bytes: `FIELDMAP_CHANGE_EX` rows, with or without a model.
+pub fn exits(bytes: &[u8]) -> Result<Vec<Exit>, String> {
+    let root = table::parse(bytes).map_err(|e| format!("gimmick: {e}"))?;
+    let mut out = Vec::new();
+    for row in root.children.iter().filter(|e| e.name == "Property" && e.attr("gimmickTypeTag") == Some("FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX")) {
+        let [x, y, z] = numbers(row.attr("position"), [0.0; 3])?;
+        out.push(Exit {
+            id: row.attr("fixID").and_then(|v| v.trim().parse().ok()).ok_or("gimmick: no fixID")?,
+            position: [x * 100.0, y * 100.0, z * 100.0],
+            story: Span::new(row.attr("startEvent"), row.attr("endEvent")),
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,6 +128,13 @@ mod tests {
         assert_eq!(g.len(), 2);
         assert_eq!((g[0].id, g[0].tag.as_str(), g[0].position, g[0].yaw, g[0].scale, g[0].story.open()), (107, "FM_BOARD_01", [450.0, 50.0, 200.0], 40.5, [1.0; 3], true));
         assert_eq!((g[1].scale, g[1].rotation, g[1].story.start.as_deref()), ([1.5; 3], [-6.5, 0.0, 1.0], Some("X")));
+    }
+
+    #[test]
+    fn exits_by_type() {
+        let xml = r#"<Root><Property fixID="1" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_MAP_CHANGE_INFO" position="1,2,3"/><Property fixID="9" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX" position="4.5,0.5,2" startEvent="EVENT_X"/></Root>"#;
+        let e = exits(xml.as_bytes()).unwrap();
+        assert_eq!((e.len(), e[0].id, e[0].position, e[0].story.start.as_deref()), (1, 9, [450.0, 50.0, 200.0], Some("X")));
     }
 
     #[test]

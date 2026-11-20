@@ -26,8 +26,10 @@ pub const MINIMAP: usize = 3;
 pub const COMMON: usize = 4;
 pub const ICON: usize = 5;
 pub const VARIOUS: usize = 6;
+/// The glows of the minimap's markers (`a21_field.g1t#1`).
+pub const GLOW: usize = 7;
 /// How many textures the layer has.
-pub const TEXTURES: usize = 7;
+pub const TEXTURES: usize = 8;
 
 /// The styles' pixels count three to a layout pixel (`load_view::ATLAS_PER_LAYOUT`).
 const PER_LAYOUT: f32 = 3.0;
@@ -66,6 +68,19 @@ pub struct State {
     pub tool: usize,
     /// Whether the field has a minimap picture read (`Hud::map`).
     pub map: bool,
+    /// The frames the HUD has been up (60 a second), which the destination's glow pulses by.
+    pub tick: f32,
+}
+
+/// What the minimap marks, as places in the field (game units, x then z).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Markers {
+    /// The ways out.
+    pub exits: Vec<[f32; 2]>,
+    /// The townsfolk.
+    pub folk: Vec<[f32; 2]>,
+    /// Where the story goes next, if it is in this field: a place, or the way out toward it.
+    pub destination: Option<[f32; 2]>,
 }
 
 pub struct Sources<'a> {
@@ -93,6 +108,11 @@ pub struct Hud {
     frame: ([f32; 4], [f32; 2]),
     north: ([f32; 4], [f32; 2]),
     arrow: [f32; 4],
+    exit_icon: [f32; 4],
+    folk_icon: [f32; 4],
+    destination_icon: [f32; 4],
+    /// The destination's two glows (`..._eff_01` and `_eff_02`).
+    glows: [[f32; 4]; 2],
     // The basket.
     base: ([f32; 4], [f32; 2], f32),
     basket_icon: ([f32; 4], [f32; 2], f32),
@@ -174,6 +194,12 @@ impl Hud {
         let (player_e, _) = node(&minimap, "icon_player_img")?;
         let arrow_no = player_e.attr("image_no").and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0);
         let arrow = *pictures(&field, &style_of(player_e)?)?.get(arrow_no).ok_or("no player arrow picture")?;
+        // The markers' pictures: a node's style and its `image_no` in the style's list.
+        let icon = |name: &str| -> Result<[f32; 4], String> {
+            let (e, _) = node(&minimap, name)?;
+            let no = e.attr("image_no").and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0);
+            pictures(&field, &style_of(e)?)?.get(no).copied().ok_or(format!("{name}: no picture {no}"))
+        };
         // The basket (the layout's `cage`; `find` adds its place to its children's).
         let (cbase_e, cbase_at) = node(&minimap, "base")?;
         let (cage, _) = node(&minimap, "cage")?;
@@ -207,6 +233,10 @@ impl Hud {
             frame: (picture(&field, &style_of(frame_e)?)?, frame_at),
             north: (picture(&field, &style_of(north_e)?)?, north_at),
             arrow,
+            exit_icon: icon("icon_fm_change_img")?,
+            folk_icon: icon("icon_npc")?,
+            destination_icon: icon("icon_map_change_destination_img")?,
+            glows: [icon("icon_map_change_destination_img_eff_01")?, icon("icon_map_change_destination_img_eff_02")?],
             base: (picture(&common, &style_of(cbase_e)?)?, cbase_at, pair(cbase_e, "size_wh", [0.0; 2])[0]),
             basket_icon: (picture(&icons, &style_of(icon_e)?)?, icon_at, pair(icon_e, "size_wh", [0.0; 2])[0]),
             count_base: (picture(&various, &style_of(num_bg)?)?, num_at, scale_of(num_bg), pair(num_bg, "size_wh", [0.0; 2]), pair(num_bg, "pos", [0.0; 2])),
@@ -239,7 +269,7 @@ impl Hud {
     /// `hud-walk`: the mask quad writes stencil 1 with no colour, the terrain, markers and arrow
     /// test equal to 1); the tool disc's mask goes to a target of its own the tool's picture is
     /// multiplied by, drawn here as a mask that clips nothing (the tool sits inside the disc).
-    pub fn quads(&self, state: &State, screen: (u32, u32)) -> (Vec<Quad>, Vec<Clip>) {
+    pub fn quads(&self, state: &State, markers: &Markers, screen: (u32, u32)) -> (Vec<Quad>, Vec<Clip>, std::ops::Range<usize>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { hud: self, k, left, out: Vec::new() };
@@ -253,11 +283,36 @@ impl Hud {
         if state.map {
             pen.terrain(state.at, center);
         }
+        // The markers, clipped with the terrain: the ways out, then the townsfolk.
+        let beside = |at: &[f32; 2]| [center[0] + (at[0] - state.at[0]) / MARKER_UNITS_PER_PIXEL, center[1] + (at[1] - state.at[2]) / MARKER_UNITS_PER_PIXEL];
+        for at in &markers.exits {
+            pen.centered(FIELD, self.exit_icon, beside(at), 1.0, white);
+        }
+        for at in &markers.folk {
+            pen.centered(FIELD, self.folk_icon, beside(at), 1.0, white);
+        }
         pen.arrow(self.arrow, center, state.turn);
         let mut clips = vec![Clip { mask: map_mask, quads: map_mask + 1..pen.out.len() }];
         pen.picture(FIELD, self.gmd.0, self.gmd.1, 1.0, white);
         pen.picture(FIELD, self.frame.0, self.frame.1, 1.0, white);
         pen.picture(FIELD, self.north.0, self.north.1, 1.0, white);
+        // The destination and its glows, over the frame: on the map where it is in view, else on
+        // the ring at its edge toward it.
+        let glow = pen.out.len() + 1;
+        if let Some(at) = &markers.destination {
+            let mut at = beside(at);
+            let off = [at[0] - center[0], at[1] - center[1]];
+            let far = off[0].hypot(off[1]);
+            if far > DESTINATION_RING {
+                at = [center[0] + off[0] * DESTINATION_RING / far, center[1] + off[1] * DESTINATION_RING / far];
+            }
+            let (alpha, scale) = glow_pulse(state.tick);
+            let tint = |a: f32| [GLOW_TINT[0], GLOW_TINT[1], GLOW_TINT[2], a];
+            pen.centered(FIELD, self.destination_icon, at, 1.0, white);
+            pen.centered(GLOW, self.glows[0], at, scale, tint(alpha));
+            pen.centered(GLOW, self.glows[1], at, 1.0, tint(alpha));
+        }
+        let glow = glow..pen.out.len();
 
         // The basket: its disc, its picture and the count on its plate.
         let dim = [0.0, 0.0, 0.0, 100.0 / 255.0];
@@ -297,7 +352,7 @@ impl Hud {
             h => h,
         };
         pen.text(&self.time, self.time_origin, &shown.to_string(), white);
-        (pen.out, clips)
+        (pen.out, clips, glow)
     }
 
     /// Where her arrow is: the middle of the minimap's window, which the terrain is moved under.
@@ -310,6 +365,35 @@ impl Hud {
 // STAND-IN: The minimap's scale and place for Rasenboden are fitted to six captured frames (hud-walk 2030 to 3330, her place from the walk's state): the terrain's left edge falls 1 layout pixel per 120 game units, its top edge 1 per 125, and x = 0, z = 0 put them at (1163.40, 590.66); the game's own per-map bounds are not found in its tables.
 /// Layout pixels the terrain moves per game unit of her walk (x, z), and its corner at the origin.
 const TERRAIN_PER_UNIT: [f32; 2] = [1.0 / 120.0, 1.0 / 125.0];
+/// Game units to a layout pixel on the minimap, for the markers (all 18 exit markers of the six
+/// captured frames of `hud-walk` fit to under half a pixel; the terrain's x was fitted as 120).
+const MARKER_UNITS_PER_PIXEL: f32 = 125.0;
+/// How far from the arrow's middle a destination outside the map sits, in layout pixels (the
+/// capture's 120 pixels on 1080 lines).
+const DESTINATION_RING: f32 = 80.0;
+/// The glows' colour (`color="155, 255, 255"` on the layout's `_eff` nodes).
+const GLOW_TINT: [f32; 3] = [155.0 / 255.0, 1.0, 1.0];
+/// The glows' blink loops every 71 frames of the capture (`anm_icon_eff_blink_01` and `_02` are
+/// 70 frames long; the loop's 71 and its phase, `GLOW_PHASE`, are fitted to the 75 glow quads of
+/// `hud-walk` 1740 to 2560: alpha off to 5, up to 10, down to 70, within 0.001).
+const GLOW_PERIOD: f32 = 71.0;
+/// The capture frame the loop is at its start in (`hud-walk` frame + 49 is a multiple of 71).
+const GLOW_PHASE: f32 = -49.0;
+
+/// The glows' alpha and the first glow's scale at `tick` frames (the layout's animations: alpha
+/// 0 until frame 5, 1 at 10, 0 at 70; the first glow's scale 0.8 until 10, easing out to 1 at 70).
+fn glow_pulse(tick: f32) -> (f32, f32) {
+    let t = (tick - GLOW_PHASE).rem_euclid(GLOW_PERIOD);
+    let alpha = match t {
+        t if t < 5.0 => 0.0,
+        t if t < 10.0 => (t - 5.0) / 5.0,
+        t => ((70.0 - t) / 60.0).max(0.0),
+    };
+    let u = ((t - 10.0) / 60.0).clamp(0.0, 1.0);
+    // Quantised to bytes, as the game's colour.
+    ((alpha * 255.0).round() / 255.0, 0.8 + 0.2 * (1.0 - (1.0 - u).powi(3)))
+}
+
 const TERRAIN_ORIGIN: [f32; 2] = [1163.40, 590.66];
 /// The terrain picture's size in layout pixels (it is drawn twice over, its style being twice
 /// the texture's size).
@@ -342,6 +426,12 @@ impl Pen<'_> {
         let [l, t] = self.at(at);
         let (w, h) = (p[2] / PER_LAYOUT * scale * self.k, p[3] / PER_LAYOUT * scale * self.k);
         self.quad(texture, self.uv(texture, p), [l, t, l + w, t + h], color);
+    }
+
+    /// A picture at its natural size times `scale`, its middle at `at`.
+    fn centered(&mut self, texture: usize, p: [f32; 4], at: [f32; 2], scale: f32, color: [f32; 4]) {
+        let (w, h) = (p[2] / PER_LAYOUT * scale, p[3] / PER_LAYOUT * scale);
+        self.picture(texture, p, [at[0] - w / 2.0, at[1] - h / 2.0], scale, color);
     }
 
     /// A square picture `size` layout pixels wide (the node's `size_wh`).

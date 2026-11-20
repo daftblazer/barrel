@@ -128,9 +128,12 @@ pub struct Layer {
     pool: vk::DescriptorPool,
     sets: Vec<vk::DescriptorSet>,
     /// Runs of vertices by texture and mask texture: (texture, mask, first vertex, count).
-    runs: Vec<(usize, usize, u32, u32)>,
+    /// (and whether the run is drawn additively, [`Layer::set_blended`]).
+    runs: Vec<(usize, usize, u32, u32, bool)>,
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
+    /// The same with the picture added to what is under it (a glow).
+    additive: vk::Pipeline,
     modules: [vk::ShaderModule; 2],
     /// The vertex buffers (buffer, memory, capacity, mapped), the one drawn from, and the frame
     /// it was last written in.
@@ -227,7 +230,10 @@ impl Layer {
                 .layout(layout)
                 .render_pass(render_pass);
             let pipeline = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None).map_err(|(_, e)| e)?[0];
-            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0, trace })
+            let add_att = [blend_att[0].dst_color_blend_factor(vk::BlendFactor::ONE)];
+            let add_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&add_att);
+            let additive = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info.color_blend_state(&add_blend)], None).map_err(|(_, e)| e)?[0];
+            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, additive, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0, trace })
         }
     }
 
@@ -238,6 +244,12 @@ impl Layer {
 
     /// As [`Layer::set`], with some quads clipped by others ([`Clip`]).
     pub fn set_clipped(&mut self, gpu: &Gpu, quads: &[Quad], clips: &[Clip]) -> Result<()> {
+        self.set_blended(gpu, quads, clips, 0..0)
+    }
+
+    /// As [`Layer::set_clipped`], with the quads in `additive` drawn added to what is under
+    /// them (source alpha times the picture, as the games' glows).
+    pub fn set_blended(&mut self, gpu: &Gpu, quads: &[Quad], clips: &[Clip], additive: std::ops::Range<usize>) -> Result<()> {
         if let Some((_, _, pending)) = &self.trace {
             *pending.borrow_mut() = Some((gpu.frame.get(), quads.to_vec()));
         }
@@ -251,9 +263,10 @@ impl Layer {
             let texture = q.texture.min(last);
             let mask = clips.iter().find(|c| c.quads.contains(&i)).and_then(|c| quads.get(c.mask));
             let mask_texture = mask.map_or(texture, |m| m.texture.min(last));
+            let add = additive.contains(&i);
             match self.runs.last_mut() {
-                Some((t, m, _, count)) if *t == texture && *m == mask_texture => *count += 6,
-                _ => self.runs.push((texture, mask_texture, verts.len() as u32, 6)),
+                Some((t, m, _, count, a)) if *t == texture && *m == mask_texture && *a == add => *count += 6,
+                _ => self.runs.push((texture, mask_texture, verts.len() as u32, 6, add)),
             }
             let [tl, tr, br, bl] = q.corners();
             let [u0, v0, u1, v1] = q.uv;
@@ -320,7 +333,12 @@ impl Layer {
             let screen = [width as f32, height as f32];
             d.cmd_push_constants(cb, self.layout, vk::ShaderStageFlags::VERTEX, 0, std::slice::from_raw_parts(screen.as_ptr() as *const u8, 8));
             d.cmd_bind_vertex_buffers(cb, 0, &[buf], &[0]);
-            for &(texture, mask, first, count) in &self.runs {
+            let mut bound = false;
+            for &(texture, mask, first, count, add) in &self.runs {
+                if add != bound {
+                    d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if add { self.additive } else { self.pipeline });
+                    bound = add;
+                }
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[self.sets[texture], self.sets[mask]], &[]);
                 d.cmd_draw(cb, count, 1, first, 0);
             }
@@ -339,6 +357,7 @@ impl Layer {
                 d.free_memory(m, None);
             }
             d.destroy_pipeline(self.pipeline, None);
+            d.destroy_pipeline(self.additive, None);
             d.destroy_pipeline_layout(self.layout, None);
             for m in self.modules {
                 d.destroy_shader_module(m, None);
