@@ -11,6 +11,8 @@ layout(set = 0, binding = 1) uniform sampler2D scene_normal;
 // where nothing is drawn.
 layout(push_constant) uniform Params { vec4 depth; } pc;
 layout(location = 0) out vec4 gbuf;
+// The view depth alone, for the reflections' march (ao.rs, `MARCH_DEPTH_FORMAT`).
+layout(location = 1) out float march_depth;
 
 void main() {
     // The scene's texel at the half-size texel's top-left: the same one for both inputs.
@@ -18,7 +20,9 @@ void main() {
     float d = texelFetch(scene_depth, px, 0).r;
     if (d >= 1.0) {
         gbuf = vec4(0.0, 0.0, 1.0, pc.depth.z);
+        march_depth = gbuf.a;
         return;
     }
     gbuf = vec4(octahedral_decode(texelFetch(scene_normal, px, 0).rg), 1.0 / (pc.depth.x + pc.depth.y * d));
+    march_depth = gbuf.a;
 }

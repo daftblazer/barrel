@@ -13,6 +13,9 @@ use crate::{Gpu, Result};
 pub const GBUF_FORMAT: vk::Format = vk::Format::R32G32B32A32_SFLOAT;
 /// The scene pass's world normal, octahedral in two channels (`normal_octahedral.glsl`): a half
 /// float each keeps the direction to a milli-radian at four bytes a pixel.
+/// The view depth alone, which the derive pass writes beside the normal and depth target for the
+/// reflections' march: each of its steps reads 4 bytes, not the target's 16.
+pub const MARCH_DEPTH_FORMAT: vk::Format = vk::Format::R32_SFLOAT;
 pub const NORMAL_FORMAT: vk::Format = vk::Format::R16G16_SFLOAT;
 /// The occlusion (red; the others repeat it, for the stage dumps).
 pub const MAP_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
@@ -89,20 +92,23 @@ impl Derive {
         viewport: &vk::PipelineViewportStateCreateInfo,
         raster: &vk::PipelineRasterizationStateCreateInfo,
         msaa: &vk::PipelineMultisampleStateCreateInfo,
-        blend: &vk::PipelineColorBlendStateCreateInfo,
         dynamic_state: &vk::PipelineDynamicStateCreateInfo,
         shader_read: vk::ImageLayout,
     ) -> Result<Derive> {
         let d = &gpu.device;
-        // Every texel is written: nothing to load.
-        let attachment = [vk::AttachmentDescription::default()
-            .format(GBUF_FORMAT)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(shader_read)];
-        let colour = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
+        // Every texel is written: nothing to load. The normal and depth target, then the view
+        // depth alone (`MARCH_DEPTH_FORMAT`).
+        let target = |format| {
+            vk::AttachmentDescription::default()
+                .format(format)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .final_layout(shader_read)
+        };
+        let attachment = [target(GBUF_FORMAT), target(MARCH_DEPTH_FORMAT)];
+        let colour = [vk::AttachmentReference { attachment: 0, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }, vk::AttachmentReference { attachment: 1, layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL }];
         let subpass = [vk::SubpassDescription::default().pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS).color_attachments(&colour)];
         let to_shader = [vk::SubpassDependency::default()
             .src_subpass(0)
@@ -128,6 +134,8 @@ impl Derive {
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(post).name(c"main"),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(module).name(c"main"),
         ];
+        let writes = [vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::RGBA); 2];
+        let blend = &vk::PipelineColorBlendStateCreateInfo::default().attachments(&writes);
         let info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&stages)
             .vertex_input_state(input)
@@ -185,8 +193,12 @@ struct Maps {
     map: (vk::Image, vk::DeviceMemory, vk::ImageView),
     gbuf_fb: vk::Framebuffer,
     map_fb: vk::Framebuffer,
-    /// The normal and depth target alone, for the derive pass.
+    /// The normal and depth target and the march's depth, for the derive pass.
     derive_fb: Option<vk::Framebuffer>,
+    /// The view depth for the reflections' march: the derive pass's own target, or without the
+    /// derive pass the normal and depth target with its alpha read as red.
+    march_depth: Option<(vk::Image, vk::DeviceMemory)>,
+    march_view: vk::ImageView,
     /// The pass reads the normal target through this one; the main pass the occlusion through
     /// `map_set`.
     gbuf_set: vk::DescriptorSet,
@@ -284,7 +296,7 @@ impl Occlusion {
         let linear = sampler(vk::Filter::LINEAR, false)?;
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET).max_sets(2).pool_sizes(&sizes), None)? };
-        let derive = if on && from_scene { Some(Derive::new(gpu, &input, &assembly, &viewport, &raster, &msaa, &blend, &dynamic_state, shader_read)?) } else { None };
+        let derive = if on && from_scene { Some(Derive::new(gpu, &input, &assembly, &viewport, &raster, &msaa, &dynamic_state, shader_read)?) } else { None };
         let mut o = Occlusion { gbuf_pass, map_pass, pipeline_layout, pipeline, modules, point, linear, pool, set_layout, on, derive, maps: None };
         o.make_maps(gpu, scene_size)?;
         Ok(o)
@@ -312,7 +324,15 @@ impl Occlusion {
         let framebuffer = |pass, views: &[vk::ImageView]| unsafe { d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(pass).attachments(views).width(size.0).height(size.1).layers(1), None) };
         let gbuf_fb = framebuffer(self.gbuf_pass, &[gbuf.2, depth.2])?;
         let map_fb = framebuffer(self.map_pass, &[map.2])?;
-        let derive_fb = self.derive.as_ref().map(|dv| framebuffer(dv.pass, &[gbuf.2])).transpose()?;
+        let (march_depth, march_view) = if self.derive.is_some() {
+            let (i, m) = image(MARCH_DEPTH_FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+            (Some((i, m)), view(i, MARCH_DEPTH_FORMAT, colour)?)
+        } else {
+            let alpha = vk::ComponentMapping { r: vk::ComponentSwizzle::A, g: vk::ComponentSwizzle::A, b: vk::ComponentSwizzle::A, a: vk::ComponentSwizzle::A };
+            let info = vk::ImageViewCreateInfo::default().image(gi).view_type(vk::ImageViewType::TYPE_2D).format(GBUF_FORMAT).components(alpha).subresource_range(vk::ImageSubresourceRange::default().aspect_mask(colour).level_count(1).layer_count(1));
+            (None, unsafe { d.create_image_view(&info, None)? })
+        };
+        let derive_fb = self.derive.as_ref().map(|dv| framebuffer(dv.pass, &[gbuf.2, march_view])).transpose()?;
         let layouts = [self.set_layout, self.set_layout];
         let sets = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(self.pool).set_layouts(&layouts))? };
         let write = |set, sampler, view| {
@@ -321,7 +341,7 @@ impl Occlusion {
         };
         write(sets[0], self.point, gbuf.2);
         write(sets[1], self.linear, map.2);
-        self.maps = Some(Maps { size, gbuf, depth, map, gbuf_fb, map_fb, derive_fb, gbuf_set: sets[0], map_set: sets[1] });
+        self.maps = Some(Maps { size, gbuf, depth, map, gbuf_fb, map_fb, derive_fb, march_depth, march_view, gbuf_set: sets[0], map_set: sets[1] });
         Ok(())
     }
 
@@ -335,6 +355,11 @@ impl Occlusion {
                 d.destroy_framebuffer(m.map_fb, None);
                 if let Some(fb) = m.derive_fb {
                     d.destroy_framebuffer(fb, None);
+                }
+                d.destroy_image_view(m.march_view, None);
+                if let Some((image, memory)) = m.march_depth {
+                    d.destroy_image(image, None);
+                    d.free_memory(memory, None);
                 }
                 for (image, memory, view) in [m.gbuf, m.depth, m.map] {
                     d.destroy_image_view(view, None);
@@ -372,6 +397,11 @@ impl Occlusion {
     /// The normal and depth target's view, for the reflections' march.
     pub fn gbuf_view(&self) -> Option<vk::ImageView> {
         self.maps.as_ref().map(|m| m.gbuf.2)
+    }
+
+    /// The view depth alone (in red), for the reflections' march's steps.
+    pub fn march_depth_view(&self) -> Option<vk::ImageView> {
+        self.maps.as_ref().map(|m| m.march_view)
     }
 
     /// The normal and depth target's image and size, for the stage dump (`depth`).

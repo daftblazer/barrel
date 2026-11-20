@@ -7,6 +7,8 @@
 // `AO_PASS`): the world normal in rgb, the view depth in a.
 layout(set = 0, binding = 0) uniform sampler2D gbuf;
 layout(set = 0, binding = 1) uniform sampler2D scene;
+// The view depth alone (gbuf's alpha, in red): the steps read it, 4 bytes where gbuf has 16.
+layout(set = 0, binding = 2) uniform sampler2D march_depth;
 layout(push_constant) uniform Push {
     // The world to view rows (the game's axes: x right, y up, z toward the viewer), without the
     // translation.
@@ -45,7 +47,7 @@ float depth_of(float view_depth) {
 // The depth buffer value at a uv: the texel it falls in (a bilinear read agreed less with the
 // capture); the sky is 1.
 float depth_at(vec2 uv) {
-    float d = texelFetch(gbuf, clamp(ivec2(floor(uv * pc.res.xy)), ivec2(0), last), 0).a;
+    float d = texelFetch(march_depth, clamp(ivec2(floor(uv * pc.res.xy)), ivec2(0), last), 0).r;
     return d >= SKY_DEPTH ? 1.0 : depth_of(d);
 }
 

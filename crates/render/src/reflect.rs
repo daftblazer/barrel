@@ -151,7 +151,7 @@ impl Reflections {
         let words = |code: &[u8]| -> Vec<u32> { code.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect() };
         let module = |code: &[u8]| unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words(code)), None) };
         let modules = [module(crate::POST_VERT)?, module(MARCH_FRAG)?, module(MIP_FRAG)?, module(APPLY_FRAG)?];
-        // Sets: the march (normals and depth, the scene), a mip level (the level above), the
+        // Sets: the march (normals and depth, the scene, the view depth alone), a mip level (the level above), the
         // application (the two per-pixel targets, the chain).
         let set_layout = |count: u32| unsafe {
             let bindings: Vec<_> = (0..count)
@@ -159,7 +159,7 @@ impl Reflections {
                 .collect();
             d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings), None)
         };
-        let set_layouts = [set_layout(2)?, set_layout(1)?, set_layout(3)?];
+        let set_layouts = [set_layout(3)?, set_layout(1)?, set_layout(3)?];
         let layout = |set: vk::DescriptorSetLayout, push: u32| unsafe {
             let sets = [set];
             let ranges = [vk::PushConstantRange { stage_flags: vk::ShaderStageFlags::FRAGMENT, offset: 0, size: push }];
@@ -225,15 +225,15 @@ impl Reflections {
         let point = sampler(vk::Filter::NEAREST, vk::SamplerMipmapMode::NEAREST, 0.0)?;
         let linear = sampler(vk::Filter::LINEAR, vk::SamplerMipmapMode::NEAREST, 0.0)?;
         let chain = sampler(vk::Filter::LINEAR, vk::SamplerMipmapMode::LINEAR, MIP_LAST)?;
-        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 + (LEVELS - 1) + 3 }];
+        let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 3 + (LEVELS - 1) + 3 }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET).max_sets(LEVELS + 1).pool_sizes(&sizes), None)? };
         Ok(Reflections { pass, apply_passes, layouts, set_layouts, pipelines, modules, point, linear, chain, pool, rlr, maps: None })
     }
 
     /// The targets for a scene of `scene_size` drawn into `scene` (a view of its colour image),
-    /// reading the occlusion's normals and depth `gbuf` and the scene pass's two per-pixel
-    /// targets `spec`; the old ones are gone first.
-    pub fn bind(&mut self, gpu: &Gpu, scene_size: (u32, u32), gbuf: vk::ImageView, scene: vk::ImageView, spec: [vk::ImageView; 2]) -> Result<()> {
+    /// reading the occlusion's normals and depth `gbuf`, its view depth alone `march_depth` and
+    /// the scene pass's two per-pixel targets `spec`; the old ones are gone first.
+    pub fn bind(&mut self, gpu: &Gpu, scene_size: (u32, u32), gbuf: vk::ImageView, march_depth: vk::ImageView, scene: vk::ImageView, spec: [vk::ImageView; 2]) -> Result<()> {
         self.free_maps(gpu);
         let d = &gpu.device;
         let size = half(scene_size);
@@ -274,6 +274,7 @@ impl Reflections {
         let march_set = sets[0];
         write(march_set, 0, self.point, gbuf);
         write(march_set, 1, self.linear, scene);
+        write(march_set, 2, self.point, march_depth);
         // Level k + 1 reads level k.
         let mip_sets = sets[1..LEVELS as usize].to_vec();
         for (k, &set) in mip_sets.iter().enumerate() {
@@ -310,8 +311,8 @@ impl Reflections {
     /// The targets again, bound to the occlusion's normals and depth and to `targets` (the scene
     /// and its per-pixel targets).
     pub fn rebind(&mut self, gpu: &Gpu, ao: &crate::ao::Occlusion, targets: &crate::Targets) -> Result<()> {
-        let (Some(gbuf), Some(spec)) = (ao.gbuf_view(), targets.spec.as_ref()) else { return Ok(()) };
-        self.bind(gpu, targets.scene_size, gbuf, targets.scene_view, [spec[0].2, spec[1].2])
+        let (Some(gbuf), Some(march_depth), Some(spec)) = (ao.gbuf_view(), ao.march_depth_view(), targets.spec.as_ref()) else { return Ok(()) };
+        self.bind(gpu, targets.scene_size, gbuf, march_depth, targets.scene_view, [spec[0].2, spec[1].2])
     }
 
     /// The march target's image and size, for the stage dump (`reflections`).

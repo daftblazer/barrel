@@ -731,7 +731,9 @@ ambient's per-pixel factor (`o' F (o' + specOcc (1 - o'))` times the fog's extin
 in alpha) and the scaled cube light it reflects. After the opaque scene (in a frame with water,
 before the copy the water refracts) three passes run: the march (`reflect.frag`: 256 steps of a
 half-size pixel over the occlusion's normals and view depth, the lit scene's colour at the hit, the
-alpha the fades' complement) into level 0 of a six-level rgba16f chain (960 by 540 down to 30 by
+alpha the fades' complement; the steps read the view depth alone, an r32f target the derive pass
+writes beside the rgba32f one, 4 bytes a step where the whole texel is 16: on the RP6 the march
+went from about 10 ms to under 3) into level 0 of a six-level rgba16f chain (960 by 540 down to 30 by
 16), the mip passes (`reflect_mip.frag`: one bilinear sample of the level above each), and the
 application (`reflect_apply.frag`), which adds `factor * w * (reflection - cube light)` to the
 scene, `w` the level 0 alpha times `vMerge.x` and the colour taken at lod `5 (1 - gloss)`. The scene
