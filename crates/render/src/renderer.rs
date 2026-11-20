@@ -1105,6 +1105,8 @@ impl Renderer {
                     (true, false) => shadow_pipeline,
                 };
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, p);
+                // The texture bound last: the opaque casters read none, the others only on a change.
+                let mut bound_texture = None;
                 for draw in draws.iter() {
                     if !casts(draw) || opaque(draw) == tested {
                         continue;
@@ -1123,7 +1125,10 @@ impl Renderer {
                         d.cmd_set_depth_bias(cb, 0.0, 0.0, b.slope);
                     }
                     d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
-                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                    if tested && bound_texture != Some(draw.texture) {
+                        bound_texture = Some(draw.texture);
+                        d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                    }
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                     if trace3d.on() {
                         trace3d.add(SHADOW_TRACE_PASSES[layer], draw.index_count, &[Some(draw.texture)], &instances[draw.instance as usize].model);
