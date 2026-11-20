@@ -1,5 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 // Models. Characters (flags bit 0) are shaded the way the game's character pixel program
 // (CharaMTC) does it, step by step as in docs/shading.md; the rest keep a plain light.
 layout(set = 0, binding = 0) uniform sampler2D tex;

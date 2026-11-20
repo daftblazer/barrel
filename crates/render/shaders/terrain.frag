@@ -1,5 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 // Field terrain, as the field's own terrain programs draw it (docs/formats.md, "Patches and
 // their draws"): each triangle belongs to one draw that mixes one or two tiled layers by a pair
 // of one blend map's channels, each divided by their sum.

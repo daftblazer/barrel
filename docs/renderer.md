@@ -1370,7 +1370,10 @@ and 48. Turnip for an Adreno 740 (`work/ir3-run.sh`, the freedreno drm-shim, not
 the field models' program about 5,100 instructions and 19 vec4 registers (10 waves of 16), the
 other models' about 1,900 and 12 (8 waves); the tested draws' depth alone 11 and 3 (16 waves).
 The HALF build (below) leaves the field models' at 19 registers (their peak is the shadows',
-kept 32-bit) and takes the others' to 9 (10 waves).
+kept 32-bit) and takes the others' to 9 (10 waves). The shadows were most of the field models'
+program (about 2,150 instructions without them): the cascade loop and the edges' 16-tap
+fallbacks are kept as loops (`[[dont_unroll]]`, GL_EXT_control_flow_attributes), which takes
+it to about 4,300, the same pixels.
 
 The shadow maps' casters go the same way: those with opaque textures first, through
 `shadow_opaque_pipelines` (`shadow_pipeline` and `shadow_cascade_pipeline` without a fragment

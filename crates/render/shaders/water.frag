@@ -1,5 +1,6 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 // The Ryza games' water, shaded forward (docs/shading.md, "Ryza DX: the water"): a wave normal,
 // the lighting pass's light and highlights on the body's albedo, the refracted opaque scene seen
 // through it, then the field's fog over the distance.

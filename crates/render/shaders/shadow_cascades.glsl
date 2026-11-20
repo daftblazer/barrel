@@ -42,7 +42,9 @@ float cascade_light(mat4 vp, float layer, float t, vec3 p) {
         return sum / 16.0;
     }
     float lit = 0.0;
-    for (int i = 0; i < 4; i++) {
+    // The edge's taps (rare) and the cascades below are kept as loops, not unrolled: the
+    // program stays small enough for a handheld GPU's instruction cache.
+    [[dont_unroll]] for (int i = 0; i < 4; i++) {
         for (int k = 0; k < 4; k++) {
             vec2 q = clamp(at + (vec2(float(i), float(k)) - 1.5) * side.zw, vec2(0.0), vec2(1.0));
             lit += texture(shadow_map, vec4(q * side.xy, layer, s.z));
@@ -69,7 +71,7 @@ float point_block(vec2 first, vec2 texels, vec2 share, float layer, float depth)
         }
         return lit / 16.0;
     }
-    for (int i = 0; i < 4; i++) {
+    [[dont_unroll]] for (int i = 0; i < 4; i++) {
         for (int k = 0; k < 4; k++) {
             vec2 n = clamp(first + vec2(float(i), float(k)), vec2(0.0), texels - 1.0);
             lit += texture(shadow_map, vec4((n + 0.5) * t * share, layer, depth));
@@ -116,7 +118,7 @@ float sun_shadow_cascades(vec3 p) {
     float z = dot(p - look.eye.xyz, look.shadow_fwd.xyz);
     int k = z < look.shadow_ends.x ? 0 : (z < look.shadow_ends.y ? 1 : 2);
     float lit = -1.0;
-    for (; k < 3 && lit < 0.0; k++) {
+    [[dont_unroll]] for (; k < 3 && lit < 0.0; k++) {
         lit = cascade_light(k == 0 ? look.shadow_vp : (k == 1 ? look.shadow_c1 : look.shadow_c2), float(k), t, p);
     }
     if (lit < 0.0) lit = 1.0;
