@@ -4,6 +4,26 @@ Everything Barrel is stuck on for Atelier Ryza DX, has not worked out yet, or kn
 (addresses are in `Atelier_Ryza_DX.exe`, which is not DRM-wrapped). Same rules as
 `docs/escha/open.md`; problems in the shared engine are in `docs/open.md`.
 
+## Status (2026-11-20): paused
+
+The Ryza port is paused. Its aim was to run the game clearly faster than the original on a
+handheld (an Adreno 740 under Turnip), and the measurements put its ceiling at about the
+original's speed. At Low 1080p the original runs at 37 to 45 fps; Barrel at the Rasenboden gate
+went from 51.9 ms a frame to 34.9 (about 29 fps; a little over 30 in play), and a 720p render
+scale was not much faster: most of what is left does not shrink with the resolution (the
+shadow maps, binning and each draw's work), so the GPU limits both. What exists: the opening's
+field (Rasenboden, its terrain, models, plants, water, sky, lighting, shadows, reflections),
+Ryza walking in it, the title and the opening event, at the scores in `docs/ryza/parity.md`;
+not the menus, the HUD, battles or the rest of the story.
+
+Left untried, each exact (the same pixels), with its ceiling where measured (the entry "On the
+RP6 (2026-11-20)" below has the breakdown): a position-only vertex stream for binning, the
+depth part and the shadow casters (the vertex is 72 bytes); fewer bytes a pixel in the scene
+pass (20, so 14 bins); a min/max map so lit or shadowed pixels skip the shadow's comparisons
+(the lookup is 7.7 ms). Together they would bring Barrel to about the original's speed, perhaps
+a little past. Barrel also does not yet read the original's `Setting.ini` from a Proton prefix
+or have Ryza's graphics options screen: launched with neither, it runs at High.
+
 The original Ryza DX is never run through Steam without asking first (its playtime and
 achievements are the player's own, and the DX version has not been played there).
 
