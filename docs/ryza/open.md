@@ -84,6 +84,21 @@ checks are `runchecks docs/ryza/checks.txt` (44 rows; frames are the exact captu
    counts before the cursor shows, and the sequencer's state 0xc (60 s without a button at the
    prompt, `0x140de7824`).
 
+## The light set and weather on loading a save
+
+Barrel arrives at noon and sunny (its default; right for the load-path autosave). The game's rule,
+read from ryza-recomp `load-path` with `scenarios/hooks/environment.hooks` (all at frame 1728):
+`0x1404214xx` picks a key: 6 if byte `[obj+0x17c]` is 1, else `0x140594d80` when `0x140595080`
+allows (a story-stage short at `0x141a6c9c0`, 0 to 4, through the table at `0x141aa87d0` and two
+lists of the data at `0x140069c00` (+0x48, then +0x90 entries of 0x20 bytes, word +0x1c, at most
+0x1d, else 6)). `0x1406a8c40 (key)` returns `{weather, time set}`; weather becomes 0 when
+`0x1404c81b0` is 1; `0x140727680 (env, weather, set)` stores them (+0x574, +0x578) and calls
+the setters. The load-path save: key 6, set 1 (noon), weather 0. The save's `time` word (493) is
+not read on this path. Where to start: the table behind `0x1406a8c40` (a data file's records by
+key) and the two lists behind `0x140069c00`; solved when a save at another story stage arrives
+with the game's set and weather. A field whose info record (table `0x141a940f0`) has byte +0x44
+or +0x45 set takes `0x14037b669`'s fixed (0, 1) on its own path (`0x14037b590`).
+
 ## The load screen (title menu, Load Game)
 
 Built (2026-11-20, `crates/ryza/src/{load,saves}.rs`, `title_menu.rs`, `play/mod.rs`): the button on
