@@ -263,6 +263,7 @@ fn main() -> ExitCode {
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
+        ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["bonuses", file] => bonuses(Path::new(file), None),
         ["bonuses", file, exe] => bonuses(Path::new(file), Some(Path::new(exe))),
         ["days", install, n] => days(Path::new(install), n, false, None),
@@ -1749,6 +1750,14 @@ fn chara_radii_near(exe: &Path) -> Vec<f32> {
 }
 
 /// A save's header.
+/// A Ryza DX save's state, decoded, written to `out`.
+fn ryza_save(file: &Path, out: &Path) -> Result<()> {
+    let state = barrel_ryza::save::decode(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    std::fs::write(out, &state)?;
+    println!("{} bytes of state", state.len());
+    Ok(())
+}
+
 fn save(file: &Path) -> Result<()> {
     let data = read(file)?;
     // SYSDATA (the settings) is coded whole; a GAMEDATA file after its plain header.
