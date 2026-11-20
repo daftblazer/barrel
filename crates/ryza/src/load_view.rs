@@ -335,7 +335,7 @@ pub struct Moment {
 
 impl Moment {
     /// The screen's opacity (`anm_common_fade_in`, forward and then back).
-    fn opacity(&self) -> f32 {
+    pub fn opacity(&self) -> f32 {
         let fade_in = (self.age as f32 / FADE_FRAMES).clamp(0.0, 1.0);
         let fade_out = self.leaving.map_or(1.0, |l| 1.0 - (l as f32 / FADE_FRAMES).clamp(0.0, 1.0));
         fade_in * fade_out
@@ -424,7 +424,8 @@ impl View {
         pen.out.push(Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32 * 2.0, screen.1 as f32 * 2.0], uv: [0.0, 0.0, 2.0, 2.0], color: white(top), texture: BACKGROUND });
 
         // The info panel (it fades in on its own as well, so its opacity is the product).
-        let info = top * top;
+        // (its own fade runs in with the screen's and is done by the time the screen goes out)
+        let info = top * (moment.age as f32 / FADE_FRAMES).clamp(0.0, 1.0);
         pen.natural(COMMON, 1, &self.plate, 0, self.plate_at, white(info));
         pen.text(&self.heading, self.plate_at, self.string(375), brown(info));
         let slot = slots.get(moment.on);
@@ -471,7 +472,11 @@ impl View {
         // The caption and the help bar.
         pen.natural(CAPTION, 3, &self.caption, 0, self.caption_at, white(top));
         pen.text(&self.caption_text, self.caption_at, CAPTION_TEXT, [BROWN[0], BROWN[1], BROWN[2], top]);
-        self.help_bar(&mut pen, top);
+        // The help bar fades in 20 frames after the screen's start and out from 5 frames after the choice (read off the capture's 1580-1615).
+        let guide = ((moment.age - 20) as f32 / FADE_FRAMES).clamp(0.0, 1.0) * moment.leaving.map_or(1.0, |l| 1.0 - ((l - 5) as f32 / FADE_FRAMES).clamp(0.0, 1.0));
+        if guide > 0.0 {
+            self.help_bar(&mut pen, guide);
+        }
         pen.out
     }
 

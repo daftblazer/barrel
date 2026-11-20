@@ -107,15 +107,21 @@ mod tests {
     }
 
     #[test]
-    fn the_cover_rises_then_the_list_comes_and_a_button_loads() {
+    fn the_cover_rises_then_the_notice_the_list_and_a_button_loads() {
         let i = input();
         assert_eq!(Stage::at(&i, 2, 856), Stage::Title);
         assert_eq!(Stage::at(&i, 2, 857), Stage::Cover(1.0 / 18.0));
         assert_eq!(Stage::at(&i, 2, 872), Stage::Cover(16.0 / 18.0));
         assert_eq!(Stage::at(&i, 2, 877), Stage::Black);
-        assert_eq!(Stage::at(&i, 2, 1017), Stage::List(0));
-        assert_eq!(Stage::at(&i, 2, 1057), Stage::Loading(0, false));
-        assert_eq!(Stage::at(&i, 2, 1187), Stage::Loading(0, true));
+        // the notice from 1448 (capture) with 2/15 at 1450
+        assert_eq!(Stage::at(&i, 2, 857 + 50), Stage::Screen { on: 0, list: None, notice: Some((2, 2.0 / 15.0)) });
+        // the list from 1556, the notice fading out as it fades in
+        assert_eq!(Stage::at(&i, 2, 857 + 160), Stage::Screen { on: 0, list: Some((4, None)), notice: Some((112, 1.0 - 4.0 / 15.0)) });
+        assert_eq!(Stage::at(&i, 2, 857 + 176), Stage::Screen { on: 0, list: Some((20, None)), notice: None });
+        // a button on a save: the list fades out, the notice in, then the loading screen and the field
+        assert_eq!(Stage::at(&i, 2, 1057 + 5), Stage::Screen { on: 0, list: Some((49, Some(5))), notice: Some((4, 4.0 / 15.0)) });
+        assert_eq!(Stage::at(&i, 2, 1057 + 125), Stage::Loading { on: 0, since: 125, done: false });
+        assert_eq!(Stage::at(&i, 2, 1057 + 130), Stage::Loading { on: 0, since: 130, done: true });
     }
 
     #[test]

@@ -93,27 +93,43 @@ a list of the saves comes up; a button on one (`F:ok`, Enter) starts loading it 
 run goes into the field from that file in the same window (`Handoff`: `run_once` returns the
 chosen file and the window, `run` starts again with `<install> - - --save FILE --window`). Saves:
 `--saves DIR` (else, in a window, the original's own folder in a Steam library's Proton prefix);
-`barrel_ryza::saves` only reads. Checked: capture `load-path` frames 1400-1415 at 0 mismatches.
+`barrel_ryza::saves` only reads. Checked: capture `load-path` frames 1400-1415 at 0 mismatches; the list at 1575-1600 (rows `load-1575` ... `load-1600` in checks.txt) at 2.
 
 Not done, in order of what it blocks:
-- **The load screen's own drawing (1450 on).** Barrel draws a plain list in the title's font
-  (`load::list_quads`), not the layout. The capture (frame 1600, 270 quads) is: `a21_bg07` (tiled 2 x 2,
-  fading in), the `a21_common` name line and nine-slice lines (`gen_a21_common02_line`, wrap, margin
-  50,0,50,32: 25 + three 140 + 28 + 25 pixels), `a21_saveload#1` row frames (`gen_a21_saveload01_data_fl02`
-  and the blinking cursor `data_fl`, image 1) 111 layout pixels apart from (115, 80), the row icon,
-  `a21_caption` and its "Load" (STR_UI_0028), the info panel at (727, 129) (play time, level, money,
-  gold coins, party, "Version Info 1.02"), and a guide bar from `a21_common#3` ("Select / Submenu / Back /
-  Confirm" with button glyphs from another layout, not found yet). Text is `mainfont00_hd1080_0` for
-  the heading (table at file offset 0x12fb710, 1,774 glyphs) and `mainfont01` for the rest: the title's
-  table at 0x12c0ba0 does not hold the load screen's glyphs, the one at 0x1307920 does (found by matching
-  the capture's glyph uv to the records, e.g. `A` at 275, 560). Strings: `str_ui.xml`.
-- **The notice at 1450-1555 and 1615-1720**: the saving icon, hopping letters and pen of `boot.rs`'s
-  notice (`uil_a21_saveload_progress.xml`), fading in from 34/255 and out; it needs `Boot` in the title
-  layer without the boot (its textures: `a21_saveload` #0, #2).
-- **The loading screen (1725)**: `a21_loading` #0 / #1, three quads, no cover.
+- **The load screen's drawing: done for 1560-1600** (`load_view.rs`, from `uil_a21_saveload.xml`,
+  `uis_gen_a21_saveload/common/caption.xml`, `uil_a21_shade.xml` and the string table
+  `strcombineall.xml`; the 2160-line style pixels are three to a layout pixel, twice a texture's).
+  Frames 1575, 1585, 1595 and 1600 draw all 268 quads (233 before the help bar comes) at 0 mismatches but
+  the game's textured full-screen quad (`fm_d02_barrel_02#1`) against Barrel's plain fill (2). Read off
+  the capture: the background (3840 x 2160, uv 0..2) and the screen fade in over 15 frames from 1556, the
+  info panel's own fade multiplies it (alpha = fade squared while the screen comes in); the cursor row's
+  blink is `anm_common_blink` (120/255 times it) counted from 1556; the help bar fades in from 1576; on a
+  button (1600) the screen fades out over 15 frames and the help bar from 1605. Fitted: the help
+  bar's plate is one atlas pixel of its text wider than the advances (`help_bar`); the caption's "Load"
+  and the bar's words are the capture's (`STR_UI_0028` and `STR_UI_0262` are empty in the shipped tables).
+  `MainFont00` (heading, figures) is `font::MAIN_FONT_00_HD1080`, 1,774 records ending 8 bytes before
+  the other's; party names are the string table's 262148 + the character's id (0 Ryza, 2 Lent, 3 Tao).
+  Left of it:
+  - **The help bar's plate moves**: at 1580 it is 533 px wide (its left edge by the text, 1387), full
+    (1293) by 1585, back to 533 at 1605 and 376 (1544) at 1610-1615 with the text apparently changed;
+    Barrel draws the full width throughout (mismatches at 1560-1580 under the bar's first frames and
+    1605-1615). The tween and the changed text are not read (one sample each).
+  - **The cursor's alpha at the fade-out** (1605: 14/255 in the capture) looks truncated to bytes at each
+    step; Barrel multiplies floats.
+  - **A one-frame fade of the plate** and rows other than 2 are untested: the capture has two saves.
+- **The notice at 1450-1555 and 1615-1720 is not matched**: the game draws 14 quads (the saving icon,
+  eleven letters of another word, the pen) where `boot::Boot::saving_notice` (the boot's "creating
+  system data") draws 23. Its fade (alpha 34/255 at 1450, step 1/15 a frame from 1448; out from 1556 over
+  the list's fade in; in again from 1601 and out from 1707) is in `load.rs`. Left: the letters of the
+  loading variant (another node of `uil_a21_saveload_progress.xml`, or another word) and the icon's
+  picture step (the capture's picture index goes 0, 1, 2 at 1450, 1500, 1555; Barrel steps faster).
+- **The loading screen (1725)**: three quads at 0 mismatches against the game's (outside frame, inside
+  frame, rolling text, from `uil_a21_loading.xml`); Barrel adds its black fill (1 mismatch). Left out
+  after the first frame: the glows and the light ring (drawn additively, which the layer has no mode
+  for) and the inside frame's swing about the vertical axis.
 - **The black frames (1420-1445)**: the game draws a 9600 x 3240 quad of `fm_d02_barrel_02#1` (white
   colour, black texel) after a black fill the trace hides; Barrel draws the fill only: 2 mismatches a
-  frame, the same pixels.
+  frame, the same pixels. The same two sit in every screen frame above.
 - Which header bytes are the party: from +0x4e ten (id, level) byte pairs, `ff` for empty (the
   capture's three, Ryza 0 / Lent 2 / Tao 3 at level 3, fit; both saves hold the same party, so the
   id order is a guess). Names for the ids: the string table has them (not read).
