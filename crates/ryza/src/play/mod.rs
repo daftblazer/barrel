@@ -654,9 +654,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         }
     };
     let mut kept_pump = game.pump;
-    // No scene on the command line: Ryza walking Rasenboden from her garden gate, in a window.
+    // No scene on the command line: the game from its start, as the original launches (the boot
+    // screens, the title over its backdrop field, then the menu), in a window.
     if raw.first().is_none_or(|a| a.starts_with("--")) {
-        let start = [&*game.root.to_string_lossy(), "s06_t_rasen", "-", "--ryza", "32537,0,30300", "--time", "noon", "--window"].map(String::from);
+        let start = [&*game.root.to_string_lossy(), barrel_ryza::title::FIELD, "-", "--boot", "--window"].map(String::from);
         raw.splice(0..0, start);
     }
     let mut a = args(raw)?;
