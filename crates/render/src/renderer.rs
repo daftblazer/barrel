@@ -1363,6 +1363,9 @@ impl Renderer {
             // many leaves lie over it. The distant view is one part, in its order.
             let opaque_texture = |dr: &Draw| scene.opaque.get(dr.texture).copied().unwrap_or(false);
             let parts: &[Option<ScenePass>] = if pass_sky { &[None] } else { &[Some(ScenePass::Opaque), Some(ScenePass::Depth), Some(ScenePass::Tested)] };
+            // The textures bound last (set 0, sets 2 to 4): a tiler replays each draw's state in
+            // every bin it touches, and a rebind re-reads all the sets' descriptors.
+            let mut bound_sets: (Option<usize>, Option<[usize; 3]>) = (None, None);
             for &part in parts {
             let mut bound = None;
             for &draw in visible.iter().filter(|&&dr| part.is_none_or(|p| (p == ScenePass::Opaque) == opaque_texture(dr))) {
@@ -1386,8 +1389,15 @@ impl Renderer {
                 per_draw[8..12].copy_from_slice(&tint.to_le_bytes());
                 per_draw[12..].copy_from_slice(&draw.light.to_le_bytes());
                 d.cmd_push_constants(cb, pipeline_layout, stages_pc, PUSH_INSTANCE, &per_draw);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)], sets[draw.specular.unwrap_or(white)]], &[]);
+                if bound_sets.0 != Some(draw.texture) {
+                    bound_sets.0 = Some(draw.texture);
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
+                }
+                let rest = [draw.mask.unwrap_or(white), draw.emission.unwrap_or(white), draw.specular.unwrap_or(white)];
+                if bound_sets.1 != Some(rest) {
+                    bound_sets.1 = Some(rest);
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &rest.map(|k| sets[k]), &[]);
+                }
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 if part == Some(ScenePass::Depth) {
                     continue;
