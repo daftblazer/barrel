@@ -28,6 +28,8 @@ pub mod save;
 pub mod saves;
 pub mod load;
 pub mod load_view;
+pub mod options;
+pub mod options_view;
 pub mod field_hud;
 pub mod story;
 pub mod event;

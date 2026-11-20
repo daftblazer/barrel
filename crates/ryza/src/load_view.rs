@@ -53,12 +53,14 @@ const WORDS: [u32; 5] = [CAPTION_STRING, GUIDE_ENTRIES[0].1, GUIDE_ENTRIES[1].1,
 /// A picture, or several, of a style: where each is in the atlas, and for a stretched ("wrap")
 /// picture its left and right margins.
 #[derive(Clone, Debug, PartialEq)]
-struct Style {
-    pictures: Vec<[f32; 4]>,
-    margins: Option<[f32; 2]>,
+pub(crate) struct Style {
+    pub(crate) pictures: Vec<[f32; 4]>,
+    pub(crate) margins: Option<[f32; 2]>,
+    /// All four margins (left, top, right, bottom) of a stretched picture.
+    pub(crate) edges: Option<[f32; 4]>,
 }
 
-fn style(styles: &Element, name: &str) -> Result<Style, String> {
+pub(crate) fn style(styles: &Element, name: &str) -> Result<Style, String> {
     let image = |e: &Element| -> Option<[f32; 4]> { numbers(e, "uvwh").try_into().ok() };
     let found = styles.children.iter().find(|e| e.attr("name") == Some(name)).ok_or(format!("no style {name}"))?;
     let pictures = match found.name.as_str() {
@@ -69,21 +71,25 @@ fn style(styles: &Element, name: &str) -> Result<Style, String> {
         let m = numbers(found, "edge_margin");
         [m.first().copied().unwrap_or(0.0), m.get(2).copied().unwrap_or(0.0)]
     });
-    Ok(Style { pictures, margins })
+    let edges = (found.attr("prim_type") == Some("wrap")).then(|| {
+        let m = numbers(found, "edge_margin");
+        [0, 1, 2, 3].map(|i| m.get(i).copied().unwrap_or(0.0))
+    });
+    Ok(Style { pictures, margins, edges })
 }
 
 /// A text node: its place within its parent, size, font and alignment.
 #[derive(Clone, Debug, PartialEq)]
-struct Label {
-    at: [f32; 2],
-    size: f32,
+pub(crate) struct Label {
+    pub(crate) at: [f32; 2],
+    pub(crate) size: f32,
     /// `MainFont01` unless the node names no font (the template's `MainFont00`).
-    small: bool,
-    align: Align,
+    pub(crate) small: bool,
+    pub(crate) align: Align,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Align {
+pub(crate) enum Align {
     Left,
     Center,
     Right,
@@ -91,11 +97,11 @@ enum Align {
 
 /// The first node called `name` below `e` (not `e` itself) with its place relative to `e`'s
 /// origin, `base` added.
-fn inside<'a>(e: &'a Element, name: &str, base: [f32; 2]) -> Option<(&'a Element, [f32; 2])> {
+pub(crate) fn inside<'a>(e: &'a Element, name: &str, base: [f32; 2]) -> Option<(&'a Element, [f32; 2])> {
     e.children.iter().find_map(|c| find(c, name, base))
 }
 
-fn label(layout: &Element, name: &str, within: &str) -> Result<Label, String> {
+pub(crate) fn label(layout: &Element, name: &str, within: &str) -> Result<Label, String> {
     let (parent, _) = find(layout, within, [0.0; 2]).ok_or(format!("uil_a21_saveload: no {within}"))?;
     let (e, at) = inside(parent, name, [0.0; 2]).ok_or(format!("uil_a21_saveload: no {within}/{name}"))?;
     Ok(Label {

@@ -694,8 +694,10 @@ impl Setup {
         (text_runs(g.into_iter().filter(|q| !self.skipped(q)).collect(), self.glyphs.as_ref()), under)
     }
 
+    /// Barrel's quads as compared: the ones a later opaque quad covers whole drop out as the game's
+    /// do (a screen that draws a list twice, the second over the first, draws both in the game).
     fn barrel(&self, b: Vec<Q>) -> Vec<Q> {
-        text_runs(b.into_iter().filter(|q| !self.skipped(q)).collect(), self.glyphs.as_ref())
+        text_runs(hidden(b).0.into_iter().filter(|q| !self.skipped(q)).collect(), self.glyphs.as_ref())
     }
 }
 

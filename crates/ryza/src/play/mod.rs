@@ -471,6 +471,51 @@ fn load_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
     Ok((layer, view, boot))
 }
 
+/// The Settings screen's layer (the textures of `barrel_ryza::options_view`), its view and the
+/// words of its rows.
+fn options_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::options_view::View, std::collections::HashMap<u32, String>)> {
+    use barrel_ryza::options_view as ov;
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = |va| barrel_ryza::font::glyphs_at(&exe, va).ok_or("the executable's font table");
+    // (file, texture number) in the layer's order (`options_view`'s constants).
+    let wanted = [
+        ("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\font\\mainfont00_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_option.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_common.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_various.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 2),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21_bg08.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_bg05.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_caption.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\sys_no_image.g1t", 0),
+    ];
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    // The styles count 2160-line pixels: twice the texture's.
+    let atlases = std::array::from_fn(|i| if i < ov::OPTION { (0, 0) } else { (tex[i].width * 2, tex[i].height * 2) });
+    let read = |name: &str| install.read(name);
+    let view = ov::View::read(ov::Sources {
+        settings: &read("\\saves\\ui_cmn\\quick_menu\\uil_quick_menu_settings.xml")?,
+        tab: &read("\\saves\\ui_cmn\\quick_menu\\uil_quick_menu_tab.xml")?,
+        saveload: &read("\\saves\\ui_en\\a21_saveload\\uil_a21_saveload.xml")?,
+        help: &read("\\saves\\ui_en\\a21_button_help\\uil_a21_shade.xml")?,
+        option_styles: &read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_option.xml")?,
+        v2_common_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_common.xml")?,
+        v2_various_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
+        common_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
+        caption_styles: &read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_caption.xml")?,
+        anims: &read("\\saves\\ui_en\\uia_common.xml")?,
+        glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
+        atlases,
+    })?;
+    let strings = barrel_ryza::options::read_strings(&read("\\saves\\text_en\\strcombineall.xml")?)?;
+    let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..ov::TEXTURES])?;
+    Ok((layer, view, strings))
+}
+
 /// The way a directional light travels, in render space: from `elevation` degrees above the
 /// horizon and `azimuth` degrees around y from +z toward +x (game space: the lighting pass's
 /// `litDir` read from the running game matches both lights, docs/shading.md), x mirrored.
@@ -688,6 +733,19 @@ const PLACING_TICKS: u32 = 600;
 /// where it loads.
 fn flow_input(input: &barrel_ryza::title_menu::Input, loads: &dyn Fn(&barrel_ryza::title_menu::Input, i32) -> bool) -> barrel_ryza::title_menu::Input {
     barrel_ryza::title_menu::Input { choose: input.choose.filter(|&c| loads(input, c)), ..input.clone() }
+}
+
+/// The settings the player changed go into Barrel's own config (the graphics config's file),
+/// their lines replacing the ones there; the rest of the file stays.
+fn save_options(state: &barrel_ryza::options::State) {
+    let Some(path) = barrel_files::config::graphics_path() else { return };
+    let text = state.store(&std::fs::read_to_string(&path).unwrap_or_default());
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(e) = std::fs::write(&path, text) {
+        eprintln!("options: {}: {e}", path.display());
+    }
 }
 
 /// A save the title's load screen chose: the run goes on into the field from it, in the same
@@ -1573,6 +1631,18 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         false if a.title => Some(load_layer(&install, &gpu, &renderer)?),
         _ => None,
     };
+    // The Settings screen's own layer and what it shows (the config's values over the defaults).
+    let mut options_screen = match a.title {
+        true => Some(options_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
+    let mut options_state = barrel_ryza::options::State::new(game_settings.clone());
+    if let Some(c) = &config {
+        options_state.load(c);
+    }
+    // The cursor's row when the holds were last cleared (a tab change clears them).
+    let mut options_base = 0usize;
+    let mut showing_options = false;
     // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
     let mut hud = match (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some() {
         true => Some(hud_layer(&install, &gpu, &renderer)?),
@@ -1615,7 +1685,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
             title_keys = p.take_pressed();
-            if !p.pump() || title_keys.contains(&K::Escape) || a.frames.is_some_and(|n| frame_no >= n) {
+            if !p.pump() || (title_keys.contains(&K::Escape) && !showing_options) || a.frames.is_some_and(|n| frame_no >= n) {
                 break;
             }
             let now = std::time::Instant::now();
@@ -1845,16 +1915,42 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             let frame = (title_seconds * 60.0).round() as i32;
             // The button on the menu's item counts only on Load Game, with saves to load.
             let loads = |input: &barrel_ryza::title_menu::Input, at: i32| menu.chosen(input, at) == Some("load_game") && !save_slots.is_empty();
+            let settings_at = |input: &barrel_ryza::title_menu::Input| input.choose.filter(|&c| menu.chosen(input, c) == Some("setting"));
             if let Some(p) = pump.as_ref() {
                 use winit::keyboard::KeyCode as K;
-                let listing = matches!(flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame), flow::Stage::Screen { list: Some((_, None)), .. });
+                let in_settings = matches!(barrel_ryza::options::Stage::at(settings_at(&title_input), frame), barrel_ryza::options::Stage::Screen { .. });
+                let listing = in_settings || matches!(flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame), flow::Stage::Screen { list: Some((_, None)), .. });
                 if title_keys.contains(&K::Enter) {
                     if menu.pressed(&title_input).is_none() {
                         title_input.press = Some(frame);
-                    } else if title_input.choose.is_none() && loads(&title_input, frame) {
+                    } else if title_input.choose.is_none() && (loads(&title_input, frame) || menu.chosen(&title_input, frame) == Some("setting")) {
                         title_input.choose = Some(frame);
-                    } else if listing && title_input.confirm.is_none() {
+                    } else if listing && !in_settings && title_input.confirm.is_none() {
                         title_input.confirm = Some(frame);
+                    }
+                }
+                if in_settings {
+                    // Left and right change the row's value, Q and E the tab; Escape leaves (saving to Barrel's config).
+                    for (key, way) in [(K::ArrowLeft, -1), (K::ArrowRight, 1)] {
+                        if title_keys.contains(&key) {
+                            options_state.change(way);
+                        }
+                    }
+                    for (key, way) in [(K::KeyQ, -1), (K::KeyE, 1)] {
+                        if title_keys.contains(&key) {
+                            options_state.tab_by(way);
+                            title_input.list_holds.clear();
+                            options_base = options_state.cursor[options_state.tab];
+                        }
+                    }
+                    if title_keys.contains(&K::Escape) {
+                        if options_state.changed {
+                            save_options(&options_state);
+                            options_state.changed = false;
+                        }
+                        title_input.choose = None;
+                        title_input.list_holds.clear();
+                        options_base = 0;
                     }
                 }
                 for (key, way) in [(K::ArrowDown, 1), (K::ArrowUp, -1)] {
@@ -1924,7 +2020,31 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                     }
                 }
             }
-            showing_load = own_layer;
+            // The Settings screen over the menu's black (`barrel_ryza::options`).
+            showing_options = false;
+            match barrel_ryza::options::Stage::at(settings_at(&title_input), frame) {
+                barrel_ryza::options::Stage::Title => {}
+                barrel_ryza::options::Stage::Cover(alpha) => quads.push(flow::cover(alpha, (width, height), cover_texture)),
+                barrel_ryza::options::Stage::Screen { age } => {
+                    if let Some((layer, view, strings)) = options_screen.as_mut() {
+                        let tab = options_state.tab;
+                        let n = barrel_ryza::options::entries(tab).len().max(1);
+                        options_state.cursor[tab] = (options_base + barrel_ryza::options::cursor_on(&title_input, n, frame)) % n;
+                        let blink = if pump.is_some() { age as f32 } else { age as f32 * barrel_ryza::options::BLINK_RATE + barrel_ryza::options::BLINK_START };
+                        quads = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
+                        layer.set(&gpu, &quads)?;
+                        own_layer = true;
+                        showing_options = true;
+                    }
+                }
+            }
+            showing_load = own_layer && !showing_options;
+            // The screen's own picture covers the title's scene (the game clears to black behind it).
+            if showing_options {
+                scene_on.set(false);
+            } else if boot.is_none() {
+                scene_on.set(true);
+            }
             // The event's fade over the title: black from a point of the Gust logo.
             let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= title_start);
             let alpha = title_play.as_ref().filter(|_| showing_title).map_or(0.0, |p| actors::cover(&p.stage));
@@ -1949,8 +2069,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             let (quads, clips, glows) = view.quads(&state, &hud_markers, (width, height));
             layer.set_blended(&gpu, &quads, &clips, glows)?;
         }
-        let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref()) {
-            (true, Some((l, _, _))) => vec![l],
+        let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref(), showing_options, options_screen.as_ref()) {
+            (true, Some((l, _, _)), _, _) => vec![l],
+            (_, _, true, Some((l, _, _))) => vec![l],
             _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
         let frame = Frame {
