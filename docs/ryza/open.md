@@ -969,15 +969,17 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   stage grew 0.06 ms (0.3 at 4K) with the normals written in the scene pass, not explained.
 - **Timed on the RP6 after the four (2026-11-19, d27631b).** The gate after the opening,
   offscreen at 1920x1080, 240 frames, medians; GPU pinned at 680 MHz, the device cool. The
-  handheld's own `Setting.ini`: 52.4 ms at scale 1 (shadow 6.3, scene 45.3), 37.2 at 0.75 with
-  FSR 1 (shadow 3.3, scene 32.2), 27.8 at 0.5 (scene 23.0). `--preset handheld` alone is now
-  the game's High (AO, depth of field, bloom) at 0.75: 44.8 ms, against 87.5 played before the
-  four; it is not last week's 34.9 test any more. The scene pass fits about 15.6 ms that no
-  scale removes plus about 30 ms per full 1080p frame of pixels. The fixed part is geometry:
-  3,974 draws and 2.3M triangles at every setting, where the original's handheld file draws
-  1,346: the `Setting.ini` draw range and LOD (`objects`, `lod`, `ranged` in the log's
-  graphics line) do not cut Barrel's draws yet. Next: make the ranges cut, then the scene
-  shader's cost per pixel.
+  game's Low (`GRAPHICS_QUALITY_ALL=0`, the file the original had just played with): 51.9 ms at
+  scale 1 (shadow 6.2, scene 44.9), 40.5 at 0.75 with FSR 1. The handheld's earlier Custom
+  file: 52.4 / 37.2 (0.75, shadows low) / 27.8 (0.5). The original on the device at Low,
+  1080p (the user's counter, through FEX and Proton, not at the gate exactly): 37 fps, about
+  27 ms. So at the same settings the original is about twice as fast, and nearly all of
+  Barrel's frame is the scene pass. The pass fits about 15.6 ms that no scale removes plus
+  about 30 ms per full 1080p frame of pixels. Not the draw range: 3,974 is what is loaded,
+  the scene draws 697 after culling (plus the plants' 1,432). Suspected: overdraw of the full
+  forward shader (the plants' alpha-tested layers) on a tiler, where the original is
+  deferred. Next, a few runs to split it: no plants, a trivial fragment shader, a depth
+  pre-pass.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
