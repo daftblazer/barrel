@@ -84,6 +84,9 @@ pub struct Renderer {
     pub shadow_pipeline: vk::Pipeline,
     /// The same writing a cascade's depth with the game's bias (`shadow::Bias`).
     pub shadow_cascade_pipeline: vk::Pipeline,
+    /// `shadow_pipeline` and `shadow_cascade_pipeline` without a fragment program: the casters
+    /// with opaque textures.
+    pub shadow_opaque_pipelines: [vk::Pipeline; 2],
     pub shadow_cascade_fs: vk::ShaderModule,
     /// The ambient occlusion (`ao.rs`): its targets and passes, and the pipelines that draw the
     /// models' and the terrain's normals and depth into them.
@@ -877,6 +880,14 @@ impl Renderer {
         let cascade_dynamic_state = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&cascade_dynamic);
         let cascade_info = shadow_info.stages(&cascade_stages).rasterization_state(&cascade_raster).dynamic_state(&cascade_dynamic_state);
         let shadow_cascade_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[cascade_info], None).map_err(|(_, e)| e)?[0] };
+        // Both without a fragment program, for the casters whose textures are opaque (nothing for
+        // the alpha test to reject): depth alone, which a tiler writes cheapest.
+        let shadow_vertex_only = [shadow_stages[0]];
+        let cascade_vertex_only = [cascade_stages[0]];
+        let shadow_opaque_pipelines = unsafe {
+            d.create_graphics_pipelines(vk::PipelineCache::null(), &[shadow_info.stages(&shadow_vertex_only), cascade_info.stages(&cascade_vertex_only)], None).map_err(|(_, e)| e)?
+        };
+        let shadow_opaque_pipelines = [shadow_opaque_pipelines[0], shadow_opaque_pipelines[1]];
 
         // The post pass's pipeline: one triangle over the screen, no vertex input or depth.
         let (post_vs, post_fs) = (module(POST_VERT)?, module(POST_FRAG)?);
@@ -959,7 +970,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, shadow_opaque_pipelines, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1055,7 +1066,6 @@ impl Renderer {
                 d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
                 // A cascade is written with the game's bias where the game gave one.
                 let bias = if layer == shadow::SUB_LAYER { shadow_sub.map(|(_, b)| b[0]) } else { shadow_bias.filter(|_| layer <= shadow::STATIC_LAYER).map(|b| b[layer.min(2)]) };
-                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if bias.is_some() { shadow_cascade_pipeline } else { shadow_pipeline });
                 if let Some(b) = bias {
                     d.cmd_set_depth_bias(cb, 0.0, 0.0, b.slope);
                 }
@@ -1078,8 +1088,22 @@ impl Renderer {
                 // The characters' map takes its own casters and the cascades leave them out.
                 let own = |d: &Draw| (layer == shadow::SUB_LAYER) == (d.sub_bias.is_some() && shadow_sub.is_some());
                 let casts = |d: &Draw| own(d) && big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d);
+                // The casters with opaque textures first, depth alone (an alpha reference over 1
+                // would reject even those: then they are tested as the rest), then the others.
+                let reference = |d: &Draw| match (d.sub_bias, shadow_sub) {
+                    (Some(k), Some((_, sets))) if layer == shadow::SUB_LAYER => sets[usize::from(k)].alpha_ref,
+                    _ => bias.map_or(alpha_cutoff, |b| b.alpha_ref),
+                };
+                let opaque = |d: &Draw| scene.opaque.get(d.texture).copied().unwrap_or(false) && reference(d) <= 1.0;
+                for tested in [false, true] {
+                let p = match (tested, bias.is_some()) {
+                    (false, b) => self.shadow_opaque_pipelines[usize::from(b)],
+                    (true, true) => shadow_cascade_pipeline,
+                    (true, false) => shadow_pipeline,
+                };
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, p);
                 for draw in draws.iter() {
-                    if !casts(draw) {
+                    if !casts(draw) || opaque(draw) == tested {
                         continue;
                     }
                     // xEF_ field models (window light: TOWN_03's obj-xEF_windows_tw03) are not lit, flag
@@ -1102,6 +1126,7 @@ impl Renderer {
                         trace3d.add(SHADOW_TRACE_PASSES[layer], draw.index_count, &[Some(draw.texture)], &instances[draw.instance as usize].model);
                     }
                     drawn[1] += 1;
+                }
                 }
                 d.cmd_end_render_pass(cb);
                 if layer == shadow::STATIC_LAYER && let Some(b) = far.build.take() {
@@ -1728,6 +1753,9 @@ impl Renderer {
             d.destroy_pipeline(self.ao_gbuf_terrain_pipeline, None);
             d.destroy_pipeline(self.shadow_pipeline, None);
             d.destroy_pipeline(self.shadow_cascade_pipeline, None);
+            for p in self.shadow_opaque_pipelines {
+                d.destroy_pipeline(p, None);
+            }
             d.destroy_shader_module(self.shadow_cascade_fs, None);
             d.destroy_shader_module(self.shadow_fs, None);
             d.destroy_pipeline(self.sky_pipeline, None);

@@ -1368,6 +1368,12 @@ the other kind are left out, so its registers are its own path's. On RADV the fi
 program went from 7,018 instructions and 72 registers (the program for every draw) to 1,903 and
 48; the characters' is 4,604 and 60.
 
+The shadow maps' casters go the same way: those with opaque textures first, through
+`shadow_opaque_pipelines` (`shadow_pipeline` and `shadow_cascade_pipeline` without a fragment
+program: depth alone, the cheapest a tiler writes), then the alpha-tested ones through the
+pipelines with the test. Depth alone does not depend on the order, so the maps are the same; on
+the PC the gate's shadow stage went from 0.905 to 0.781 ms.
+
 ## Foliage
 
 `RenderSettings::foliage` (full, reduced, least; config `foliage`) is how much of a field's
