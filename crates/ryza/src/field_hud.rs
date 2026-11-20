@@ -362,9 +362,9 @@ impl Hud {
     }
 }
 
-// STAND-IN: The minimap's scale and place for Rasenboden are fitted to six captured frames (hud-walk 2030 to 3330, her place from the walk's state): the terrain's left edge falls 1 layout pixel per 120 game units, its top edge 1 per 125, and x = 0, z = 0 put them at (1163.40, 590.66); the game's own per-map bounds are not found in its tables.
+// STAND-IN: The minimap's scale and place for Rasenboden are fitted to six captured frames (hud-walk 2030 to 3330, her place from the walk's state): the terrain's corner falls 1 layout pixel per 125 game units in x and in z (the markers' scale; x fitted as 120 before the markers showed 125 fits all six frames to under a pixel), and x = 0, z = 0 put it at (1152.67, 590.66); the game's own per-map bounds are not found in its tables.
 /// Layout pixels the terrain moves per game unit of her walk (x, z), and its corner at the origin.
-const TERRAIN_PER_UNIT: [f32; 2] = [1.0 / 120.0, 1.0 / 125.0];
+const TERRAIN_PER_UNIT: [f32; 2] = [1.0 / 125.0, 1.0 / 125.0];
 /// Game units to a layout pixel on the minimap, for the markers (all 18 exit markers of the six
 /// captured frames of `hud-walk` fit to under half a pixel; the terrain's x was fitted as 120).
 const MARKER_UNITS_PER_PIXEL: f32 = 125.0;
@@ -394,7 +394,7 @@ fn glow_pulse(tick: f32) -> (f32, f32) {
     ((alpha * 255.0).round() / 255.0, 0.8 + 0.2 * (1.0 - (1.0 - u).powi(3)))
 }
 
-const TERRAIN_ORIGIN: [f32; 2] = [1163.40, 590.66];
+const TERRAIN_ORIGIN: [f32; 2] = [1152.67, 590.66];
 /// The terrain picture's size in layout pixels (it is drawn twice over, its style being twice
 /// the texture's size).
 const TERRAIN_SIZE: f32 = 1024.0;
