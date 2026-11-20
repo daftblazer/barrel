@@ -131,6 +131,8 @@ layout(constant_id = 3) const bool DEPTH_ONLY = false;
 // the largest path's): 0 anything (the flags decide), 1 the scene pass's field models, 2 its other
 // models (characters, flag 1). Neither of the last two is the distant view or a character's hull.
 layout(constant_id = 4) const uint KIND = 0u;
+// Whether anything reads the motion vectors (model.vert's MOTION, the same for both).
+layout(constant_id = 5) const bool MOTION = true;
 bool is_chara() { return KIND == 1u ? false : KIND == 2u ? true : (pc.flags & 1u) != 0u; }
 bool is_far() { return KIND != 0u ? false : (pc.flags & 8u) != 0u; }
 bool is_hull() { return KIND != 0u ? false : (pc.flags & (1u << 25)) != 0u; }
@@ -198,7 +200,7 @@ void specular_surface(vec3 albedo, out vec3 f0, out float gloss) {
 }
 
 void main() {
-    motion = NORMAL_AS_MOTION ? vec2(0.0) : (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
+    motion = NORMAL_AS_MOTION || !MOTION ? vec2(0.0) : (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     spec_light = vec4(0.0);
     spec_env = vec4(0.0);
     vec4 c = texture(tex, uv);

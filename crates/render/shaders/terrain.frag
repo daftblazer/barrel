@@ -112,6 +112,8 @@ layout(location = 10) in vec4 prev_clip;
 layout(location = 1) out vec2 motion;
 // The world normal takes the motion vectors' attachment where there is no pre-pass (as in model.frag).
 layout(constant_id = 1) const bool NORMAL_AS_MOTION = false;
+// Whether anything reads the motion vectors (model.vert's MOTION, the same for both).
+layout(constant_id = 5) const bool MOTION = true;
 // The ground's normal from the blended normal map `nm`, in the frame of the vertex normal (the
 // game's space, x not mirrored; the map's red along the side axis, green along the slope, blue
 // along the normal), back in the render space.
@@ -125,7 +127,7 @@ vec3 ground_normal(vec4 nm) {
 }
 
 void main() {
-    motion = NORMAL_AS_MOTION ? vec2(0.0) : (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
+    motion = NORMAL_AS_MOTION || !MOTION ? vec2(0.0) : (cur_clip.xy / cur_clip.w - prev_clip.xy / prev_clip.w) * 0.5;
     int code = int(uv.x + 0.5), reps = int(uv.y + 0.5);
     int la = code & 31, lb = (code >> 5) & 31, mix_code = (code >> 10) & 31;
     bool baked = (code & 32768) != 0;

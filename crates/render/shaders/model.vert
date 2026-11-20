@@ -16,6 +16,9 @@ layout(location = 8) in vec4 in_tangent;
 // (`params.z`, of the cascade's depth) added here, exact for the cascades' orthographic
 // projections; its slope term is the pipeline's depth bias.
 layout(constant_id = 0) const bool CASCADE_BIAS = false;
+// Whether anything reads the motion vectors (`RenderSettings::motion`): without, the clip
+// positions are not written, so the pipeline drops them and last frame's skinning.
+layout(constant_id = 1) const bool MOTION = true;
 layout(push_constant) uniform Push { mat4 view_proj; vec4 params; vec4 scale_a; vec4 scale_b; uint instance; uint flags; float outline_colour;
     // A field model's lighting material: cDiff and cAmb as unorm16 (Draw::light).
     uint light; } pc;
@@ -282,8 +285,10 @@ void main() {
     }
     tint_mul = i.tint_mul;
     tint_add = i.tint_add;
-    cur_clip = look.view_proj * w;
-    prev_clip = look.prev_view_proj * prev_w;
+    if (MOTION) {
+        cur_clip = look.view_proj * w;
+        prev_clip = look.prev_view_proj * prev_w;
+    }
     // Fog: extinction exp2(s × Scat0) (Scat0 holds -(βR + βM) log2 e), s the eye distance mapped
     // over the fog's start and end; in-scattering Mie (Henyey-Greenstein) plus Rayleigh plus
     // the ambient, θ between the way to the eye and the sun.

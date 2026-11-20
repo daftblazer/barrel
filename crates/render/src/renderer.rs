@@ -631,11 +631,16 @@ impl Renderer {
         let (vs, fs) = (module(VERT)?, module(if half { crate::FRAG_HALF } else { FRAG })?);
         // The models' and the terrain's programs write the world normal in the motion vectors'
         // attachment where the scene pass feeds the half-size target (`NORMAL_AS_MOTION`).
-        let normal_entry = [vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 }];
-        let normal_data = u32::from(from_scene).to_le_bytes();
+        // Both, and the vertex program, take whether the motion vectors are read (`MOTION`, 5 in the
+        // pixel programs, 1 in the vertex one).
+        let motion_on = u32::from(settings.motion).to_le_bytes();
+        let motion_entry = [vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 }];
+        let vertex_special = vk::SpecializationInfo::default().map_entries(&motion_entry).data(&motion_on);
+        let normal_entry = [vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 }, vk::SpecializationMapEntry { constant_id: 5, offset: 4, size: 4 }];
+        let normal_data: Vec<u8> = [u32::from(from_scene), u32::from(settings.motion)].iter().flat_map(|v| v.to_le_bytes()).collect();
         let normal_special = vk::SpecializationInfo::default().map_entries(&normal_entry).data(&normal_data);
         let stages = [
-            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main").specialization_info(&vertex_special),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main").specialization_info(&normal_special),
         ];
         let vbind = [vk::VertexInputBindingDescription { binding: 0, stride: size_of::<Vertex>() as u32, input_rate: vk::VertexInputRate::VERTEX }];
@@ -733,12 +738,13 @@ impl Renderer {
             vk::SpecializationMapEntry { constant_id: 2, offset: 4, size: 4 },
             vk::SpecializationMapEntry { constant_id: 3, offset: 8, size: 4 },
             vk::SpecializationMapEntry { constant_id: 4, offset: 12, size: 4 },
+            vk::SpecializationMapEntry { constant_id: 5, offset: 16, size: 4 },
         ];
-        let part_data: [[[u8; 16]; 2]; 3] = std::array::from_fn(|part| {
+        let part_data: [[[u8; 20]; 2]; 3] = std::array::from_fn(|part| {
             std::array::from_fn(|kind| {
                 let (alpha_test, depth_only) = [(false, false), (true, true), (true, false)][part];
-                let mut b = [0u8; 16];
-                for (k, v) in [u32::from(from_scene), u32::from(alpha_test), u32::from(depth_only), kind as u32 + 1].into_iter().enumerate() {
+                let mut b = [0u8; 20];
+                for (k, v) in [u32::from(from_scene), u32::from(alpha_test), u32::from(depth_only), kind as u32 + 1, u32::from(settings.motion)].into_iter().enumerate() {
                     b[4 * k..4 * k + 4].copy_from_slice(&v.to_le_bytes());
                 }
                 b
@@ -957,8 +963,9 @@ impl Renderer {
         } else {
             None
         };
-        let ao_pass_on = 1u32.to_le_bytes();
-        let ao_entry = [vk::SpecializationMapEntry { constant_id: 0, offset: 0, size: 4 }];
+        // (No motion vectors there: MOTION 0.)
+        let ao_pass_on = [1u8, 0, 0, 0, 0, 0, 0, 0];
+        let ao_entry = [vk::SpecializationMapEntry { constant_id: 0, offset: 0, size: 4 }, vk::SpecializationMapEntry { constant_id: 5, offset: 4, size: 4 }];
         let ao_special = vk::SpecializationInfo::default().map_entries(&ao_entry).data(&ao_pass_on);
         let ao_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&blend_att[..1]);
         let ao_stages = |fs| [stages[0], vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main").specialization_info(&ao_special)];
