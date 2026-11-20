@@ -1,6 +1,7 @@
-//! Presenting to a window: a Vulkan surface for a winit window (Wayland, X11) and a FIFO
-//! swapchain (vsync, so the display paces the frames). The engine's frame loop draws into
-//! the image `acquire` hands out and gives it back with `present`.
+//! Presenting to a window: a Vulkan surface for a winit window (Wayland, X11) and a swapchain
+//! the display paces: MAILBOX where offered, with the loop held to the display's refresh, else
+//! FIFO (vsync). The engine's frame loop draws into the image `acquire` hands out and gives it
+//! back with `present`.
 
 use ash::vk;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
@@ -27,11 +28,17 @@ pub struct Presenter {
     pub extent: vk::Extent2D,
     pub images: Vec<vk::Image>,
     pub views: Vec<vk::ImageView>,
+    /// The display's refresh interval, which `present` holds a MAILBOX swapchain's loop to.
+    interval: Option<std::time::Duration>,
+    /// Whether the swapchain is MAILBOX, and when the next present may go.
+    mailbox: bool,
+    next: std::cell::Cell<std::time::Instant>,
 }
 
 impl Presenter {
-    /// A surface for the window and a swapchain of `width` × `height` (the window's size).
-    pub fn new(gpu: &Gpu, display: RawDisplayHandle, window: RawWindowHandle, width: u32, height: u32) -> Result<Presenter> {
+    /// A surface for the window and a swapchain of `width` × `height` (the window's size);
+    /// `refresh_hz` the display's refresh rate (none known: FIFO).
+    pub fn new(gpu: &Gpu, display: RawDisplayHandle, window: RawWindowHandle, width: u32, height: u32, refresh_hz: Option<f64>) -> Result<Presenter> {
         let surface = unsafe {
             match (display, window) {
                 (RawDisplayHandle::Wayland(d), RawWindowHandle::Wayland(w)) => ash::khr::wayland_surface::Instance::new(&gpu._entry, &gpu.instance)
@@ -70,6 +77,9 @@ impl Presenter {
             extent: vk::Extent2D { width, height },
             images: Vec::new(),
             views: Vec::new(),
+            interval: refresh_hz.filter(|hz| *hz >= 20.0).map(|hz| std::time::Duration::from_secs_f64(1.0 / hz)),
+            mailbox: false,
+            next: std::cell::Cell::new(std::time::Instant::now()),
         };
         p.rebuild(gpu, width, height)?;
         Ok(p)
@@ -100,6 +110,11 @@ impl Presenter {
         if caps.max_image_count > 0 {
             count = count.min(caps.max_image_count);
         }
+        // MAILBOX where offered and the refresh is known: a frame that misses a refresh shows at
+        // the next one, where FIFO holds it to a whole multiple of the refresh (a 35 ms frame at
+        // 60 Hz shown every 50 ms); `present` keeps the loop to the refresh as FIFO did.
+        let modes = unsafe { surface_fn.get_physical_device_surface_present_modes(gpu.physical, surface)? };
+        let mailbox = self.interval.is_some() && modes.contains(&vk::PresentModeKHR::MAILBOX);
         let old = self.swapchain;
         let swapchain = unsafe {
             self.swapchain_fn.create_swapchain(
@@ -114,8 +129,7 @@ impl Presenter {
                     .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
                     .pre_transform(caps.current_transform)
                     .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                    // FIFO: vsync, always available; the display paces the loop.
-                    .present_mode(vk::PresentModeKHR::FIFO)
+                    .present_mode(if mailbox { vk::PresentModeKHR::MAILBOX } else { vk::PresentModeKHR::FIFO })
                     .clipped(true)
                     .old_swapchain(old),
                 None,
@@ -144,7 +158,7 @@ impl Presenter {
                 )
             })
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        (self.swapchain, self.format, self.extent, self.images, self.views) = (swapchain, chosen.format, extent, images, views);
+        (self.swapchain, self.format, self.extent, self.images, self.views, self.mailbox) = (swapchain, chosen.format, extent, images, views, mailbox);
         Ok(())
     }
 
@@ -161,6 +175,15 @@ impl Presenter {
     /// Shows image `index` once `done` is signalled; true when the swapchain should be
     /// rebuilt (stale or no longer a perfect fit).
     pub fn present(&self, gpu: &Gpu, index: u32, done: vk::Semaphore) -> Result<bool> {
+        // A MAILBOX loop no faster than the display's refresh (FIFO's own pace when it keeps up).
+        if let (true, Some(interval)) = (self.mailbox, self.interval) {
+            let now = std::time::Instant::now();
+            let at = self.next.get();
+            if at > now {
+                std::thread::sleep(at - now);
+            }
+            self.next.set(at.max(now) + interval);
+        }
         let (swapchains, indices, waits) = ([self.swapchain], [index], [done]);
         match unsafe {
             self.swapchain_fn.queue_present(

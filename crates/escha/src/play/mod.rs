@@ -3911,7 +3911,8 @@ fn view(mut args: Vec<String>, kept_pump: Option<window::Pump>, mut carry: Carry
         (Some(p), Some(display)) => {
             let handle = raw_window_handle::HasWindowHandle::window_handle(p.window())?.as_raw();
             let size = p.window().inner_size();
-            Some(present::Presenter::new(&gpu, display, handle, size.width, size.height)?)
+            let refresh = p.window().current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|mhz| mhz as f64 / 1000.0);
+            Some(present::Presenter::new(&gpu, display, handle, size.width, size.height, refresh)?)
         }
         _ => None,
     };

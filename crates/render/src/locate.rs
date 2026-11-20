@@ -254,7 +254,8 @@ fn show<S: Clone + PartialEq, T>(
     let gpu = Gpu::new(Some(handle))?;
     let window = raw_window_handle::HasWindowHandle::window_handle(pump.window())?.as_raw();
     let size = pump.window().inner_size();
-    let mut presenter = crate::present::Presenter::new(&gpu, handle, window, size.width, size.height)?;
+    let refresh = pump.window().current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|mhz| mhz as f64 / 1000.0);
+    let mut presenter = crate::present::Presenter::new(&gpu, handle, window, size.width, size.height, refresh)?;
     let d = &gpu.device;
     let pool = unsafe { d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)? };
     let attachment = [vk::AttachmentDescription::default()
