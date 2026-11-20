@@ -48,14 +48,15 @@ const ROW_PITCH: f32 = 377.0 / 11.0;
 // STAND-IN: the plain list's rows sit this far from the graphics list's (capture: one layout pixel left, three lower); the real thing is the second menu's own item origin.
 const PLAIN_SHIFT: [f32; 2] = [-1.0, 3.0];
 // STAND-IN: text set centred on its node (`align_v=center`) has its line top this far above the node's `pos.y` less half its size, fitted to the capture (the description's heading, the rows' names, the shoulder keys); the real thing is the game's own line box.
-const HEAD_FIT: f32 = -4.0;
+const CENTER_FIT: f32 = -6.0;
+// STAND-IN: three names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
+const NAME_DROPS: [(&str, f32); 3] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47)];
 const KEY_FIT: f32 = -7.8;
 const NUM_FIT: f32 = -3.53;
-const NAME_FIT: f32 = -6.0;
 // STAND-IN: the description's lines are 34 pixels apart at 1080 lines (capture), the layout's size 16 and `line_space` 10 read as 16 + 10 / 1.5.
 const LINE_SPACE: f32 = 10.0 / 1.5;
-/// A description line holds this many half-width characters (`line_char_length` 20 full-width).
-const LINE_CHARS: f32 = 40.0;
+/// A description line holds this many half-width characters, the space after its last word counted (the capture wraps at 39 and 40; the layout's `line_char_length` is 20 full-width).
+const LINE_CHARS: f32 = 39.0;
 
 /// The text colour of the template `TEXTCOLOR_BROWN` (26, 0, 0), the tags `<CLGR>` (green) and `<CLRE>` (red).
 const BROWN: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
@@ -320,7 +321,6 @@ impl View {
         let blink = curve(src.anims, "anm_common_blink", "color")?;
         // Row 0's node inside the list: the template's item list and its first row's place.
         let rows_at = [list_at[0], first_clone[1]];
-        let _ = (name_n, body_n, head_n);
         Ok(View {
             glyphs: src.glyphs,
             atlases: src.atlases.map(|(w, h)| (w as f32, h as f32)),
@@ -491,7 +491,7 @@ impl Pen<'_> {
         };
         let tex = if font == 0 { FONT01 } else { FONT00 };
         let (aw, ah) = (4096.0, 2048.0);
-        let mut run = |out: &mut Vec<Quad>, dx: f32, dy: f32, ring: Option<[f32; 4]>| {
+        let run = |out: &mut Vec<Quad>, dx: f32, dy: f32, ring: Option<[f32; 4]>| {
             let mut pen = pen0 + dx;
             for (c, col) in chars {
                 let Some(g) = glyphs.get(c) else { continue };
@@ -546,6 +546,11 @@ fn segments(total: f32, a: f32, mid: f32, b: f32, u: f32) -> Vec<(f32, f32, f32,
     out
 }
 
+/// Whether `c` is the picture of a button (the font's private pictures, but for the stick's `\u{4f2}`).
+fn is_icon(c: char) -> bool {
+    ('\u{4d0}'..'\u{500}').contains(&c) && c != '\u{4f2}'
+}
+
 /// Splits `text` into the description's lines: `^00` breaks a line, a line wraps at a space
 /// past `LINE_CHARS`, `<CLGR>`, `<CLRE>` and `<CLNR>` set the colour from the next glyph (a tag
 /// right after a break takes effect a glyph late, as the capture draws it).
@@ -553,7 +558,6 @@ fn description(text: &str) -> Vec<Vec<(char, [f32; 3])>> {
     let mut lines: Vec<Vec<(char, [f32; 3])>> = vec![Vec::new()];
     let mut color = BROWN;
     let mut pending: Option<[f32; 3]> = None;
-    let mut words: Vec<Vec<(char, [f32; 3])>> = Vec::new();
     let mut word: Vec<(char, [f32; 3])> = Vec::new();
     let mut after_break = true;
     let mut chars = text.chars().peekable();
@@ -599,8 +603,12 @@ fn description(text: &str) -> Vec<Vec<(char, [f32; 3])>> {
         }
     }
     flush(&mut lines, &mut word);
-    let _ = &mut words;
     lines
+}
+
+/// How far a name sits below its centred place in the capture (`NAME_DROPS`).
+fn name_drop(name: &str) -> f32 {
+    NAME_DROPS.iter().find(|(n, _)| *n == name).map_or(0.0, |d| d.1)
 }
 
 impl View {
@@ -652,7 +660,7 @@ impl View {
         // The description panel.
         pen.wrap(V2_COMMON, &self.panel, self.panel_at, self.panel_size, white);
         pen.wrap(V2_COMMON, &self.head, self.head_at, self.head_size, Self::rgba(self.head_color, 1.0));
-        pen.text(&look(&self.head_text, Some(HEAD_FIT)), self.head_text_at, &s.title, white, None);
+        pen.text(&look(&self.head_text, Some(CENTER_FIT + name_drop(&s.title))), self.head_text_at, &s.title, white, None);
         let body = look(&self.body_text, None);
         for (n, line) in description(&s.text).iter().enumerate() {
             let at = [self.body_text_at[0], self.body_text_at[1] + n as f32 * (self.body_text.size + LINE_SPACE)];
@@ -699,9 +707,19 @@ impl View {
         let k = pen.k;
         let rect = [pen.left + mask[0] * k, mask[1] * k, pen.left + (mask[0] + t.mask_size[0]) * k, (mask[1] + t.mask_size[1]) * k];
         pen.out.push(Quad { turn: false, spin: None, rect, uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: NO_IMAGE });
-        pen.text(&look(&self.name_text, Some(NAME_FIT)), abs(t.name), &row.name, brown, None);
-        // The buttons' pictures in a value are drawn white, the words brown.
-        let value: Vec<(char, [f32; 4])> = row.value.chars().map(|c| (c, if ('\u{4d0}'..'\u{500}').contains(&c) { [1.0; 4] } else { brown })).collect();
+        pen.text(&look(&self.name_text, Some(CENTER_FIT + name_drop(&row.name))), abs(t.name), &row.name, brown, None);
+        // The buttons' pictures in a value are drawn white, with the glyph after one; the rest brown (the capture's Dash and Confirm rows).
+        let mut after_icon = false;
+        let value: Vec<(char, [f32; 4])> = row
+            .value
+            .chars()
+            .map(|c| {
+                let icon = is_icon(c);
+                let white = icon || after_icon;
+                after_icon = icon;
+                (c, if white { [1.0; 4] } else { brown })
+            })
+            .collect();
         pen.runs(&look(&self.value_text, None), abs(t.value), &value, None);
         if arrows {
             let p = self.arrow.pictures[0];
@@ -737,12 +755,10 @@ impl View {
         let grow = ((moment.age as f32 - HELP_AT) / PLATE_FRAMES).clamp(0.0, 1.0);
         let guide = entries.iter().map(|(g, w)| format!("{g}{w}")).collect::<Vec<_>>().join(" ");
         let look = Look { size: self.help_text.size, small: self.help_text.small, align: self.help_text.align, centred: None };
-        let s = self.help_text.size * pen.k / ATLAS_SIZE;
         let words = pen.width(&look, &guide) / pen.k;
         let right = 1280.0;
         // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum (as the load screen's).
         let full = words + 2.0 * self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
-        let _ = s;
         let width = PLATE_MIN + (full - PLATE_MIN) * grow;
         let at = [right - width, self.help_at[1]];
         pen.wrap(HELP, &self.help, at, [width, first(&self.help).map_or(0.0, |p| p[3] / ATLAS_PER_LAYOUT)], [1.0, 1.0, 1.0, alpha]);

@@ -251,7 +251,66 @@ Not done, in order of what it blocks:
 - Which header bytes are the party: from +0x4e ten (id, level) byte pairs, `ff` for empty (the
   capture's three, Ryza 0 / Lent 2 / Tao 3 at level 3, fit; both saves hold the same party, so the
   id order is a guess). Names for the ids: the string table has them (not read).
-- Selecting New Game, Settings, Extra, Episodes and End Game does nothing.
+- Selecting New Game, Extra, Episodes and End Game does nothing (Settings opens its own screen: the next section).
+
+## Settings screen (title menu, Settings)
+
+The packet named `uil_a21_system_option.xml` (textures a21_option); the screen the DX title menu
+opens is not that layout but the PC game's **quick menu** (`ui_cmn/quick_menu/`): the list and the
+description panel are `uil_quick_menu_settings.xml`, the tabs `uil_quick_menu_tab.xml` (its Steam
+set of six tabs), the background `uil_quick_menu_background.xml`, styles `uis_gen_a21v2_common`,
+`uis_gen_a21v2_various`, `uis_gen_a21_common/option/caption`, strings `strcombineall.xml` (the
+rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xml`).
+
+- **Built (`crates/ryza/src/options_view.rs` draws, `options.rs` keeps the state, wired in
+  `play/mod.rs`).** The button on Settings fades the chosen item as on Load Game, the black cover
+  rises, and from 20 frames after the button the screen fades in (the background and the caption
+  with the common fade; the rest is at full opacity by then): the two backgrounds, the caption
+  "Options", the six tabs (Game opens; the lit tab is a second picture over the tab's own),
+  the shoulder keys, the description panel (heading, text wrapped at 39 half-width characters,
+  `<CLGR>`/`<CLNR>` colours), the list's window with its six lines, the cursor and the twelve
+  rows (a choice with arrows on the cursor's row, a gauge with its number in a text ring), the
+  help bar. The game builds two lists and draws both: the graphics list first, with the rows'
+  template words ("Ambient Occlusion", "1920x1080", "0") and its scroll bar, then the plain list
+  over it; Barrel draws both for the same trace. The parity tool now drops Barrel's quads that
+  a later opaque quad covers whole, as it did the game's (without that every quad of the first
+  list showed as an extra).
+- **Scoreboard** (`options-N` rows, docs/ryza/parity.md): 0 mismatches at 1435, 1445, 1460, 1600,
+  1705, 2005 and 2100; 5 at 1765 (the Dash row's description: the buttons' pictures in the text are
+  drawn in colours Barrel does not follow, below).
+- **Working.** Up and Down move the cursor (the title's holds, as the load list), Left and Right
+  change the row (a choice wraps, a number stops at its ends), Q and E change the tab, Escape
+  leaves for the title menu and writes the changes to Barrel's own config (the graphics config
+  file: `option_<key> N` lines, and the game's graphics keys once a graphics row was changed).
+  The screen holds Camera, Game, Audio and Graphics rows; the graphics rows are
+  `graphics::Settings` (changing an item makes the quality Custom, as the game's). **The
+  graphics apply on the next start** (the renderer reads the settings once; no live rebuild).
+  Unit test: `options::tests::a_change_goes_to_the_config_and_back`.
+- **Left over (each kept and stored, not honoured, or not built):**
+  - Keyboard and Controller tabs (the key assignments, `uil_quick_menu_key_assignment.xml`,
+    `uil_quick_menu_controller_settings.xml`) show no rows. The Graphics tab has no Screen
+    Resolution, Window Settings or Motion Blur rows (resolution and window are Barrel's display
+    config; there is no motion blur).
+  - Every Game, Camera and Audio value is stored only: nothing reads them (volumes too, here: the
+    title's sound has no volume setting yet; Difficulty, Dash, camera inversion ... belong to the
+    field and the event code). Their order and descriptions on the Camera and Audio tabs are the
+    string tables', not captured (the capture shows the Game tab only); Difficulty offers five
+    levels of the seven strings (Charismatic and Legendary left out, unverified); the volumes'
+    range 0-10 and defaults are guesses.
+  - Leaving: the title menu returns at once (the game's own leave transition was not captured).
+  - Unexplained, fitted (named constants in `options_view.rs`): the names Vibration, Dash and
+    Autosave sit 3.0 px (Autosave 3.7) lower than the others in the rows and in the description's
+    heading (`NAME_DROPS`); the rows' pitch (`ROW_PITCH` 34.27 layout px) and the plain list's
+    shift (`PLAIN_SHIFT`); the centred texts' fits (`CENTER_FIT`, `KEY_FIT`, `NUM_FIT`); the cursor's
+    blink runs 0.8% slow against the capture's frame count (`options::BLINK_RATE`, in a window it
+    is the frame count itself); the help plate is two atlas pixels wider than the text.
+  - Button pictures' colours: in a value the picture and the glyph after it are white (the Dash
+    and Confirm rows, which match); in the Dash description the capture draws five glyph runs white
+    (the pictures and the "+") by a rule not found, 5 mismatches at 1765. The rule "a colour tag
+    after a line break takes effect a glyph late" fits the description's colour lines.
+  - The title menu's chosen-item fade is now 0.878 of the pulse's opacity at the button times
+    1 - frames / 13 (it was 196/255 flat): the Settings capture starts at 188 where the pulse
+    stood lower; Load Game's three rows still match.
 
 ## Event commands against the game's own log
 

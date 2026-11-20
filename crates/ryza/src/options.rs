@@ -246,17 +246,20 @@ impl State {
         }
         self.changed = true;
         match e.graphics {
-            Some(None) => self.graphics.quality = [Quality::Low, Quality::Middle, Quality::High, Quality::Custom][next as usize],
+            Some(None) => {
+                self.graphics.quality = [Quality::Low, Quality::Middle, Quality::High, Quality::Custom][next as usize];
+                self.graphics.given = true;
+            }
             Some(Some(i)) => {
                 // Changing an item sets the quality to Custom, as the game's.
                 self.graphics.quality = Quality::Custom;
                 self.graphics.set(i, next as usize);
+                self.graphics.given = true;
             }
             None => {
                 self.values.insert(e.key, next);
             }
         }
-        self.graphics.given = true;
     }
 
     /// The row under the cursor on `tab` and the screen's words for it.
@@ -295,9 +298,12 @@ impl State {
     /// The game options and graphics items as `key value` lines for Barrel's config.
     pub fn config_lines(&self) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = Vec::new();
-        out.push(("quality".into(), ["Low", "Middle", "High", "Custom"][self.graphics.quality as usize].to_string()));
-        for i in Item::ALL {
-            out.push((i.config_key().to_string(), i.levels()[self.graphics.level(i)].to_string()));
+        // The graphics keys only once the player has set any (they switch Barrel's own choices for the game's presets).
+        if self.graphics.given {
+            out.push(("quality".into(), ["Low", "Middle", "High", "Custom"][self.graphics.quality as usize].to_string()));
+            for i in Item::ALL {
+                out.push((i.config_key().to_string(), i.levels()[self.graphics.level(i)].to_string()));
+            }
         }
         let mut keys: Vec<_> = self.values.iter().collect();
         keys.sort();
@@ -392,6 +398,8 @@ mod tests {
         }
         s.change(1);
         assert_eq!((s.option("vibration"), s.option("difficulty"), s.option("cursor_speed")), (Some(1), Some(3), Some(6)));
+        // Nothing of the graphics is written until one of its rows is changed.
+        assert!(!s.store("").contains("quality"));
         // Graphics tab: an item turns the quality to Custom.
         s.tab = 3;
         s.cursor[3] = 7;

@@ -686,6 +686,12 @@ mistake for a day). `u46` in the events does not play its movie yet.
   B10G11R11 where the game keeps 16-bit floats, so a handheld's tiler holds 8 bytes a pixel less
   (fewer bins). At the Rasenboden gate 1.2% of the pixels move, all but 5 by at most 4 levels
   (the most 7); every check scores the same.
+- **The Ryza Settings screen's leave and its values** (`crates/ryza/src/options.rs`): leaving
+  (Escape in a window) returns to the title menu at once, with no leave transition (not
+  captured), and writes the changed rows to Barrel's graphics config (`option_<key> N` lines and,
+  once a graphics row was changed, the game's graphics keys); the graphics apply on the next
+  start, not live. Game, Camera and Audio values are kept and read by nothing yet. The tabs
+  turn with Q and E in a window; Keyboard and Controller are empty.
 
 ## Sound
 

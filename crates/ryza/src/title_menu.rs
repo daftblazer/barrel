@@ -86,11 +86,13 @@ pub struct Input {
     pub confirm: Option<i32>,
 }
 
-/// The frames the chosen item takes to fade out once chosen, from `CHOSEN_START`: 196, 121 and
-/// 45 of 255 on the capture's frames 0, 5 and 10 after the button.
-// STAND-IN: The fade's start (196/255) and length (13 frames) are fitted to those three values; the real thing is the item's own leave animation.
+/// The frames the chosen item takes to fade out once chosen, and the share of its pulse's opacity
+/// it starts from: the opacity is that share times the pulse where it stood at the button times
+/// 1 - frames / 13 (196, 121 and 45 of 255 on the capture's frames 0, 5 and 10 after the button
+/// on Load Game, the pulse at .879; 188, 115 and 43 on Settings, at .836).
+// STAND-IN: The fade's length (13 frames), its straight line and its start (.878 of the pulse) are fitted to those six values (each within 1.5 / 255); the real thing is the item's own leave animation.
 pub const CHOSEN_FADE: i32 = 13;
-const CHOSEN_START: f32 = 196.0 / 255.0;
+const CHOSEN_START: f32 = 0.878;
 
 /// The menu's layout and animations.
 #[derive(Clone, Debug, PartialEq)]
@@ -408,7 +410,7 @@ impl Menu {
                 false => self.slide_color.at(t)[3] / 255.0,
             };
             let alpha = match input.choose.filter(|&c| selected && frame >= c) {
-                Some(c) => CHOSEN_START * (1.0 - (frame - c) as f32 / CHOSEN_FADE as f32).max(0.0),
+                Some(c) => alpha * CHOSEN_START * (1.0 - (frame - c) as f32 / CHOSEN_FADE as f32).max(0.0),
                 None => alpha,
             };
             // the game's opacity is a byte: under one step of it nothing is drawn
