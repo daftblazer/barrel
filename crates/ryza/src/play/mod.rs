@@ -1122,7 +1122,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             linear[k] = false;
         }
     }
-    let (uploaded, outline_tex, white) = upload_textures(&gpu, renderer.pool, &textures, None, &linear)?;
+    let (uploaded, opaque, outline_tex, white) = upload_textures(&gpu, renderer.pool, &textures, None, &linear)?;
     // The cloud shadows' texture, sampled as sRGB as the game does.
     let cloud_texture = match &cloud {
         Some((_, bytes)) => Some(barrel_render::upload_texture(&gpu, renderer.pool, &G1t::parse(bytes)?.textures[0], true)?),
@@ -1147,7 +1147,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let wind = cloth::world_wind(gust, r.chara.cloth_wind_scale, 0.0);
         cloth.update(mesh, &r.joints, cloth::model_matrix(r.chara.size, r.player.turn, r.player.at), wind, 0.0, &mut palette);
     }
-    let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], specular_cubes: vec![specular_cube], white };
+    let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, opaque, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], specular_cubes: vec![specular_cube], white };
     let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
     // The camera: on the given point (or on Ryza in a window), framing the ground (render

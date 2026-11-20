@@ -12,6 +12,16 @@ use glam::Mat4;
 
 use crate::*;
 
+/// The parts of the scene pass's models (`Renderer::scene_pipelines`): the draws with opaque
+/// textures (no alpha test), the alpha-tested draws' depth (the test alone, no colour), and their
+/// shading (depth tested less or equal, not written: a pixel shaded once, by what is in front).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ScenePass {
+    Opaque,
+    Depth,
+    Tested,
+}
+
 pub struct Renderer {
     pub pool: vk::CommandPool,
     pub sampler: vk::Sampler,
@@ -57,6 +67,8 @@ pub struct Renderer {
     /// The scene pipeline with no face culling, for the draws a material shows from both
     /// sides (`Draw::two_sided`).
     pub pipeline_two_sided: vk::Pipeline,
+    /// The scene's models in its three parts (`ScenePass`), each one-sided and two-sided.
+    pub scene_pipelines: [[vk::Pipeline; 2]; 3],
     pub sky_pipeline: vk::Pipeline,
     /// The sky plane (sky.vert/frag): drawn first among the far plane's fragments when a
     /// frame asks (`Frame::sky_plane`).
@@ -706,6 +718,46 @@ impl Renderer {
             d.create_graphics_pipelines(vk::PipelineCache::null(), &[pipeline_info.rasterization_state(&two_sided_raster)], None).map_err(|(_, e)| e)?[0]
         };
 
+        // The three parts of the scene's models (`ScenePass`): the program without its alpha test,
+        // the test alone writing depth and no colour, and the whole program over that depth.
+        let part_entry = [
+            vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 },
+            vk::SpecializationMapEntry { constant_id: 2, offset: 4, size: 4 },
+            vk::SpecializationMapEntry { constant_id: 3, offset: 8, size: 4 },
+        ];
+        let part_data = |alpha_test: bool, depth_only: bool| -> [u8; 12] {
+            let mut b = [0u8; 12];
+            b[..4].copy_from_slice(&u32::from(from_scene).to_le_bytes());
+            b[4..8].copy_from_slice(&u32::from(alpha_test).to_le_bytes());
+            b[8..].copy_from_slice(&u32::from(depth_only).to_le_bytes());
+            b
+        };
+        let (opaque_data, depth_data, tested_data) = (part_data(false, false), part_data(true, true), part_data(true, false));
+        let opaque_special = vk::SpecializationInfo::default().map_entries(&part_entry).data(&opaque_data);
+        let depth_special = vk::SpecializationInfo::default().map_entries(&part_entry).data(&depth_data);
+        let tested_special = vk::SpecializationInfo::default().map_entries(&part_entry).data(&tested_data);
+        let fragment = vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main");
+        let opaque_stages = [stages[0], fragment.specialization_info(&opaque_special)];
+        let depth_stages = [stages[0], fragment.specialization_info(&depth_special)];
+        let tested_stages = [stages[0], fragment.specialization_info(&tested_special)];
+        let no_colour_att = [spec_kept; 4];
+        let no_colour = vk::PipelineColorBlendStateCreateInfo::default().attachments(&no_colour_att[..colour_targets]);
+        let over_depth = vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(true)
+            .depth_write_enable(false)
+            .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
+        let part_infos = [
+            pipeline_info.stages(&opaque_stages),
+            pipeline_info.stages(&depth_stages).color_blend_state(&no_colour),
+            pipeline_info.stages(&tested_stages).depth_stencil_state(&over_depth),
+        ];
+        let mut scene_pipelines = [[vk::Pipeline::null(); 2]; 3];
+        for (k, info) in part_infos.iter().enumerate() {
+            for (sides, r) in [&raster, &two_sided_raster].into_iter().enumerate() {
+                scene_pipelines[k][sides] = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info.rasterization_state(r)], None).map_err(|(_, e)| e)?[0] };
+            }
+        }
+
         // The distant view: drawn after the field's opaque geometry with a viewport whose depth range
         // is 1 to 1 (its clipping unchanged, every fragment on the far plane), where the depth is
         // still the cleared 1.0: only the pixels nothing covers are shaded. No depth write, so its
@@ -902,7 +954,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1197,6 +1249,12 @@ impl Renderer {
             );
             d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: scene_width as f32, height: scene_height as f32, min_depth: 0.0, max_depth: 1.0 }]);
             d.cmd_set_scissor(cb, 0, &[scene_area]);
+            // The shader runs of the opaque scene (`--timings`), inside its pass.
+            let mut counting = false;
+            if let Some(t) = &timer {
+                t.count(d, cb, true);
+                counting = true;
+            }
             d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);
             d.cmd_bind_index_buffer(cb, ibuf, 0, vk::IndexType::UINT32);
             let mut push = scene_push;
@@ -1257,23 +1315,36 @@ impl Renderer {
                 d.cmd_draw(cb, water_pieces * WATER_PIECE_VERTICES, 1, 0, 0);
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipe);
             }
-            let mut two_sided = false;
             let mut dome_seen = 0usize;
-            for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)).filter(|d| {
+            let visible: Vec<&Draw> = draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now))).filter(|d| d.sky == pass_sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d) && in_sight(d)).filter(|d| {
                 // The stage dumps' stops inside the dome: its first layers only.
                 if pass_sky && d.name == "sky dome" {
                     dome_seen += 1;
                     return dome_seen <= upto.dome_layers();
                 }
                 true
-            }) {
+            }).collect();
+            // The scene in three parts (`ScenePass`): the draws whose textures are opaque, without
+            // an alpha test (the GPU's early depth test keeps them); then the alpha-tested ones'
+            // depth, then their shading against it, so each covered pixel is lit once however
+            // many leaves lie over it. The distant view is one part, in its order.
+            let opaque_texture = |dr: &Draw| scene.opaque.get(dr.texture).copied().unwrap_or(false);
+            let parts: &[Option<ScenePass>] = if pass_sky { &[None] } else { &[Some(ScenePass::Opaque), Some(ScenePass::Depth), Some(ScenePass::Tested)] };
+            for &part in parts {
+            let mut bound = None;
+            for &draw in visible.iter().filter(|&&dr| part.is_none_or(|p| (p == ScenePass::Opaque) == opaque_texture(dr))) {
                 // The instance, and whether it is shaded as a character (not part of a field), as
                 // an eye and as the distant view; the game's own material bits and tint.
                 let (bits, tint) = material(draw);
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | bits;
-                if draw.two_sided != two_sided {
-                    two_sided = draw.two_sided;
-                    d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if two_sided { self.pipeline_two_sided } else { pipe });
+                if bound != Some(draw.two_sided) {
+                    bound = Some(draw.two_sided);
+                    let p = match part {
+                        Some(p) => self.scene_pipelines[p as usize][usize::from(draw.two_sided)],
+                        None if draw.two_sided => self.pipeline_two_sided,
+                        None => pipe,
+                    };
+                    d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, p);
                 }
                 let mut per_draw = [0u8; 16];
                 per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
@@ -1284,6 +1355,9 @@ impl Renderer {
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 0, &[sets[draw.texture]], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[draw.mask.unwrap_or(white)], sets[draw.emission.unwrap_or(white)], sets[draw.specular.unwrap_or(white)]], &[]);
                 d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
+                if part == Some(ScenePass::Depth) {
+                    continue;
+                }
                 if trace3d.on() {
                     let inst = &instances[draw.instance as usize];
                     // A character's mask slot holds the toon ramp (flag 128), a texture of Barrel's own.
@@ -1299,10 +1373,15 @@ impl Renderer {
                 }
                 drawn[0] += 1;
             }
+            }
             // The water, over the opaque scene (it writes depth: the sky plane shows past it).
             if !pass_sky && water_pieces > 0 && upto != dump::Stop::Chara {
                 if refract {
                     // The second part of the scene pass, after a copy of the first.
+                    if let (Some(t), true) = (&timer, counting) {
+                        t.count(d, cb, false);
+                        counting = false;
+                    }
                     d.cmd_end_render_pass(cb);
                     // The half-size normal and depth target from the opaque scene, which the water
                     // and the reflections read (the depth read in the shader layout meanwhile).
@@ -1411,6 +1490,9 @@ impl Renderer {
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[white], sets[white], sets[draw.specular.unwrap_or(white)]], &[]);
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 }
+            }
+            if let (Some(t), true) = (&timer, counting) {
+                t.count(d, cb, false);
             }
             d.cmd_end_render_pass(cb);
             // The half-size normal and depth target from the scene pass (a frame with water built
@@ -1626,6 +1708,9 @@ impl Renderer {
             d.destroy_pipeline(self.ao_gbuf_pipeline, None);
             d.destroy_pipeline(self.ao_gbuf_two_sided_pipeline, None);
             d.destroy_pipeline(self.pipeline_two_sided, None);
+            for p in self.scene_pipelines.iter().flatten() {
+                d.destroy_pipeline(*p, None);
+            }
             d.destroy_pipeline(self.ao_gbuf_terrain_pipeline, None);
             d.destroy_pipeline(self.shadow_pipeline, None);
             d.destroy_pipeline(self.shadow_cascade_pipeline, None);

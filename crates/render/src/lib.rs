@@ -387,6 +387,8 @@ pub struct Gpu {
     pub memory: vk::PhysicalDeviceMemoryProperties,
     /// The most anisotropic filtering the device allows (1 without the feature).
     pub max_anisotropy: f32,
+    /// Pipeline statistics queries (`--timings` counts the scene pass's shader runs with them).
+    pub pipeline_stats: bool,
     /// The alignment of a uniform or storage buffer binding's offset (`ring::Ring` slots).
     pub offset_alignment: u64,
     /// The window loop's frame being prepared, counted up as each is submitted: the CPU writes
@@ -447,7 +449,8 @@ impl Gpu {
             .independent_blend(features.independent_blend != 0)
             .shader_storage_image_write_without_format(features.shader_storage_image_write_without_format != 0)
             .shader_storage_image_read_without_format(features.shader_storage_image_read_without_format != 0)
-            .sampler_anisotropy(features.sampler_anisotropy != 0);
+            .sampler_anisotropy(features.sampler_anisotropy != 0)
+            .pipeline_statistics_query(features.pipeline_statistics_query != 0);
         let max_anisotropy = if features.sampler_anisotropy != 0 { props.limits.max_sampler_anisotropy } else { 1.0 };
         let swapchain_ext = [ash::khr::swapchain::NAME.as_ptr()];
         let device = unsafe {
@@ -463,7 +466,7 @@ impl Gpu {
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
         let memory = unsafe { instance.get_physical_device_memory_properties(physical) };
         let offset_alignment = props.limits.min_uniform_buffer_offset_alignment.max(props.limits.min_storage_buffer_offset_alignment).max(16);
-        Ok(Gpu { _entry: entry, instance, physical, device, queue, queue_family, memory, max_anisotropy, offset_alignment, frame: std::cell::Cell::new(0) })
+        Ok(Gpu { _entry: entry, instance, physical, device, queue, queue_family, memory, max_anisotropy, pipeline_stats: features.pipeline_statistics_query != 0, offset_alignment, frame: std::cell::Cell::new(0) })
     }
 
     pub fn memory_type(&self, bits: u32, flags: vk::MemoryPropertyFlags) -> Result<u32> {
@@ -1405,7 +1408,8 @@ pub fn composite_overlays(draws: &mut [Draw], all_textures: &[&barrel_formats::g
 
 /// Uploads a scene's textures (BC blocks with all mip levels), then the characters' outline
 /// texture (`Data/x64/Shader/texture/outline.g1t` under ROOT, if found) and a white one for
-/// masks a material does not have: the textures, the outline's slot and white's. `linear`
+/// masks a material does not have: the textures, whether each is opaque (`Texture::opaque`:
+/// no texel an alpha test could reject), the outline's slot and white's. `linear`
 /// says which are colour textures to sample in linear light (`upload_texture`; none when empty).
 pub fn upload_textures(
     gpu: &Gpu,
@@ -1413,11 +1417,12 @@ pub fn upload_textures(
     all_textures: &[&barrel_formats::g1t::Texture],
     root: Option<&Path>,
     linear: &[bool],
-) -> Result<(Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>, Option<usize>, usize)> {
+) -> Result<(Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>, Vec<bool>, Option<usize>, usize)> {
     if trace::enabled() {
         trace::scene_textures(all_textures.iter().map(|t| trace::texture_name(t)).collect());
     }
     let mut textures = Vec::new();
+    let mut opaque: Vec<bool> = all_textures.iter().map(|t| t.opaque()).collect();
     for (k, t) in all_textures.iter().enumerate() {
         textures.push(upload_texture(gpu, pool, t, linear.get(k).copied().unwrap_or(false))?);
     }
@@ -1427,6 +1432,7 @@ pub fn upload_textures(
         match bytes.as_ref().and_then(|b| G1t::parse(b).ok()).and_then(|g| g.textures.into_iter().next().map(|t| upload_texture(gpu, pool, &t, false))) {
             Some(t) => {
                 textures.push(t?);
+                opaque.push(false);
                 Some(textures.len() - 1)
             }
             None => None,
@@ -1441,7 +1447,8 @@ pub fn upload_textures(
         &barrel_formats::g1t::Texture { width: 1, height: 1, format: Format::Rgba8, format_code: 1, layers: 1, volume: false, levels: vec![&white_px[..]] },
         false,
     )?);
-    Ok((textures, outline_tex, white))
+    opaque.push(true);
+    Ok((textures, opaque, outline_tex, white))
 }
 
 /// The texture each layer's normal map is, when every layer has one inside the pack of `count`

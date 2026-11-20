@@ -179,6 +179,59 @@ impl<'a> G1t<'a> {
 }
 
 impl Texture<'_> {
+    /// Whether every texel of every level has full alpha, so an alpha test can never reject one
+    /// (a renderer may then draw it with a program that has none). Exact for RGBA8, BC1 and
+    /// BC3; for BC7, blocks of the colour-only modes and of the alpha modes with both alpha
+    /// endpoints full (rotation 0) count, any other block does not. Formats without alpha
+    /// (BC4, BC5, BC6H, floats) sample alpha 1.
+    pub fn opaque(&self) -> bool {
+        let all = |size: usize, f: &dyn Fn(&[u8]) -> bool| self.levels.iter().all(|l| l.chunks_exact(size).all(f));
+        match self.format {
+            Format::Rgba8 => all(4, &|p| p[3] == 255),
+            Format::Bc1 => all(8, &|b| {
+                // Three colours and transparent black when c0 <= c1: index 3 is the transparent one.
+                let (c0, c1) = (u16::from_le_bytes([b[0], b[1]]), u16::from_le_bytes([b[2], b[3]]));
+                let idx = u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
+                c0 > c1 || (0..16).all(|k| (idx >> (2 * k)) & 3 != 3)
+            }),
+            Format::Bc3 => all(16, &|b| {
+                let (a0, a1) = (b[0], b[1]);
+                let idx = u64::from_le_bytes([b[2], b[3], b[4], b[5], b[6], b[7], 0, 0]);
+                // The indices whose value is 255: the endpoints where they are 255, and with
+                // a0 <= a1 index 7 (255 itself) and the in-betweens when both ends are 255.
+                let full = |i: u64| match i {
+                    0 => a0 == 255,
+                    1 => a1 == 255,
+                    7 if a0 <= a1 => true,
+                    6 => a0 > a1 && a0 == 255 && a1 == 255,
+                    _ => a0 == 255 && a1 == 255,
+                };
+                (0..16).all(|k| full((idx >> (3 * k)) & 7))
+            }),
+            Format::Bc7 => all(16, &|b| {
+                let bits = u128::from_le_bytes(b.try_into().unwrap());
+                let field = |at: u32, n: u32| ((bits >> at) & ((1u128 << n) - 1)) as u32;
+                match bits.trailing_zeros() {
+                    0..=3 => true,
+                    // Mode 4: rotation (2 bits at 5), index mode, six 5-bit colour endpoints,
+                    // then two 6-bit alpha endpoints.
+                    4 => field(5, 2) == 0 && field(38, 6) == 63 && field(44, 6) == 63,
+                    // Mode 5: rotation (2 bits at 6), six 7-bit colour endpoints, two 8-bit alpha.
+                    5 => field(6, 2) == 0 && field(50, 8) == 255 && field(58, 8) == 255,
+                    // Mode 6: eight 7-bit endpoints from bit 7 (alpha the last two), then a
+                    // p-bit each.
+                    6 => field(49, 7) == 127 && field(56, 7) == 127 && field(63, 2) == 3,
+                    // Mode 7: a 6-bit partition, twelve 5-bit colour endpoints, four 5-bit alpha,
+                    // four p-bits.
+                    7 => (0..4).all(|k| field(74 + 5 * k, 5) == 31) && field(94, 4) == 15,
+                    _ => false,
+                }
+            }),
+            Format::Bc4 | Format::Bc5 | Format::Bc6h => true,
+            _ => false,
+        }
+    }
+
     /// The largest level's first layer as 8-bit RGBA, rows top to bottom. BC6H is not
     /// decoded in software yet and comes out black; a float heightmap comes out grey, its
     /// range stretched to 0..255.
@@ -245,6 +298,39 @@ impl Texture<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn opaque_reads_each_formats_alpha() {
+        let t = |format, bytes: &[u8]| Texture { width: 4, height: 4, format, format_code: 0, layers: 1, volume: false, levels: vec![bytes] }.opaque();
+        // BC1: four colours (c0 > c1) are opaque; three colours with index 3 used are not.
+        assert!(t(Format::Bc1, &[2, 0, 1, 0, 0xff, 0xff, 0xff, 0xff]));
+        assert!(!t(Format::Bc1, &[1, 0, 2, 0, 0xff, 0xff, 0xff, 0xff]));
+        assert!(t(Format::Bc1, &[1, 0, 2, 0, 0x55, 0x55, 0x55, 0x55]));
+        // BC3: both ends 255; an end below 255 that a texel uses; index 7 (255) with a0 <= a1.
+        let mut b = [0u8; 16];
+        b[0] = 255;
+        b[1] = 255;
+        assert!(t(Format::Bc3, &b));
+        b[1] = 0;
+        assert!(t(Format::Bc3, &b), "every texel takes index 0 (255)");
+        b[2] = 1;
+        assert!(!t(Format::Bc3, &b), "a texel takes index 1 (0)");
+        let mut c = [0u8; 16];
+        c[0] = 10;
+        c[1] = 20;
+        c[2..8].copy_from_slice(&[0xff; 6]);
+        assert!(t(Format::Bc3, &c), "all index 7: 255");
+        // BC7: mode 1 has no alpha; mode 6 with full alpha ends and p-bits, and without.
+        let mut m = [0u8; 16];
+        m[0] = 0b10;
+        assert!(t(Format::Bc7, &m));
+        let mut six = 1u128 << 6 | 127u128 << 49 | 127u128 << 56 | 3u128 << 63;
+        assert!(t(Format::Bc7, &six.to_le_bytes()));
+        six &= !(1u128 << 63);
+        assert!(!t(Format::Bc7, &six.to_le_bytes()));
+        assert!(!t(Format::Rgba8, &[9, 9, 9, 254]));
+        assert!(t(Format::Bc5, &[0; 16]));
+    }
+
     #[test]
     fn drops_top_levels_while_blocks_remain() {
         let px = [0u8; 64];

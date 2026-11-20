@@ -1344,6 +1344,20 @@ not built. TAA follows the game's `Taa`; texture quality is `texture_bias`; Line
 anisotropy 1, Anisotropic 16. These apply when the player gave any of the game's settings
 (`barrel_ryza::graphics::Settings::given`).
 
+## The scene pass's three parts
+
+The field's models are drawn in three parts (`ScenePass`, `Renderer::scene_pipelines`). First the
+draws whose textures are opaque (`Texture::opaque`: no texel of any level under full alpha), with
+`model.frag`'s alpha test compiled out (`ALPHA_TEST`), so the GPU keeps its early depth test (on
+a tiler, its coarse depth: Adreno's LRZ). Then the alpha-tested draws' depth alone
+(`DEPTH_ONLY`: the texture's alpha against the reference, no colour written), then their full
+program over that depth, tested less or equal and not written: without a depth write the early
+test holds despite the discard, and each pixel under many leaves is lit once. `model.vert`'s
+position is `invariant` so the two passes agree. At the Rasenboden gate (1080p, the game's Low)
+the trees' cards were 5.2 of the scene's 9.0 million pixel-shader runs; on the PC the scene stage
+went from 1.62 to 1.11 ms, the image the same but for 54 pixels (2026-11-19). `--timings` prints
+the scene pass's pixel and vertex shader runs where the device has pipeline statistics.
+
 ## Foliage
 
 `RenderSettings::foliage` (full, reduced, least; config `foliage`) is how much of a field's

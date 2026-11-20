@@ -130,6 +130,10 @@ float lambert(vec3 n, vec3 dir) {
     return dot(dir, dir) > 0.0 ? max(dot(n, -normalize(dir)), 0.0) : 0.0;
 }
 
+// The same position in every pipeline (the alpha-tested draws' depth pre-pass and their shading
+// pass after it test depth against each other).
+invariant gl_Position;
+
 void main() {
     Instance i = instances.inst[pc.instance];
     vec4 pos = vec4(in_pos, 1.0);

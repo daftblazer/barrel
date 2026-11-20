@@ -121,6 +121,12 @@ layout(location = 3) out vec4 spec_env;
 // normal and depth target, `gbuf_derive.frag`) takes the motion vectors' attachment (the scene pass
 // has no motion vectors then); set by the scene pass's pipelines.
 layout(constant_id = 1) const bool NORMAL_AS_MOTION = false;
+// The field models' alpha test (off for draws whose textures have no texel under the reference:
+// the program without a discard keeps the GPU's early depth test).
+layout(constant_id = 2) const bool ALPHA_TEST = true;
+// The alpha-tested draws' depth pre-pass: the alpha test alone, no colour (its pipeline writes
+// none), so the shading pass after it runs the full program once per pixel.
+layout(constant_id = 3) const bool DEPTH_ONLY = false;
 layout(location = 11) flat in vec4 tint_mul;
 layout(location = 12) flat in vec4 tint_add;
 // The mesh's tangent (turned like the normal) and the bitangent's sign; zero without one.
@@ -174,9 +180,13 @@ void main() {
     spec_light = vec4(0.0);
     spec_env = vec4(0.0);
     vec4 c = texture(tex, uv);
+    if (DEPTH_ONLY) {
+        if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
+        return;
+    }
     // The stage dump of the sun's share (`dump::Stop::Shadow`): what the shading multiplies the sun by.
     if (look.shadow_info.w > 0.5 && (pc.flags & 4096u) == 0u && ((pc.flags & 8u) == 0u || (pc.flags & 16u) != 0u)) {
-        if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
+        if (ALPHA_TEST && c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
         // (Stage 2: the coverage of a Ryza character, flag 128.)
         float share = look.shadow_info.w > 1.5 ? float((pc.flags & 128u) != 0u) : sun_shadow(world) * cloud_light(world);
         color = vec4(vec3(share) * pc.params.w, 1.0);
@@ -186,7 +196,7 @@ void main() {
         // The distant view, blended by its alpha (clouds over the dome); its solid pieces
         // (flag 16: ground, stones, trees, cliffs) alpha-tested like the field's models.
         if ((pc.flags & 16u) != 0u) {
-            if (c.a < pc.params.x) discard;
+            if (ALPHA_TEST && c.a < pc.params.x) discard;
             c.a = 1.0;
             if (AO_PASS) {
                 color = vec4(normalize(normal), 1.0 / gl_FragCoord.w);
@@ -241,7 +251,7 @@ void main() {
         return;
     }
     // The alpha test: a swaying draw (a plant) against its own reference (params.y).
-    if (c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
+    if (ALPHA_TEST && c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
     if ((pc.flags & (1u << 25)) != 0u) {
         // The game's forward pass over a character (`sh0d2367f637ea8f6a`, docs/shading.md, "Her
         // forward pass"): the colour tile plus, with a specular map, its red times the two

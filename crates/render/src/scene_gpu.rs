@@ -19,6 +19,8 @@ pub struct SceneData<'a> {
     pub vertices: &'a [u8],
     pub indices: &'a [u8],
     pub textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    /// Whether each texture is opaque (`upload_textures`; missing: not known, alpha-tested).
+    pub opaque: Vec<bool>,
     pub instances: &'a [Instance],
     pub palette: &'a [Mat4],
     pub deltas: &'a [[f32; 4]],
@@ -102,6 +104,8 @@ pub struct SceneGpu {
     pub ibuf: vk::Buffer,
     imem: vk::DeviceMemory,
     textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    /// Whether each texture is opaque (`SceneData::opaque`): its draws need no alpha test.
+    pub opaque: Vec<bool>,
     pool: vk::DescriptorPool,
     /// The per-frame data, one slot per frame in flight: the instances, the joint palette (this
     /// frame's joints, then last frame's at `half`) and the morph weights.
@@ -255,6 +259,7 @@ impl SceneGpu {
             ibuf,
             imem,
             textures,
+            opaque: data.opaque,
             pool,
             instances,
             palette,
