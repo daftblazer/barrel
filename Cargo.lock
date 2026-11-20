@@ -91,6 +91,7 @@ dependencies = [
  "barrel-ryza",
  "encoding_rs",
  "glam",
+ "serde_json",
 ]
 
 [[package]]

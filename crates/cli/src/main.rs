@@ -1,5 +1,7 @@
 //! `barrel-tool`: inspect and unpack Atelier game data.
 
+mod chara_gltf;
+mod gltf;
 mod ryza_walk;
 mod unread;
 
@@ -33,7 +35,8 @@ usage:
   barrel-tool g1t FILE OUTDIR       write a texture pack's textures as PNG (FILE.elixir.gz#N for an entry)
   barrel-tool g1t-scan DIR          read every texture, loose and in containers
   barrel-tool g1m-obj FILE#N OUT.obj  write a model's submeshes as Wavefront OBJ
-  barrel-tool g1m-bones FILE#N      a model's chunks, joints and submesh bone palettes
+  barrel-tool chara-gltf INSTALL CHARA OUT.glb [--pose MOTION] [--only N,M]  a Ryza DX character (pc00a, pc00b ...) as glTF: LOD 0 mesh, skeleton, skin, textures; --pose adds a motion as an animation
+  barrel-tool g1m-bones FILE#N     a model's chunks, joints and submesh bone palettes
   barrel-tool g1m-materials FILE#N  a model's materials: each texture's index, kind and subtype, and which submeshes use it
   barrel-tool g1h FILE#N            list a morph file's sets and targets
   barrel-tool g1h-scan DIR          read every morph file in the containers under DIR
@@ -159,7 +162,8 @@ fn main() -> ExitCode {
         ["opl2-scan", dir] => opl2_scan(Path::new(dir)),
         ["opl2-scan", paks @ ..] => opl2_scan_paks(paks),
         ["opl2", file] => opl2_list(file),
-        ["ryza-commands", root, event] => ryza_commands(Path::new(root), event, ""),
+        ["chara-gltf", root, chara, out, rest @ ..] => chara_gltf_cmd(Path::new(root), chara, Path::new(out), rest),
+        ["ryza-commands", root, event] =>ryza_commands(Path::new(root), event, ""),
         ["ryza-commands", root, event, draws] => ryza_commands(Path::new(root), event, draws),
         ["walk", args @ ..] => ryza_walk::run(args),
         ["ryza-field", root] => ryza_field(Path::new(root), None),
@@ -4659,4 +4663,18 @@ fn ktsr_ls(file: &Path) -> Result<()> {
         println!("{:08x} {} {}", s.id, s.offset, s.size);
     }
     Ok(())
+}
+
+fn chara_gltf_cmd(root: &Path, chara: &str, out: &Path, rest: &[&str]) -> Result<()> {
+    let mut opts = chara_gltf::Options::default();
+    let mut it = rest.iter();
+    while let Some(&flag) = it.next() {
+        let value = it.next().ok_or(format!("{flag} needs a value"))?;
+        match flag {
+            "--pose" => opts.pose = Some(value.parse()?),
+            "--only" => opts.only = Some(value.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?),
+            _ => return Err(format!("unknown option {flag}").into()),
+        }
+    }
+    chara_gltf::export(root, chara, out, &opts)
 }
