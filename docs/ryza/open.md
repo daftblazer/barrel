@@ -118,13 +118,15 @@ layer, frame and north mark (`uil_a21_fm_minimap.xml`, `a21_minimap_image_006`),
 picture and count with the game's nine-copy shadow (the same file's `cage`), the equipped tool's
 disc (`uil_a21_collect_item.xml`) and the clock (`uil_a21_time_display.xml`: disc, period picture,
 plate, AM or PM, hour), positions from the layouts and pictures from `uis_gen_a21_field`, `_icon`,
-`_a21v2_common`, `_a21v2_various`. Rows `hud-2030, 2230, 2530, 2830, 3330` (hud-walk, 61 quads):
-every quad matches but the minimap's markers (9 left); `hud-3130` has 12 (three more markers).
+`_a21v2_common`, `_a21v2_various`. The minimap's markers (2026-11-20: exits, talkable townsfolk, the story's destination with its
+two additive glows; see Markers below). Rows `hud-2030, 2230, 2530, 2830, 3330` (hud-walk, 61
+quads) at 0 mismatches; `hud-3130` at 3 (three zero-size quads the game draws, see Left).
 
 What the capture shows (read, not in a table):
 - The terrain picture is drawn twice over (uv 0 to 2, 1,024 layout pixels) and slides under her
-  fixed arrow: its corner moves 1 layout pixel per 120 game units in x and per 125 in z
-  (`TERRAIN_PER_UNIT`, `TERRAIN_ORIGIN`: fitted to the six frames, Rasenboden only; the game's
+  fixed arrow: its corner moves 1 layout pixel per 125 game units in x and in z
+  (`TERRAIN_PER_UNIT`, `TERRAIN_ORIGIN`: fitted to the six frames, Rasenboden only, x was 120
+  until the markers showed 125: the six frames differ by one constant 10.73 layout pixels; the game's
   per-map bounds are not in its tables). The map does not turn with the camera; only her arrow does.
 - Her arrow turns about its middle by 180 minus her turn, kept within a quarter either side and
   with the texture coordinates flipped for the other half (all six frames).
@@ -135,28 +137,55 @@ What the capture shows (read, not in a table):
   inverse). Barrel: `barrel_render::text::Clip` (the mask not drawn, the clipped quads only
   where its picture is not clear); the tool disc's mask hides only (the tool sits inside it).
 
+Markers (built `field_hud.rs`, `play::minimap_markers`; the order the game draws them: the exits and
+the townsfolk with the terrain inside the mask clip, then her arrow, the frame's pieces and the
+north mark, then the destination and its two glows, over the frame and not clipped):
+- A marker's centre is `(1729, 886) + (thing - her) / 83.33` pixels on 1080 lines in x and z
+  alike (`MARKER_UNITS_PER_PIXEL` 125 game units a layout pixel; all 18 exit markers of the six frames
+  to under half a pixel). Pictures come from the minimap layout's `clone_targets` nodes
+  (`icon_fm_change_img`, `icon_npc`, `icon_map_change_destination_img` and its `_eff_01`,
+  `_eff_02`: a style and an `image_no`).
+- Exits: `gimmick::exits`, the field's `FIELDMAP_CHANGE_EX` rows within their story span
+  (Rasenboden at the capture's save: fixID 13, 6, 9; 15 waits for `MM00_030`, 43 for `MM02_100`).
+- Townsfolk: the people standing at the hour of the save's clock (the clock's own periods, not
+  the scene's `--time`) whose `npcpeople` row says `talk="1"` (`Npc::talk`): NPC24A_00 and the two
+  boys, 3 of the 22 standing. The ones that walk a path have no place read (0, 0, 0): they are
+  not marked, whether the game marks them is not checked.
+- Destination: `mapmarker::current` (docs/tables.md, "Ryza DX: map markers"): a place of this
+  field when the row has one, else the exit toward the row's field. That map is a STAND-IN
+  (`EXITS_TOWARD`: only Rasenboden to Boden, exit 6, read off the capture; the exits' targets
+  are not in the tables). It sits on the ring of 80 layout pixels (`DESTINATION_RING`) when
+  farther than that from the arrow, else where it is.
+- Glows: `a21_field.g1t#1` pictures 2 and 3 (80 and 72 pixels), additive (`Layer::set_blended`, the
+  render layer's second pipeline: source alpha, destination one), colour (155, 255, 255), both with
+  alpha 0 until frame 5 of the loop, 1 at 10, 0 at 70 (`anm_icon_eff_blink_01` and `_02`); the first
+  also scales 0.8 until 10 then eases out to 1 at 70. The loop is 71 capture frames
+  (`GLOW_PERIOD`) with its start at frame -49 (`GLOW_PHASE`): fitted to the 75 glow quads of
+  1740-2560, alpha within 1/255. `--hud-at FRAME` starts the pulse at a capture frame (the rows
+  use it); a free run starts at 0, the game's own phase being the loop's arbitrary place.
+- hud-3130 has three more game quads (64): zero-width rects at (1590.6, 557.9) of a texture
+  the index does not name (`texb30d0f0369bea579`, uv 21 to 33 wide), drawn with a 3D matrix
+  behind them: a 3D draw the diff counts as a quad, invisible. Not built.
+
 Left:
-- Markers (read 2026-11-20 off `hud-walk` 2030-3330 against the tables, not built): a marker's
-  centre is `(1729, 886) + (thing - her) / 83.33` pixels on 1080 lines in x and z alike (125
-  game units a layout pixel; all 18 exit markers of the six frames fit to under half a pixel;
-  the terrain's fitted 120 in x is likely 125 too). Which things:
-  - Exits (picture at (1902, 3127) of the field atlas): the field's `FIELDMAP_CHANGE_EX`
-    gimmicks (`gimmick_fieldmap_<field>.xml`; in Rasenboden fixID 13, 6, 9 in view).
-  - Townsfolk (`mmap_icon` picture 5): the field's people at their `npcmarker.xml` places
-    (`<FIELD>_marker`, all within 37 units), the ones standing for the story and time.
-  - Destination (picture at (0.4834, 0.7634), two additive glows from `a21_field.g1t#1`,
-    pulsing): `saves\mapmarker\mapmarker.xml`, the row whose `startEv` has played and
-    `endEv0` not: its `fieldMapTag` is where the story goes next (`targetX/Z` in metres when
-    it is in that map). For the autosave it is `S08_T_BODEN`: the marker points at exit 6 (to
-    Boden; the five frames' pointing rays cross at (42607, 39481), the exit is at (42618,
-    39467)) and, being off the map, sits on a ring 120 pixels (80 layout pixels) from the
-    middle in that direction.
 - STAND-INs: the basket's count (225 in the capture), the clock hour from the save's `time` word
   (50 to the hour fits the one capture: 493 shows AM 10; the game's clock does not advance in the
   50 seconds walked), the clock picture by period (picture 2 for 10 AM; the others guessed), the
   tool (the first) and the arrow's middle (1729, 886 on 1080 lines, read off the capture).
-- The area name (`current_place`, hidden in the steady HUD) and the message popups at arrival
-  (1760-1930) and from 3430 are not built or identified.
+- The popups (identified 2026-11-20 from `hud-walk` 1800 and 3500, not built):
+  - 1760-1930, the area banner: a picture of `a21_field#3` (402, -3, 1522, 267 on 1080 lines, uv 0 to 0.547 x 0.132) with
+    "Kurken Island" in `mainfont01` at (833, 113) and drawn as ten copies (the shadow, alpha 0.5
+    then 1), and under it a second plate (591, 159, 1331, 359; alpha 0.34 at frame 1800, uv
+    0.5518 to 0.913 x 0 to 0.098) with "Rasen District" at (845, 245) in the same ten copies. They fade in and out
+    (alphas 0.17 to 1 at 1800). Taken from the field layout set (`uil_a21_*` the area-name file,
+    the strings in `str_ui`); the layout file is not read yet.
+  - from 3430, the button help bar along the bottom (729 to 1920, y 1026 to 1092): seven pieces
+    of `a21_common#3` (a stretched plate like the load screen's help bar, `load_view`'s
+    `help_bar`) with the words "Event Log", "Full Map", "Photo Mode", "Memo", "Swing Menu",
+    "PC Menu" and a button glyph before each (private-use characters of `mainfont01`), 66 glyphs
+    and the clock's two `mainfont00` texts: the help bar shared with the load screen, here
+    listing the field's keys. Not built: the layout file and where the words come from are not
+    read.
 
 ## The load screen (title menu, Load Game)
 

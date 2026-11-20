@@ -2471,6 +2471,9 @@ presumably the job's length in days; where a job's time is first set was not fou
 
 ## Ryza DX: field NPCs (`Saves/fieldmap/npc/`)
 
+The minimap marks the people whose `npcpeople.xml` row has `talk="1"` (3 of the 22 standing in
+Rasenboden at the capture's story and hour: the two boys and the man; `Npc::talk`).
+
 A field's townsfolk come from four Shift_JIS tables of `PACK02.PAK` (`barrel_ryza::npc`).
 `npcbasedata.xml` is `<FIELD><FIELD_BaseData people= marker= condition= [message_tag=]/>...</FIELD>`,
 one row a person (FIELD in upper case, `S06_T_RASEN`). The tags are not attributes of the other
@@ -2537,6 +2540,8 @@ sometimes `objScale`, `objRot`, `startEvent`, `endEvent`, `startTZ`, `endTZ`.
   position. The boards at (334.62, 59.91, 311.2) and (275.23, 49.96, 407.29) match the capture's
   at (33462, 5991, 31120) and (27523, 4996, 40729) to a unit (both turned 360 degrees; the
   turn's direction and `objRot` are not checked against a capture).
+- The `FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX` rows are the field's exits, with or without a
+  model; the minimap marks them (`gimmick::exits`). Each `MAP_CHANGE_INFO` sits beside one.
 - `startEvent` and `endEvent` are a story span ("Ryza DX: story spans" below): the row is
   there within it (the game's `0x1403eccb1`, `0x1403f09d1`). Rasenboden's grapes, flowers,
   bushes, crates, honeycombs and sea urchins all start at `EVENT_MM01_111`, the field's other
@@ -2550,6 +2555,18 @@ sometimes `objScale`, `objRot`, `startEvent`, `endEvent`, `startTZ`, `endTZ`.
 - The grapes the capture draws (at 33605, 5547, 39929 and 29142, 5676, 42013) are not rows of
   this table (its grapes are at x 339 to 410, z 233 to 263 and start at `EVENT_MM01_111`);
   where they come from is open.
+
+## Ryza DX: map markers (`Saves/mapmarker/mapmarker.xml`)
+
+One `<MapMarker fieldMapTag= startEv= endEv0= [targetX= targetZ=]/>` a stretch of the main story
+(`barrel_ryza::mapmarker`): the row whose `startEv` has played and `endEv0` has not (the same
+test as a span, "Ryza DX: story spans") is where the story goes next, `fieldMapTag` the field
+(`S08_T_BODEN`), `targetX` and `targetZ` a place in metres when it is in that map (451, 249.22 in
+Rasenboden); the other rows have none and the marker points at the exit toward that field. Events
+are named without `EVENT_`. The save in Rasenboden (`MM00_010` played, `MM00_020` not) is at the
+first row, Boden. The minimap draws it (docs/ryza/open.md, "Field HUD"). Which exit leads where is
+not in any table read (`FIELDMAP_CHANGE_EX` rows carry no target); Barrel has the one pair read off
+the capture (Rasenboden's exit 6 toward Boden).
 
 ## Ryza DX: story spans
 
