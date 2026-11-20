@@ -1802,11 +1802,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 flow::Stage::Screen { on, list, notice } => {
                     if let Some((layer, view, boot)) = load_screen.as_mut() {
                         quads = vec![text::Quad { turn: false, spin: None, rect: [0.0, 0.0, width as f32, height as f32], uv: [-1.0; 4], color: [0.0, 0.0, 0.0, 1.0], texture: 0 }];
-                        if let Some((age, leaving)) = list {
-                            quads.extend(view.quads(&save_slots, barrel_ryza::load_view::Moment { age, leaving, on }, (width, height)));
-                        }
-                        if let Some((word, age, alpha)) = notice {
-                            quads.extend(boot.loading_notice(word, age as f32 / 60.0, alpha, (width, height)));
+                        // The notice sits under the help bar in the game's draw order.
+                        let notice = notice.filter(|n| n.2 > 0.0).map(|(word, age, alpha)| boot.loading_notice(word, age as f32 / 60.0, alpha, (width, height))).unwrap_or_default();
+                        match list {
+                            Some((age, leaving)) => quads.extend(view.quads(&save_slots, barrel_ryza::load_view::Moment { age, leaving, on }, notice, (width, height))),
+                            None => quads.extend(notice),
                         }
                         layer.set(&gpu, &quads)?;
                         own_layer = true;

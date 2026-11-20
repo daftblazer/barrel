@@ -406,13 +406,21 @@ impl Pen<'_> {
     }
 }
 
+/// The help plate's shortest width (376.5 px of the capture at 1.5 px a layout pixel), the frames
+/// its grow and shrink take, and the frames after the choice the shrink starts at (fitted).
+const PLATE_MIN: f32 = 376.5 / 1.5;
+const PLATE_FRAMES: f32 = 6.4;
+const PLATE_LEAVE: f32 = 2.6;
+
 impl View {
     fn string(&self, n: u32) -> &str {
         self.strings.get(&(STR_UI_BASE + n)).map_or("", String::as_str)
     }
 
-    /// The load screen's quads for `slots` at `moment`, in draw order, on a `screen` of pixels.
-    pub fn quads(&self, slots: &[Slot], moment: Moment, screen: (u32, u32)) -> Vec<Quad> {
+    /// The load screen's quads for `slots` at `moment`, in draw order, on a `screen` of pixels;
+    /// the `notice`'s quads (the game draws them over the rows and the caption, under the help
+    /// bar) are placed where the game draws them.
+    pub fn quads(&self, slots: &[Slot], moment: Moment, notice: Vec<Quad>, screen: (u32, u32)) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { view: self, k, left, out: Vec::new() };
@@ -474,8 +482,12 @@ impl View {
         pen.text(&self.caption_text, self.caption_at, CAPTION_TEXT, [BROWN[0], BROWN[1], BROWN[2], top]);
         // The help bar fades in 20 frames after the screen's start and out from 5 frames after the choice (read off the capture's 1580-1615).
         let guide = ((moment.age - 20) as f32 / FADE_FRAMES).clamp(0.0, 1.0) * moment.leaving.map_or(1.0, |l| 1.0 - ((l - 5) as f32 / FADE_FRAMES).clamp(0.0, 1.0));
+        // STAND-IN: The plate's width steps (the capture: 533 px at 1580, full 627 from 1585, 533 at 1605, 376 at 1610-1615) are fitted as a linear grow over PLATE_FRAMES from the bar's start and, after the choice, a shrink from PLATE_LEAVE that also takes the words away; the real thing is the layout's own tween (not found in uia_*.xml).
+        let grow = ((moment.age - 20) as f32 / PLATE_FRAMES).clamp(0.0, 1.0) * moment.leaving.map_or(1.0, |l| 1.0 - ((l as f32 - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0));
+        let words = moment.leaving.is_none_or(|l| (l as f32) < PLATE_LEAVE);
+        pen.out.extend(notice);
         if guide > 0.0 {
-            self.help_bar(&mut pen, guide);
+            self.help_bar(&mut pen, guide, grow, words);
         }
         pen.out
     }
@@ -508,14 +520,17 @@ impl View {
     }
 
     /// The help bar at the screen's lower right: a stretched plate as wide as its words.
-    fn help_bar(&self, pen: &mut Pen, alpha: f32) {
+    fn help_bar(&self, pen: &mut Pen, alpha: f32, grow: f32, words_shown: bool) {
         let s = self.help_text.size * pen.k / ATLAS_SIZE;
         let words: f32 = GUIDE_TEXT.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
         let right = 1280.0;
         // STAND-IN: The plate is one atlas pixel of the text (size / ATLAS_SIZE layout pixels) wider than the advances' sum, fitted to the capture (0.444 layout pixels at size 16); the real thing is the game's own text-width measure.
-        let width = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let width = PLATE_MIN + (full - PLATE_MIN) * grow;
         let at = [right - width, self.help_at[1]];
         pen.wrap(GUIDE, 2, &self.help, at, width, [1.0, 1.0, 1.0, alpha]);
-        pen.text(&self.help_text, [1280.0, 720.0], GUIDE_TEXT, [1.0, 1.0, 1.0, alpha]);
+        if words_shown {
+            pen.text(&self.help_text, [1280.0, 720.0], GUIDE_TEXT, [1.0, 1.0, 1.0, alpha]);
+        }
     }
 }

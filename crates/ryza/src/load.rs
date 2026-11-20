@@ -21,6 +21,9 @@ const COVER_FULL: i32 = 20;
 const NOTICE_AT: i32 = 48;
 /// The list fades in from this many frames after the button, as the notice fades out (1556).
 const LIST_AT: i32 = 156;
+/// The notice fades out from this many frames after the button, a frame before the list comes
+/// (capture: full at 1555, 10/15 at 1560).
+const NOTICE_LEAVE: i32 = LIST_AT - 1;
 /// After the button on a save: the list fades out over the common fade, the notice fades in a
 /// frame later, holds, and fades out again from `NOTICE_OUT` (capture 1600, 1601, 1707) to
 /// `LOADING_AT` (1725), where the loading screen takes over; the field follows at `FIELD_AT`.
@@ -86,7 +89,7 @@ impl Stage {
             f if f < COVER_FULL => Stage::Cover(((f + 1) as f32 / COVER_RISE).min(1.0)),
             f if f < NOTICE_AT => Stage::Black,
             f if f < LIST_AT + FADE => {
-                let notice = Some((NoticeWord::Waiting, f - NOTICE_AT, if f < LIST_AT { fade(f - NOTICE_AT) } else { 1.0 - fade(f - LIST_AT) }));
+                let notice = Some((NoticeWord::Waiting, f - NOTICE_AT, if f < NOTICE_LEAVE { fade(f - NOTICE_AT) } else { 1.0 - fade(f - NOTICE_LEAVE) }));
                 Stage::Screen { on: cursor(&input.list_holds, count, frame), list: (f >= LIST_AT).then_some((f - LIST_AT, None)), notice }
             }
             f => Stage::Screen { on: cursor(&input.list_holds, count, frame), list: Some((f - LIST_AT, None)), notice: None },
@@ -117,7 +120,7 @@ mod tests {
         // the notice from 1448 (capture) with 2/15 at 1450
         assert_eq!(Stage::at(&i, 2, 857 + 50), Stage::Screen { on: 0, list: None, notice: Some((NoticeWord::Waiting, 2, 2.0 / 15.0)) });
         // the list from 1556, the notice fading out as it fades in
-        assert_eq!(Stage::at(&i, 2, 857 + 160), Stage::Screen { on: 0, list: Some((4, None)), notice: Some((NoticeWord::Waiting, 112, 1.0 - 4.0 / 15.0)) });
+        assert_eq!(Stage::at(&i, 2, 857 + 160), Stage::Screen { on: 0, list: Some((4, None)), notice: Some((NoticeWord::Waiting, 112, 1.0 - 5.0 / 15.0)) });
         assert_eq!(Stage::at(&i, 2, 857 + 176), Stage::Screen { on: 0, list: Some((20, None)), notice: None });
         // a button on a save: the list fades out, the notice in, then the loading screen and the field
         assert_eq!(Stage::at(&i, 2, 1057 + 5), Stage::Screen { on: 0, list: Some((49, Some(5))), notice: Some((NoticeWord::Processing, 4, 4.0 / 15.0)) });
