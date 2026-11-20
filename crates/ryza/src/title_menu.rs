@@ -69,6 +69,15 @@ pub struct Hold {
     pub way: i32,
 }
 
+impl Hold {
+    /// Whether the cursor takes a step on `frame` because of this hold: the frame it went
+    /// down, then after `REPEAT_FIRST` frames and every `REPEAT_NEXT` while it stays down.
+    pub fn steps_at(&self, frame: i32) -> bool {
+        let age = frame - self.from;
+        age >= 0 && self.until.is_none_or(|u| frame < u) && (age == 0 || (age >= REPEAT_FIRST && (age - REPEAT_FIRST) % REPEAT_NEXT == 0))
+    }
+}
+
 /// What the player has done on the title, in title frames (60 a second from its start).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Input {

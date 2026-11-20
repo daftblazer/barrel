@@ -17,6 +17,10 @@
 //!   +0x20 the stream: a `KOVS` clip ([`crate::voice`]), then padding to the chunk's size
 //! ```
 //!
+//! A `.ktsl2asbin` bank (the sound effects' `SE_*`, and the stream banks' tables) is the same
+//! chunk run, with two kinds of chunk named by the same hash: a sound definition
+//! ([`KIND_DEFINITION`]) and its samples ([`KIND_SAMPLE`]; see [`Sample`]).
+//!
 //! The readers take a `Read + Seek`, so a 240 MB file is walked by its chunk headers without
 //! being held in memory.
 
@@ -30,6 +34,11 @@ const FIRST_CHUNK: u64 = 0x40;
 const HEADER: u64 = 0x20;
 /// The kind of a chunk holding a stream.
 pub const KIND_STREAM: u32 = 0x15f4_d409;
+
+/// The kind of a bank chunk holding a sound's definition (how it plays; the sfx table's hash).
+pub const KIND_DEFINITION: u32 = 0x368c_88bd;
+/// The kind of a bank chunk holding a sound's samples.
+pub const KIND_SAMPLE: u32 = 0x70cb_ccc5;
 
 /// One stream of a container: its id, and where its `KOVS` clip is in the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +87,73 @@ pub fn parse_streams<R: Read + Seek>(r: &mut R) -> Result<Vec<Stream>, Error> {
         at += size;
     }
     Ok(out)
+}
+
+/// One sample chunk of a bank: the sound's hash, where the chunk is, and what its header says
+/// of the audio (the codec is a 32-bit id: the effect banks' is `0xd2db2960`, the stream banks'
+/// `0xb9862b52`; the effects' codec is not decoded, `docs/formats.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sample {
+    pub hash: u32,
+    /// The chunk's offset and size.
+    pub offset: u64,
+    pub size: u64,
+    pub codec: u32,
+    pub channels: u32,
+    /// The rate the header gives (near 48000, a little off for most sounds).
+    pub rate: u32,
+    /// The length in frames.
+    pub frames: u32,
+}
+
+/// A bank's contents: the hashes of its sound definitions and its sample chunks, in file order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Bank {
+    pub definitions: Vec<u32>,
+    pub samples: Vec<Sample>,
+}
+
+impl Bank {
+    /// The sample of the sound `hash`.
+    pub fn sample(&self, hash: u32) -> Option<&Sample> {
+        self.samples.iter().find(|s| s.hash == hash)
+    }
+}
+
+/// The chunks of a `.ktsl2asbin` bank: its sound definitions and samples (any other kind of
+/// chunk is skipped).
+pub fn parse_bank<R: Read + Seek>(r: &mut R) -> Result<Bank, Error> {
+    // The sample chunk's header: the codec at +0x28, the channels at +0x2c, the rate at +0x34
+    // and the length in frames at +0x38 (the fields between and after are not read).
+    const SAMPLE_HEADER: usize = 0x3c;
+    let mut magic = [0u8; 4];
+    r.seek(SeekFrom::Start(0)).map_err(io)?;
+    r.read_exact(&mut magic).map_err(io)?;
+    if &magic != b"KTSR" {
+        return Err(Error::NotThisFormat);
+    }
+    let end = r.seek(SeekFrom::End(0)).map_err(io)?;
+    let (mut at, mut bank) = (FIRST_CHUNK, Bank::default());
+    while at < end {
+        let mut h = [0u8; SAMPLE_HEADER];
+        r.seek(SeekFrom::Start(at)).map_err(io)?;
+        let got = r.read(&mut h).map_err(io)?;
+        let word = |i: usize| u32::from_le_bytes([h[i], h[i + 1], h[i + 2], h[i + 3]]);
+        if got < 16 {
+            return Err(Error::Corrupt("KTSR chunk cut short"));
+        }
+        let (kind, size, hash) = (word(0), u64::from(word(4)), word(8));
+        if size < 16 {
+            return Err(Error::Corrupt("KTSR chunk size"));
+        }
+        match kind {
+            KIND_DEFINITION => bank.definitions.push(hash),
+            KIND_SAMPLE if got == SAMPLE_HEADER => bank.samples.push(Sample { hash, offset: at, size, codec: word(0x28), channels: word(0x2c), rate: word(0x34), frames: word(0x38) }),
+            _ => {}
+        }
+        at += size;
+    }
+    Ok(bank)
 }
 
 /// The stream whose `KOVS` clip is at `offset`, from its chunk's header just before it.
@@ -141,6 +217,25 @@ mod tests {
         assert_eq!(read_stream(&mut c, &s).unwrap(), b"KOVS-first-clip");
         assert!(stream_at(&mut c, 0x61).is_err());
         assert!(stream_at(&mut c, 3).is_err());
+    }
+
+    #[test]
+    fn a_bank_lists_its_definitions_and_samples() {
+        let mut f = b"KTSR".to_vec();
+        f.resize(FIRST_CHUNK as usize, 0);
+        f.extend(chunk_bytes(KIND_DEFINITION, 0x0d0f_cb87, &[0; 0x20]));
+        let at = f.len() as u64;
+        // a sample chunk: kind, size, hash, then the header fields the reader takes
+        let mut c = vec![0u8; 0x40];
+        for (i, v) in [(0, KIND_SAMPLE), (4, 0x40), (8, 0x0d0f_cb87), (0x28, 0xd2db_2960), (0x2c, 2), (0x34, 48_001), (0x38, 60_256)] {
+            c[i..i + 4].copy_from_slice(&u32::to_le_bytes(v));
+        }
+        f.extend(c);
+        let b = parse_bank(&mut Cursor::new(&f)).unwrap();
+        assert_eq!(b.definitions, [0x0d0f_cb87]);
+        let s = b.sample(0x0d0f_cb87).unwrap();
+        assert_eq!((s.offset, s.codec, s.channels, s.rate, s.frames), (at, 0xd2db_2960, 2, 48_001, 60_256));
+        assert!(b.sample(1).is_none());
     }
 
     #[test]

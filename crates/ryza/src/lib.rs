@@ -38,6 +38,7 @@ pub mod font;
 pub mod title;
 pub mod title_menu;
 pub mod boot;
+pub mod music;
 pub mod sound;
 
 // The game's play (its program: `barrel-ryza`, and `barrel`, which picks the game).

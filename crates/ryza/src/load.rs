@@ -70,13 +70,25 @@ pub fn cursor(holds: &[Hold], count: usize, frame: i32) -> usize {
     on as usize
 }
 
+/// The frame of the button on a save that starts a load: after the button on Load Game and the
+/// time the list takes to come up.
+pub fn confirmed(input: &Input) -> Option<i32> {
+    let c = input.choose?;
+    input.confirm.filter(|&k| k >= c + LIST_AT)
+}
+
+/// The frame the load stops every sound (the loading screen takes over), once a save was chosen.
+pub fn stop_frame(input: &Input) -> Option<i32> {
+    confirmed(input).map(|k| k + LOADING_AT)
+}
+
 impl Stage {
     /// The stage on title frame `frame`, `count` saves being listed.
     pub fn at(input: &Input, count: usize, frame: i32) -> Stage {
         let Some(c) = input.choose.filter(|&c| frame >= c) else { return Stage::Title };
         let from_c = frame - c;
         let fade = |frames: i32| (frames as f32 / FADE as f32).clamp(0.0, 1.0);
-        if let Some(k) = input.confirm.filter(|&k| k >= c + LIST_AT && frame >= k) {
+        if let Some(k) = confirmed(input).filter(|&k| frame >= k) {
             let on = cursor(&input.list_holds, count, k);
             let since = frame - k;
             if since >= LOADING_AT {
@@ -126,6 +138,13 @@ mod tests {
         assert_eq!(Stage::at(&i, 2, 1057 + 5), Stage::Screen { on: 0, list: Some((49, Some(5))), notice: Some((NoticeWord::Processing, 4, 4.0 / 15.0)) });
         assert_eq!(Stage::at(&i, 2, 1057 + 125), Stage::Loading { on: 0, since: 125, done: false });
         assert_eq!(Stage::at(&i, 2, 1057 + 130), Stage::Loading { on: 0, since: 130, done: true });
+    }
+
+    #[test]
+    fn a_load_stops_the_sound_when_the_loading_screen_comes() {
+        assert_eq!(confirmed(&input()), Some(1057));
+        assert_eq!(stop_frame(&input()), Some(1182));
+        assert_eq!(confirmed(&Input { choose: Some(857), confirm: Some(900), ..Input::default() }), None);
     }
 
     #[test]

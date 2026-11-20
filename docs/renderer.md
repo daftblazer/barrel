@@ -1589,16 +1589,31 @@ prompt's pulse keeps its place relative to the title's start.
 
 ### The title's sound
 
-`barrel_ryza::sound` holds the title's cues as data (`title_cues`): the music from title frame
-18 (the `bgm` container's stream at offset 151456224; it loops from the clip's own loop start)
-and one voice clip from frame 106 (the `voice` container's stream at 94885392; played once),
-the frames at which a run of the game starts the two sounds, 60 a second from the title's first
-frame (after the boot screens, `boot::TITLE_START` in). They are a stand-in for the game's own
-choice of streams. `TitleSound::tick` starts each cue when the title's clock reaches its frame,
-through `barrel_audio::Mixer` and `Output` in a window; an offscreen run opens no device. With
-`BARREL_TRACE_CUES=<file>` set, each cue started appends a line `<frame> <kind> <file> <offset>`
-(`18 music bgm.ktsl2stbin 151456224`); an offscreen run at `--title-at T` logs every cue at or
-before T's frame, so the log can be compared with the original's.
+`barrel_ryza::sound` holds the game's sound requests: a `Cue` is a frame, a kind (music, voice,
+effect, stop) and the sound's hash, as the game asks for it. The title's are `title_cues`: the music
+(it loops from the clip's own loop start) and one voice clip (once), at title frames 18 and 106,
+or 2 and 98 with saves present (the game's shorter boot; the voice's 1.6 s delay is in its
+frame), 60 a second from the title's first frame (after the boot screens, `boot::TITLE_START`
+in). They are a stand-in for the game's own title code. The menus add effects at the frame of
+the button or step: the press at the prompt (`SE_ETC_008_PRESS_START`), the button on a menu
+item and on a save (`SE_SYS_001_CLICK`), each cursor step (`SE_SYS_006_CURSOR`, a held direction
+repeating as the cursor does, `Hold::steps_at`), Settings' Escape (`SE_SYS_002_CANCEL`) and
+tab change (`SE_SYS_007_PAGE`); the window sound (`SE_SYS_005_WINDOW`) is not placed. The load
+stops every channel when the loading screen takes over (`load::stop_frame`).
+`Sound::tick(frame)` logs and starts each cue whose frame is reached, through
+`barrel_ryza::sound::Library` (the containers' streams, indexed once when first needed, found by
+id) and `barrel_audio::Mixer` / `Output` in a window; an offscreen run opens no device and so no
+container. With `BARREL_TRACE_CUES=<file>` set, each cue appends a line `<frame> <kind> <hash,
+8 hex digits>` (`18 music a5ba0cbd`, `1182 stop -`); an offscreen run at `--title-at T` logs every
+cue at or before T's frame, so the log can be compared with the original's.
+
+`--into-field` makes an offscreen run go on into the field when the load ends, as a window
+does (`Handoff`: the chosen save, the picture's path and size, the frames left of `--frames`, and
+the `Sound` with its frame count). The field's frames count on from the title's, so the
+cue log runs on from the title through the load into the field: its music is asked for 26
+frames after the load's stop (`sound::FIELD_MUSIC_AFTER_STOP`), from the save's map row of the
+executable's field music table (`barrel_ryza::music`) by day or night, the number turned into a
+hash by `stream.xml`'s `BGM<number - 5000>` tag. Only the last frame's picture is written.
 
 ### The boot screens
 

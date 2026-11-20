@@ -342,7 +342,26 @@ log into cue lines (`<game frame> <kind> <hash>`), the answer key (`work/scenari
   by night. The field picks the night one when `0x1405a0b80` (the time of day's period) is 2
   to 4, at half volume for period 4 (`0x1404d38d0`). Map 12 becomes 13 when flag `0x6e` is set.
 - **Effects** come from the `SE_*.ktsl2asbin` banks, loaded whole at the start (so file
-  reads never show them); Barrel does not read those banks yet (docs/formats.md, KTSR).
+  reads never show them).
+
+Barrel's side (2026-11-20, `crates/ryza/src/{sound,music}.rs`, `crates/formats/src/ktsr.rs`):
+`BARREL_TRACE_CUES=FILE` writes the same lines. One offscreen run steps the whole path and
+matches the key exactly (`--title --title-saves --saves DIR --title-press 692 --title-keys
+857:choose,1057:ok --into-field --frames 1260`; the log has the 7 lines above, plus a
+`<frame> effect 5e3dae22` per cursor step). With saves the title's music and voice are at 2 and
+98 (without, 18 and 106). The press, the button on Load Game and on a save, and the load's stop
+are the menus' own frames (`load::confirmed`, `load::stop_frame`); the field music follows 26
+frames after the stop (the key's 1725 to 1751), read from the executable's table (found by its
+ids: `music::field_number`) and `stream.xml`. In a window the music and the voice play
+(`Library` finds the stream by id in `bgm` / `voice`); effects are looked up in their bank
+(sample, rate, channels, length) and stay silent. Left:
+
+- **Effects are silent.** The banks' codec `0xd2db2960` is not decoded (docs/formats.md).
+- **Day and night** is hours 6 to 17 against the rest (`music::is_night`, a STAND-IN for the
+  period rule at `0x1405a0b80`, and the half volume of period 4); map 12 to 13 with flag `0x6e`
+  is not done; the music's volume and fade are the mixer's plain ones.
+- The window sound (`SE_SYS_005_WINDOW`) and the other menus' sounds are not placed; the cancel
+  and page effects are asked for in the Settings screen only, in a window (not in the key).
 
 ## Event commands against the game's own log
 

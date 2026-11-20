@@ -130,6 +130,9 @@ struct Args {
     /// `--title-at S` (or `BARREL_TITLE_AT`): the seconds into the title the first frame shows.
     title: bool,
     title_at: f32,
+    /// `--into-field`: offscreen too, the title's load goes on into the field from the chosen
+    /// save (a window always does), the frame count and the sound's frames running on.
+    into_field: bool,
     /// What the player does on the title when no one is at the keys: `--title-press F` the
     /// title frame of the button at the prompt, `--title-keys F:down:N,F:up:N,...` a direction
     /// going down on frame F for N frames, `--title-saves` as if a save existed.
@@ -167,7 +170,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -199,6 +202,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
             "--title" => a.title = true,
+            "--into-field" => a.into_field = true,
             "--title-at" => a.title_at = value()?.parse()?,
             "--title-press" => a.title_input.press = Some(value()?.parse()?),
             "--title-saves" => a.title_input.saves = true,
@@ -754,22 +758,42 @@ struct Handoff {
     root: std::path::PathBuf,
     save: std::path::PathBuf,
     pump: Option<window::Pump>,
+    /// Offscreen: the picture's path and size, and the frames left of `--frames`.
+    out: String,
+    size: (u32, u32),
+    frames_left: Option<u32>,
+    carry: Carry,
+}
+
+/// What the field takes on from the title's run: the sound (its device, its cues) and where the
+/// frame count stands, so the cue log counts on from the title's first frame.
+#[derive(Default)]
+struct Carry {
+    sound: Option<barrel_ryza::sound::Sound>,
+    /// The frame the field's first frame is.
+    frame: i64,
+    /// The frame the field's music is asked for (after the load's stop).
+    music_at: i64,
 }
 
 pub fn run(raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
-    let mut next = run_once(raw, chosen)?;
+    let mut next = run_once(raw, chosen, Carry::default())?;
     while let Some(h) = next {
         // Her place and the story's progress are the save's (`--save`), the field the one it names.
-        let mut args = vec![h.root.to_string_lossy().into_owned(), "-".into(), "-".into(), "--save".into(), h.save.to_string_lossy().into_owned()];
+        let out = if h.pump.is_some() { "-".to_string() } else { h.out };
+        let mut args = vec![h.root.to_string_lossy().into_owned(), "-".into(), out, "--save".into(), h.save.to_string_lossy().into_owned(), "--size".into(), format!("{}x{}", h.size.0, h.size.1)];
         if h.pump.is_some() {
             args.push("--window".into());
         }
-        next = run_once(args, Some(locate::Resolved { root: h.root, pump: h.pump }))?;
+        if let Some(n) = h.frames_left {
+            args.extend(["--frames".into(), n.to_string()]);
+        }
+        next = run_once(args, Some(locate::Resolved { root: h.root, pump: h.pump }), h.carry)?;
     }
     Ok(())
 }
 
-fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Option<Handoff>> {
+fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry) -> Result<Option<Handoff>> {
     let game = match chosen {
         Some(game) => game,
         None => {
@@ -838,12 +862,18 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
     // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
     // them, the handheld setting's in the same share.
     let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };
+    let mut field_music: Option<u32> = None;
     if let Some(save) = &a.save {
         let state = barrel_ryza::save::decode(&barrel_files::read(Path::new(save))?).map_err(|e| format!("{save}: {e}"))?;
         let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
         a.story = barrel_ryza::save::story(&state, &pe).map_err(|e| format!("{save}: {e}"))?;
         a.save_hour = barrel_ryza::save::clock(&state).map(barrel_ryza::save::hour_of);
+        // The field's music: the save's map row of the executable's table, by day or night.
+        if let Ok(place) = barrel_ryza::save::place(&state) {
+            let night = barrel_ryza::music::is_night(a.save_hour.unwrap_or(10));
+            field_music = barrel_ryza::music::field_number(&exe, place.map, night).and_then(|n| barrel_ryza::music::music_hash(&barrel_ryza::music::parse_table(&install.read("\\saves\\sound\\stream.xml").unwrap_or_default()), n));
+        }
         eprintln!("{save}: {} story events played", barrel_ryza::save::events_done(&state).map_or(0, |e| e.len()));
         // FIELD `-` without an event: the save's field and her place in it, as the game loads it.
         if a.field == "-" && a.event.is_none() {
@@ -1651,7 +1681,24 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
     let mut handoff: Option<std::path::PathBuf> = None;
     let mut showing_load = false;
     // The title's music and voice (on the device in a window; offscreen only the cue log).
-    let mut title_sound = a.title.then(|| barrel_ryza::sound::TitleSound::new(&install.root, pump.is_some()));
+    let sfx = || barrel_ryza::music::parse_table(&install.read("\\saves\\sound\\sfx.xml").unwrap_or_default());
+    let mut sound = match carry.sound {
+        Some(s) => Some(s),
+        None if a.title => {
+            let mut s = barrel_ryza::sound::Sound::new(&install.root, sfx(), pump.is_some());
+            for cue in barrel_ryza::sound::title_cues(title_input.saves) {
+                s.schedule(cue);
+            }
+            Some(s)
+        }
+        None if field_music.is_some() => Some(barrel_ryza::sound::Sound::new(&install.root, sfx(), pump.is_some())),
+        None => None,
+    };
+    // The field's music is asked for once the load's stop is past (the frames count on from the title's).
+    if let (Some(s), Some(hash), false) = (sound.as_mut(), field_music, a.title) {
+        s.schedule(barrel_ryza::sound::Cue::music(carry.music_at, hash));
+    }
+    let (sound_base, mut handoff_at, mut music_at) = (carry.frame, 0i64, 0i64);
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
     let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
     loop {
@@ -1678,8 +1725,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             }
         }
         // The load screen's save is chosen and loaded: the field follows, in the same window.
-        if handoff.is_some() && pump.is_some() {
+        if handoff.is_some() && (pump.is_some() || a.into_field) {
             break;
+        }
+        // The field's sound: its cues (the music) come due on the frame count the title began.
+        if !a.title
+            && let Some(sound) = sound.as_mut()
+        {
+            let frames = if pump.is_some() { (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 } else { i64::from(frame_no) };
+            sound.tick(sound_base + frames);
         }
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
@@ -1939,6 +1993,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                     for (key, way) in [(K::KeyQ, -1), (K::KeyE, 1)] {
                         if title_keys.contains(&key) {
                             options_state.tab_by(way);
+                            if let Some(s) = sound.as_mut() {
+                                s.request("page", barrel_ryza::sound::Cue::effect(i64::from(frame), barrel_ryza::sound::PAGE));
+                            }
                             title_input.list_holds.clear();
                             options_base = options_state.cursor[options_state.tab];
                         }
@@ -1951,6 +2008,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                         title_input.choose = None;
                         title_input.list_holds.clear();
                         options_base = 0;
+                        if let Some(s) = sound.as_mut() {
+                            s.request("cancel", barrel_ryza::sound::Cue::effect(i64::from(frame), barrel_ryza::sound::CANCEL));
+                        }
                     }
                 }
                 for (key, way) in [(K::ArrowDown, 1), (K::ArrowUp, -1)] {
@@ -1975,8 +2035,29 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 }
                 None => title.quads_with(title_seconds, (width, height), with_menu),
             };
-            if let Some(sound) = title_sound.as_mut() {
-                sound.tick(title_seconds);
+            if let Some(sound) = sound.as_mut() {
+                use barrel_ryza::sound::{Cue, CLICK, CURSOR, PRESS_START};
+                let now = i64::from(frame);
+                // The menus' effects, each at the frame of the button or step that makes it.
+                if let Some(f) = menu.pressed(&title_input).filter(|&f| f <= frame) {
+                    sound.request("press", Cue::effect(i64::from(f), PRESS_START));
+                }
+                if let Some(c) = title_input.choose.filter(|&c| c <= frame && (loads(&title_input, c) || menu.chosen(&title_input, c) == Some("setting"))) {
+                    sound.request("choose", Cue::effect(i64::from(c), CLICK));
+                }
+                let flowing = flow_input(&title_input, &loads);
+                if let Some(k) = flow::confirmed(&flowing).filter(|&k| k <= frame) {
+                    sound.request("confirm", Cue::effect(i64::from(k), CLICK));
+                }
+                if let Some(k) = flow::stop_frame(&flowing).filter(|&k| k <= frame) {
+                    sound.request("stop", Cue::stop(i64::from(k)));
+                }
+                let pressed = menu.pressed(&title_input);
+                let menu_steps = title_input.holds.iter().any(|h| pressed.is_some_and(|p| h.from > p) && h.steps_at(frame));
+                if menu_steps || title_input.list_holds.iter().any(|h| h.steps_at(frame)) {
+                    sound.request("cursor", Cue::effect(now, CURSOR));
+                }
+                sound.tick(now);
             }
             // The path from the menu's Load Game to the field (`barrel_ryza::load`).
             let mut quads = quads;
@@ -1989,7 +2070,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                 layer.set(&gpu, &quads)?;
                 own_layer = true;
             }
-            match flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame) {
+            let flowing_input = flow_input(&title_input, &loads);
+            match flow::Stage::at(&flowing_input, save_slots.len(), frame) {
                 flow::Stage::Title => {}
                 flow::Stage::Cover(alpha) => quads.push(flow::cover(alpha, (width, height), cover_texture)),
                 flow::Stage::Black => quads = vec![flow::cover(1.0, (width, height), cover_texture)],
@@ -2017,6 +2099,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                     }
                     if done {
                         handoff = save_slots.get(on).map(|s| s.file.clone());
+                        handoff_at = i64::from(frame) + 1;
+                        music_at = flow::stop_frame(&flowing_input).map_or(handoff_at, |k| i64::from(k) + barrel_ryza::sound::FIELD_MUSIC_AFTER_STOP);
                     }
                 }
             }
@@ -2248,7 +2332,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
         d.destroy_device(None);
         gpu.instance.destroy_instance(None);
     }
-    Ok(handoff.map(|save| Handoff { root: std::path::PathBuf::from(&a.install), save, pump }))
+    let frames_left = a.frames.map(|n| n.saturating_sub(frame_no).max(1));
+    let carry = Carry { sound: sound.take(), frame: handoff_at, music_at };
+    Ok(handoff.map(|save| Handoff { root: std::path::PathBuf::from(&a.install), save, pump, out: a.out.clone(), size: a.size, frames_left, carry }))
 }
 
 /// A debug aid for comparing a frame with the game's: the sky's clock (seconds; the clouds'

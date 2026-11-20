@@ -3001,4 +3001,25 @@ then the stream: one `KOVS` clip (the obfuscated Ogg Vorbis of Escha's `.kvs`, s
 padded to the chunk's size. The streams of one file are named by id; their `KOVS` offset is
 the chunk's plus 0x20. `barrel_formats::ktsr` walks the chunk headers with seeks
 (`parse_streams`), finds the stream at an offset (`stream_at`) and reads one (`read_stream`),
-so a 240 MB file is never held. The `.ktsl2asbin` banks (which choose streams) are not read yet.
+so a 240 MB file is never held.
+
+The `.ktsl2asbin` banks (`SE_*`, and one per stream container) are the same chunk run, read by
+`ktsr::parse_bank`. Two kinds of chunk, named by the same u32 hash (at +0x08), which for an
+effect is the row of `saves/sound/sfx.xml` (`SE_SYS_001_CLICK` is `09c3999b`, in `SE_system`):
+
+- a sound definition (kind `0x368c88bd`, 0xe0 bytes: the hash at +8, the sample's hash again at
+  +0xab, floats for volume and pitch; not read further);
+- the sample (kind `0x70cbccc5`): +0x20 a marker `0xe96fd86a`, +0x24 the data's size, +0x28 the codec
+  id, +0x2c the channels, +0x30 `0x1000`, +0x34 a rate near 48000 (47965 to 48025: not a clean
+  rate), +0x38 the length in frames, then a sub-header (+0x40 `ffffffff`, section offsets
+  0x38, 0x3c, 0x40/0x44, the data's size at +0x60) and the data from +0x74.
+
+SE_system has 18 definitions and 18 samples, SE_etc 8 and 8, all matched by hash (the larger banks
+have a few samples with no definition). The codec id is `0xd2db2960` in every `SE_*` bank
+(Ryza's menu effects: PRESS_START 47997 Hz stereo 111616 frames, CLICK 48001 Hz stereo 60256,
+CANCEL mono 5440, WINDOW stereo 23360, CURSOR mono 3712, PAGE mono 10624) and `0xb9862b52` in the
+stream banks (`bgm`, `pack0N`, `BGM_*`, the KOVS clips). The effects' data is not Ogg or RIFF:
+variable-length blocks of 4-bit residuals behind small headers (`03 10 00 <s16> <s16>`), about 1.4
+bytes a frame for stereo. The codec is not decoded, so Barrel's effects are logged and silent
+(`sound::Sound`, a STAND-IN). `voice.ktsl2asbin` holds one chunk of another kind and no samples:
+the voice clips have no table.
