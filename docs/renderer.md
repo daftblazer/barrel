@@ -1364,9 +1364,13 @@ program for the tested draws.
 
 Each part's pipelines are made for the field's models and for the others (`model.frag`'s
 `KIND`, by `Draw::field`): the program's paths for the distant view, the characters' hull and
-the other kind are left out, so its registers are its own path's. On RADV the field models'
-program went from 7,018 instructions and 72 registers (the program for every draw) to 1,903 and
-48; the characters' is 4,604 and 60.
+the other kind are left out, so its registers are its own path's. On RADV the program for
+every draw had 7,018 instructions and 72 registers; the two kinds' are 4,604 and 60, and 1,903
+and 48. Turnip for an Adreno 740 (`work/ir3-run.sh`, the freedreno drm-shim, nothing drawn):
+the field models' program about 5,100 instructions and 19 vec4 registers (10 waves of 16), the
+other models' about 1,900 and 12 (8 waves); the tested draws' depth alone 11 and 3 (16 waves).
+The HALF build (below) leaves the field models' at 19 registers (their peak is the shadows',
+kept 32-bit) and takes the others' to 9 (10 waves).
 
 The shadow maps' casters go the same way: those with opaque textures first, through
 `shadow_opaque_pipelines` (`shadow_pipeline` and `shadow_cascade_pipeline` without a fragment

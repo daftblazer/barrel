@@ -985,8 +985,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   far trees' alpha-tested cards. Now the scene pass is in three parts (opaque textures without
   the alpha test; the tested draws' depth alone; their shading over it, no depth write) with
   1.21 + 1.05 million runs of the whole program and 4.94 million of the test alone; the field
-  models and the others have their own pipelines (`KIND`: on RADV 1,903 instructions and 48
-  registers where every draw's program had 7,018 and 72); the scene keeps 20 bytes a pixel
+  models and the others have their own pipelines (`KIND`: on Turnip for the 740 the field
+  models' about 5,100 instructions and 19 vec4 registers, the others' about 1,900 and 12); the scene keeps 20 bytes a pixel
   where it kept 28 (the reflections' inputs at 4 bytes each); shadow casters with opaque
   textures are drawn without a fragment program; each shadow pass covers only its map; textures
   are bound only on a change (about half the binds, which a tiler replays in every bin); without
