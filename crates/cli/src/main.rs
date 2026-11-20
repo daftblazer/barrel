@@ -98,6 +98,7 @@ usage:
   barrel-tool telops EXE             the narration cards (u55): each one's layout and texture pieces
   barrel-tool g1s FILE.g1s [N]       a shader pack's programs: stage, inputs, outputs, constants, textures (N: program N's code)
   barrel-tool se-scan BANK.wh2       a sound effect bank's sounds and their sample blocks
+  barrel-tool ktsr-ls FILE.ktsl2stbin  a stream container's streams: id (hex), offset, size
   barrel-tool quests INSTALL         the requests: target, points, prizes, the days they are offered
   barrel-tool shops INSTALL [LANG]  every shop's wares: price, quality, stock and refills, sale window
   barrel-tool battle EXE MONSTER p<member>:<level>...  party members against a monster, with their learnt skills and MP
@@ -244,6 +245,7 @@ fn main() -> ExitCode {
         ["quakes", install] => quakes(Path::new(install)),
         ["vorbis-scan", fpl] => vorbis_scan(Path::new(fpl)),
         ["se-scan", wh2] => se_scan(Path::new(wh2)),
+        ["ktsr-ls", file] => ktsr_ls(Path::new(file)),
         ["g1s", file] => g1s(Path::new(file), None),
         ["g1s", file, n] => match n.parse() {
             Ok(n) => g1s(Path::new(file), Some(n)),
@@ -4648,5 +4650,13 @@ fn battle_from_save(exe: &Path, monster: &str, file: &Path) -> Result<()> {
         }
     }
     println!("{}", match winner { Some(0) => "the party wins".to_string(), Some(_) => "the monsters win".to_string(), None => format!("no winner after {} events", events.len()) });
+    Ok(())
+}
+
+fn ktsr_ls(file: &Path) -> Result<()> {
+    let mut r = std::io::BufReader::new(std::fs::File::open(file).map_err(|e| e.to_string())?);
+    for s in barrel_formats::ktsr::parse_streams(&mut r).map_err(|e| e.to_string())? {
+        println!("{:08x} {} {}", s.id, s.offset, s.size);
+    }
     Ok(())
 }
