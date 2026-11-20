@@ -127,6 +127,13 @@ layout(constant_id = 2) const bool ALPHA_TEST = true;
 // The alpha-tested draws' depth pre-pass: the alpha test alone, no colour (its pipeline writes
 // none), so the shading pass after it runs the full program once per pixel.
 layout(constant_id = 3) const bool DEPTH_ONLY = false;
+// What the pipeline draws, so the compiler keeps only that program's paths (its registers are
+// the largest path's): 0 anything (the flags decide), 1 the scene pass's field models, 2 its other
+// models (characters, flag 1). Neither of the last two is the distant view or a character's hull.
+layout(constant_id = 4) const uint KIND = 0u;
+bool is_chara() { return KIND == 1u ? false : KIND == 2u ? true : (pc.flags & 1u) != 0u; }
+bool is_far() { return KIND != 0u ? false : (pc.flags & 8u) != 0u; }
+bool is_hull() { return KIND != 0u ? false : (pc.flags & (1u << 25)) != 0u; }
 layout(location = 11) flat in vec4 tint_mul;
 layout(location = 12) flat in vec4 tint_add;
 // The mesh's tangent (turned like the normal) and the bitangent's sign; zero without one.
@@ -185,14 +192,14 @@ void main() {
         return;
     }
     // The stage dump of the sun's share (`dump::Stop::Shadow`): what the shading multiplies the sun by.
-    if (look.shadow_info.w > 0.5 && (pc.flags & 4096u) == 0u && ((pc.flags & 8u) == 0u || (pc.flags & 16u) != 0u)) {
+    if (look.shadow_info.w > 0.5 && (pc.flags & 4096u) == 0u && (!is_far() || (pc.flags & 16u) != 0u)) {
         if (ALPHA_TEST && c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
         // (Stage 2: the coverage of a Ryza character, flag 128.)
         float share = look.shadow_info.w > 1.5 ? float((pc.flags & 128u) != 0u) : sun_shadow(world) * cloud_light(world);
         color = vec4(vec3(share) * pc.params.w, 1.0);
         return;
     }
-    if ((pc.flags & 8u) != 0u) {
+    if (is_far()) {
         // The distant view, blended by its alpha (clouds over the dome); its solid pieces
         // (flag 16: ground, stones, trees, cliffs) alpha-tested like the field's models.
         if ((pc.flags & 16u) != 0u) {
@@ -252,7 +259,7 @@ void main() {
     }
     // The alpha test: a swaying draw (a plant) against its own reference (params.y).
     if (ALPHA_TEST && c.a < ((pc.flags & 0xf00u) != 0u ? pc.params.y : pc.params.x)) discard;
-    if ((pc.flags & (1u << 25)) != 0u) {
+    if (is_hull()) {
         // The game's forward pass over a character (`sh0d2367f637ea8f6a`, docs/shading.md, "Her
         // forward pass"): the colour tile plus, with a specular map, its red times the two
         // lights' Blinn-Phong highlights (`cSpec` power 20), at `vOLColorScaler` and faded by
@@ -285,14 +292,14 @@ void main() {
         return;
     }
     vec3 n = normalize(normal);
-    if ((pc.flags & 1u) != 0u) {
+    if (is_chara()) {
         put_normal(n);
     }
-    if (AO_PASS && (pc.flags & 1u) != 0u) {
+    if (AO_PASS && is_chara()) {
         color = vec4(n, 1.0 / gl_FragCoord.w);
         return;
     }
-    if ((pc.flags & 1u) == 0u) {
+    if (!is_chara()) {
         // A field model: its light (from the vertex program) on its colour; specular, the
         // light texture and shadows are not done yet, nor fog. Its atColor (a run-time tint,
         // packed as unorm8 in the outline colour's word; 0: none) multiplies the colour.

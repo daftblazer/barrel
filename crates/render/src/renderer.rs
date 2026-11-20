@@ -67,8 +67,9 @@ pub struct Renderer {
     /// The scene pipeline with no face culling, for the draws a material shows from both
     /// sides (`Draw::two_sided`).
     pub pipeline_two_sided: vk::Pipeline,
-    /// The scene's models in its three parts (`ScenePass`), each one-sided and two-sided.
-    pub scene_pipelines: [[vk::Pipeline; 2]; 3],
+    /// The scene's models in its three parts (`ScenePass`), each for the field's models and the
+    /// others (`model.frag`'s `KIND`), one-sided and two-sided.
+    pub scene_pipelines: [[[vk::Pipeline; 2]; 2]; 3],
     pub sky_pipeline: vk::Pipeline,
     /// The sky plane (sky.vert/frag): drawn first among the far plane's fragments when a
     /// frame asks (`Frame::sky_plane`).
@@ -720,41 +721,45 @@ impl Renderer {
 
         // The three parts of the scene's models (`ScenePass`): the program without its alpha test,
         // the test alone writing depth and no colour, and the whole program over that depth.
+        // Each for the field's models and for the other models (`KIND` 1 and 2: the compiler keeps
+        // only their own paths).
         let part_entry = [
             vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 },
             vk::SpecializationMapEntry { constant_id: 2, offset: 4, size: 4 },
             vk::SpecializationMapEntry { constant_id: 3, offset: 8, size: 4 },
+            vk::SpecializationMapEntry { constant_id: 4, offset: 12, size: 4 },
         ];
-        let part_data = |alpha_test: bool, depth_only: bool| -> [u8; 12] {
-            let mut b = [0u8; 12];
-            b[..4].copy_from_slice(&u32::from(from_scene).to_le_bytes());
-            b[4..8].copy_from_slice(&u32::from(alpha_test).to_le_bytes());
-            b[8..].copy_from_slice(&u32::from(depth_only).to_le_bytes());
-            b
-        };
-        let (opaque_data, depth_data, tested_data) = (part_data(false, false), part_data(true, true), part_data(true, false));
-        let opaque_special = vk::SpecializationInfo::default().map_entries(&part_entry).data(&opaque_data);
-        let depth_special = vk::SpecializationInfo::default().map_entries(&part_entry).data(&depth_data);
-        let tested_special = vk::SpecializationInfo::default().map_entries(&part_entry).data(&tested_data);
+        let part_data: [[[u8; 16]; 2]; 3] = std::array::from_fn(|part| {
+            std::array::from_fn(|kind| {
+                let (alpha_test, depth_only) = [(false, false), (true, true), (true, false)][part];
+                let mut b = [0u8; 16];
+                for (k, v) in [u32::from(from_scene), u32::from(alpha_test), u32::from(depth_only), kind as u32 + 1].into_iter().enumerate() {
+                    b[4 * k..4 * k + 4].copy_from_slice(&v.to_le_bytes());
+                }
+                b
+            })
+        });
+        let part_special: Vec<vk::SpecializationInfo> = part_data.iter().flatten().map(|data| vk::SpecializationInfo::default().map_entries(&part_entry).data(data)).collect();
         let fragment = vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main");
-        let opaque_stages = [stages[0], fragment.specialization_info(&opaque_special)];
-        let depth_stages = [stages[0], fragment.specialization_info(&depth_special)];
-        let tested_stages = [stages[0], fragment.specialization_info(&tested_special)];
+        let part_stages: Vec<[vk::PipelineShaderStageCreateInfo; 2]> = part_special.iter().map(|special| [stages[0], fragment.specialization_info(special)]).collect();
         let no_colour_att = [spec_kept; 4];
         let no_colour = vk::PipelineColorBlendStateCreateInfo::default().attachments(&no_colour_att[..colour_targets]);
         let over_depth = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(true)
             .depth_write_enable(false)
             .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
-        let part_infos = [
-            pipeline_info.stages(&opaque_stages),
-            pipeline_info.stages(&depth_stages).color_blend_state(&no_colour),
-            pipeline_info.stages(&tested_stages).depth_stencil_state(&over_depth),
-        ];
-        let mut scene_pipelines = [[vk::Pipeline::null(); 2]; 3];
-        for (k, info) in part_infos.iter().enumerate() {
-            for (sides, r) in [&raster, &two_sided_raster].into_iter().enumerate() {
-                scene_pipelines[k][sides] = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info.rasterization_state(r)], None).map_err(|(_, e)| e)?[0] };
+        let mut scene_pipelines = [[[vk::Pipeline::null(); 2]; 2]; 3];
+        for part in 0..3 {
+            for kind in 0..2 {
+                let info = match part {
+                    0 => pipeline_info,
+                    1 => pipeline_info.color_blend_state(&no_colour),
+                    _ => pipeline_info.depth_stencil_state(&over_depth),
+                }
+                .stages(&part_stages[2 * part + kind]);
+                for (sides, r) in [&raster, &two_sided_raster].into_iter().enumerate() {
+                    scene_pipelines[part][kind][sides] = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[info.rasterization_state(r)], None).map_err(|(_, e)| e)?[0] };
+                }
             }
         }
 
@@ -1337,10 +1342,11 @@ impl Renderer {
                 // an eye and as the distant view; the game's own material bits and tint.
                 let (bits, tint) = material(draw);
                 let flags = u32::from(draw.field.is_none()) | u32::from(draw.eye) << 1 | u32::from(draw.sky) << 3 | bits;
-                if bound != Some(draw.two_sided) {
-                    bound = Some(draw.two_sided);
+                let kind = usize::from(draw.field.is_none());
+                if bound != Some((draw.two_sided, kind)) {
+                    bound = Some((draw.two_sided, kind));
                     let p = match part {
-                        Some(p) => self.scene_pipelines[p as usize][usize::from(draw.two_sided)],
+                        Some(p) => self.scene_pipelines[p as usize][kind][usize::from(draw.two_sided)],
                         None if draw.two_sided => self.pipeline_two_sided,
                         None => pipe,
                     };
@@ -1383,6 +1389,9 @@ impl Renderer {
                         counting = false;
                     }
                     d.cmd_end_render_pass(cb);
+                    if let Some(t) = &timer {
+                        t.mark(d, cb, 3);
+                    }
                     // The half-size normal and depth target from the opaque scene, which the water
                     // and the reflections read (the depth read in the shader layout meanwhile).
                     let derive = self.ao.from_scene() && occlusion;
@@ -1495,6 +1504,11 @@ impl Renderer {
                 t.count(d, cb, false);
             }
             d.cmd_end_render_pass(cb);
+            // The scene's own time ends here (a frame with water ended it before its copy: its
+            // normals, reflections and water are the next stage's).
+            if let (Some(t), false) = (&timer, refract) {
+                t.mark(d, cb, 3);
+            }
             // The half-size normal and depth target from the scene pass (a frame with water built
             // it from the opaque part).
             if self.ao.from_scene() && occlusion && !refract {
@@ -1516,7 +1530,7 @@ impl Renderer {
             }
             trace3d.finish(gpu.frame.get(), &draw_vp, &shadow_vp);
             if let Some(t) = &timer {
-                t.mark(d, cb, 3);
+                t.mark(d, cb, 4);
             }
             // The depth of field's weight, layers and blur (the post pass mixes them in).
             if let Some(dof) = self.dof.as_ref().filter(|_| dof_frame) {
@@ -1571,7 +1585,7 @@ impl Renderer {
                 u.record(d, p, cb);
             }
             if let Some(t) = &timer {
-                t.mark(d, cb, 4);
+                t.mark(d, cb, 5);
             }
             // The sun flare's visibility, and the wash's settings for the post pass.
             // The reference point is in the first cascade's map: within the layer where the map is smaller.
@@ -1620,7 +1634,7 @@ impl Renderer {
             }
             d.cmd_end_render_pass(cb);
             if let Some(t) = &timer {
-                t.mark(d, cb, 5);
+                t.mark(d, cb, 6);
             }
             if let (Some((color, _)), Some(readback)) = (offscreen, readback) {
                 let region = vk::BufferImageCopy::default()
@@ -1708,7 +1722,7 @@ impl Renderer {
             d.destroy_pipeline(self.ao_gbuf_pipeline, None);
             d.destroy_pipeline(self.ao_gbuf_two_sided_pipeline, None);
             d.destroy_pipeline(self.pipeline_two_sided, None);
-            for p in self.scene_pipelines.iter().flatten() {
+            for p in self.scene_pipelines.iter().flatten().flatten() {
                 d.destroy_pipeline(*p, None);
             }
             d.destroy_pipeline(self.ao_gbuf_terrain_pipeline, None);

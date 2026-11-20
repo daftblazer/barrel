@@ -1356,7 +1356,17 @@ test holds despite the discard, and each pixel under many leaves is lit once. `m
 position is `invariant` so the two passes agree. At the Rasenboden gate (1080p, the game's Low)
 the trees' cards were 5.2 of the scene's 9.0 million pixel-shader runs; on the PC the scene stage
 went from 1.62 to 1.11 ms, the image the same but for 54 pixels (2026-11-19). `--timings` prints
-the scene pass's pixel and vertex shader runs where the device has pipeline statistics.
+the scene pass's pixel and vertex shader runs where the device has pipeline statistics, and its
+stage `reflect + water` is what a frame with water does after its opaque scene (the normals, the
+reflections, the copy and the water's part). Per part at that gate: 1.21 million runs of the
+whole program for the opaque draws, 4.94 million of the test alone, 1.05 million of the whole
+program for the tested draws.
+
+Each part's pipelines are made for the field's models and for the others (`model.frag`'s
+`KIND`, by `Draw::field`): the program's paths for the distant view, the characters' hull and
+the other kind are left out, so its registers are its own path's. On RADV the field models'
+program went from 7,018 instructions and 72 registers (the program for every draw) to 1,903 and
+48; the characters' is 4,604 and 60.
 
 ## Foliage
 

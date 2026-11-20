@@ -7,7 +7,7 @@ use ash::vk;
 use crate::{Gpu, Result};
 
 /// The stages, between consecutive marks.
-pub const STAGES: [&str; 5] = ["shadow map", "occlusion", "scene", "glow + AA/upscale", "post"];
+pub const STAGES: [&str; 6] = ["shadow map", "occlusion", "scene", "reflect + water", "glow + AA/upscale", "post"];
 const MARKS: u32 = STAGES.len() as u32 + 1;
 
 pub struct Timer {
@@ -53,7 +53,7 @@ impl Timer {
         }
     }
 
-    /// Mark `n` (1 to 5): everything recorded before it has finished.
+    /// Mark `n` (1 to 6): everything recorded before it has finished.
     ///
     /// # Safety
     /// `cb` is recording, after `begin`.
