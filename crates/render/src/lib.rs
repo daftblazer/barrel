@@ -1068,11 +1068,11 @@ impl Targets {
         };
         // The reflections' per-pixel targets (only with single-sampled drawing).
         let spec_targets = if reflections && multisample.is_none() {
-            let mut make = || -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
-                let (image, memory) = image(reflect::FORMAT, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
-                Ok((image, memory, view(image, reflect::FORMAT, vk::ImageAspectFlags::COLOR)?))
+            let mut make = |format| -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView)> {
+                let (image, memory) = image(format, vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::SAMPLED)?;
+                Ok((image, memory, view(image, format, vk::ImageAspectFlags::COLOR)?))
             };
-            Some([make()?, make()?])
+            Some([make(reflect::TARGET_FORMATS[0])?, make(reflect::TARGET_FORMATS[1])?])
         } else {
             None
         };

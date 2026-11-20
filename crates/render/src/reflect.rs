@@ -11,9 +11,13 @@ use ash::vk;
 use crate::ao::{half, View};
 use crate::{Gpu, Result};
 
-/// The march target's format (a reflection's colour and its alpha), which the scene pass's two
-/// per-pixel attachments share.
+/// The march target's format (a reflection's colour and its alpha).
 pub const FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
+/// The scene pass's two per-pixel attachments, as narrow as they hold (a tiler keeps every
+/// attachment in its tile memory, so their bytes decide its bins): `spec_light`, the factor (an
+/// occlusion times a Fresnel term: 0 to 1, sRGB-encoded so the small ones keep their precision)
+/// and the gloss; `spec_env`, the cube's light (positive, unbounded).
+pub const TARGET_FORMATS: [vk::Format; 2] = [vk::Format::R8G8B8A8_SRGB, vk::Format::B10G11R11_UFLOAT_PACK32];
 /// The mip chain's levels: 960 by 540 down to 30 by 16 (the game's five downsample draws).
 pub const LEVELS: u32 = 6;
 

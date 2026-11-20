@@ -331,9 +331,9 @@ fn scene_render_pass(d: &ash::Device, settings: &RenderSettings, samples: vk::Sa
         } else {
             (Load::CLEAR, Store::STORE, Layout::UNDEFINED, Layout::SHADER_READ_ONLY_OPTIMAL)
         };
-        for _ in 0..2 {
+        for format in crate::reflect::TARGET_FORMATS {
             colour.push(vk::AttachmentReference { attachment: attachments.len() as u32, layout: Layout::COLOR_ATTACHMENT_OPTIMAL });
-            attachments.push(attachment(crate::reflect::FORMAT, single, spec_load, spec_store, spec_initial, spec_last));
+            attachments.push(attachment(format, single, spec_load, spec_store, spec_initial, spec_last));
         }
     }
     let colour = &colour[..];
@@ -1041,25 +1041,26 @@ impl Renderer {
             }
             for (layer, cascade, load) in jobs {
                 let clear = [vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } }];
-                let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow_target.size, height: shadow_target.size } };
-                let pass = if load { shadow_target.pass_load } else { shadow_target.pass };
-                d.cmd_begin_render_pass(
-                    cb,
-                    &vk::RenderPassBeginInfo::default().render_pass(pass).framebuffer(shadow_target.framebuffers[layer]).render_area(full).clear_values(&clear),
-                    vk::SubpassContents::INLINE,
-                );
-                let Some(shadow_vp) = cascade else {
-                    d.cmd_end_render_pass(cb);
-                    continue;
-                };
                 // The characters' map is written `SUB_SIZE` texels a side in the layer's corner; a
-                // game's own map sizes (`Frame::shadow_sides`) likewise.
+                // game's own map sizes (`Frame::shadow_sides`) likewise. The pass covers that
+                // corner alone (a tiler bins and stores only it); a layer's first clear, all of it.
                 let [width, height] = match shadow_sides {
                     Some(sides) => sides[layer].map(|v| v.min(shadow_target.size)),
                     None if layer == shadow::SUB_LAYER => [shadow::SUB_SIZE.min(shadow_target.size); 2],
                     None => [shadow_target.size; 2],
                 };
                 let area = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width, height } };
+                let full = vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: shadow_target.size, height: shadow_target.size } };
+                let pass = if load { shadow_target.pass_load } else { shadow_target.pass };
+                d.cmd_begin_render_pass(
+                    cb,
+                    &vk::RenderPassBeginInfo::default().render_pass(pass).framebuffer(shadow_target.framebuffers[layer]).render_area(if cascade.is_some() { area } else { full }).clear_values(&clear),
+                    vk::SubpassContents::INLINE,
+                );
+                let Some(shadow_vp) = cascade else {
+                    d.cmd_end_render_pass(cb);
+                    continue;
+                };
                 d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
                 d.cmd_set_scissor(cb, 0, &[area]);
                 d.cmd_bind_vertex_buffers(cb, 0, &[vbuf], &[0]);

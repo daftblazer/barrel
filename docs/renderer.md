@@ -1372,7 +1372,14 @@ The shadow maps' casters go the same way: those with opaque textures first, thro
 `shadow_opaque_pipelines` (`shadow_pipeline` and `shadow_cascade_pipeline` without a fragment
 program: depth alone, the cheapest a tiler writes), then the alpha-tested ones through the
 pipelines with the test. Depth alone does not depend on the order, so the maps are the same; on
-the PC the gate's shadow stage went from 0.905 to 0.781 ms.
+the PC the gate's shadow stage went from 0.905 to 0.781 ms. Each layer's pass covers only its
+map's corner of the layer (the render area: a tiler bins and stores that alone), but for the
+layer's first clear.
+
+For a tiler what the scene pass keeps a pixel decides its bins: at the game's Low with
+reflections, the scene image (B10G11R11, 4 bytes), depth (4), the normals (R16G16, 4) and the
+reflections' two inputs (`reflect::TARGET_FORMATS`, 4 each: 8-bit sRGB and B10G11R11, where
+two 16-bit floats were 16), 20 bytes where it was 28.
 
 ## Foliage
 

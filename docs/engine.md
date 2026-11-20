@@ -681,6 +681,11 @@ mistake for a day). `u46` in the events does not play its movie yet.
   writes the depth plus its slope scale times |ddx| + |ddy|; Barrel's raster depth bias takes
   the larger of the two (or their length), so a few shadow edges sit a texel off. It lets the
   depth test run before the pixel program, which halves the pass's cost.
+- **The reflections' per-pixel inputs at 8 bits** (Ryza; `reflect::TARGET_FORMATS`): the
+  scene pass leaves the reflections' factor and gloss as sRGB 8-bit and the cube's light as
+  B10G11R11 where the game keeps 16-bit floats, so a handheld's tiler holds 8 bytes a pixel less
+  (fewer bins). At the Rasenboden gate 1.2% of the pixels move, all but 5 by at most 4 levels
+  (the most 7); every check scores the same.
 
 ## Sound
 
