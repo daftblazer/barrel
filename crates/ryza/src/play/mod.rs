@@ -1891,7 +1891,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
             camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
             freeze_now: false,
             frozen_weight: 0.0,
-            overlay: [0.0; 4],
+            // Before the title the game shows its boot screens over black: no scene shows.
+            overlay: if scene_on.get() { [0.0; 4] } else { [0.0, 0.0, 0.0, 1.0] },
             layers: &layers,
             readback: readback.map(|(b, _)| b),
             sky_plane: view.sky_plane,
