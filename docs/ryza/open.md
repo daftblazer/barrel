@@ -84,6 +84,41 @@ checks are `runchecks docs/ryza/checks.txt` (44 rows; frames are the exact captu
    counts before the cursor shows, and the sequencer's state 0xc (60 s without a button at the
    prompt, `0x140de7824`).
 
+## The load screen (title menu, Load Game)
+
+Built (2026-11-20, `crates/ryza/src/{load,saves}.rs`, `title_menu.rs`, `play/mod.rs`): the button on
+Load Game (`--title-keys F:choose`, Enter in a window) fades the item (196/255 to 0 in 13 frames),
+turns the cursor one frame on and covers the screen black (1/18 a frame, full by 20); 160 frames on
+a list of the saves comes up; a button on one (`F:ok`, Enter) starts loading it and 130 frames on the
+run goes into the field from that file in the same window (`Handoff`: `run_once` returns the
+chosen file and the window, `run` starts again with `<install> - - --save FILE --window`). Saves:
+`--saves DIR` (else, in a window, the original's own folder in a Steam library's Proton prefix);
+`barrel_ryza::saves` only reads. Checked: capture `load-path` frames 1400-1415 at 0 mismatches.
+
+Not done, in order of what it blocks:
+- **The load screen's own drawing (1450 on).** Barrel draws a plain list in the title's font
+  (`load::list_quads`), not the layout. The capture (frame 1600, 270 quads) is: `a21_bg07` (tiled 2 x 2,
+  fading in), the `a21_common` name line and nine-slice lines (`gen_a21_common02_line`, wrap, margin
+  50,0,50,32: 25 + three 140 + 28 + 25 pixels), `a21_saveload#1` row frames (`gen_a21_saveload01_data_fl02`
+  and the blinking cursor `data_fl`, image 1) 111 layout pixels apart from (115, 80), the row icon,
+  `a21_caption` and its "Load" (STR_UI_0028), the info panel at (727, 129) (play time, level, money,
+  gold coins, party, "Version Info 1.02"), and a guide bar from `a21_common#3` ("Select / Submenu / Back /
+  Confirm" with button glyphs from another layout, not found yet). Text is `mainfont00_hd1080_0` for
+  the heading (table at file offset 0x12fb710, 1,774 glyphs) and `mainfont01` for the rest: the title's
+  table at 0x12c0ba0 does not hold the load screen's glyphs, the one at 0x1307920 does (found by matching
+  the capture's glyph uv to the records, e.g. `A` at 275, 560). Strings: `str_ui.xml`.
+- **The notice at 1450-1555 and 1615-1720**: the saving icon, hopping letters and pen of `boot.rs`'s
+  notice (`uil_a21_saveload_progress.xml`), fading in from 34/255 and out; it needs `Boot` in the title
+  layer without the boot (its textures: `a21_saveload` #0, #2).
+- **The loading screen (1725)**: `a21_loading` #0 / #1, three quads, no cover.
+- **The black frames (1420-1445)**: the game draws a 9600 x 3240 quad of `fm_d02_barrel_02#1` (white
+  colour, black texel) after a black fill the trace hides; Barrel draws the fill only: 2 mismatches a
+  frame, the same pixels.
+- Which header bytes are the party: from +0x4e ten (id, level) byte pairs, `ff` for empty (the
+  capture's three, Ryza 0 / Lent 2 / Tao 3 at level 3, fit; both saves hold the same party, so the
+  id order is a guess). Names for the ids: the string table has them (not read).
+- Selecting New Game, Settings, Extra, Episodes and End Game does nothing.
+
 ## Event commands against the game's own log
 
 The game runs every command through per-subject queues (`0x140489410` steps a runner's queue:

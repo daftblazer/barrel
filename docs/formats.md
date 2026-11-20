@@ -780,8 +780,12 @@ reads (`0x141093530`). `save::Summary` reads the seed, the rank and the stock.
 
 The game saves under `<local app data>/KoeiTecmo/Atelier Ryza DX/<user id>/`: a folder a
 slot (`GameData00`, ...), `AutoSaveData` and `SystemData` (the settings), each with a
-`data.dat`. A file is 0x100 plain bytes (what the load screen shows: at +0x30 the time of
-saving as a `FILETIME`, then words not read) and the state in the coding of "Saves" above,
+`data.dat`. A file is 0x100 plain bytes (what the load screen shows, `barrel_ryza::saves::Header`:
+at +0x30 the time of saving as a `FILETIME` (shown in the machine's time zone, `4/4/2026 6:57`), +0x3c the
+seconds played (`000:08:13`), +0x40 the money, +0x44 the alchemy level (a byte), +0x48 the gold coins,
+and from +0x4e ten pairs of bytes (character, level) for the party, `ff ff` for an empty place; read
+from a capture's two saves, which agree on everything but the time and play time, so the party's
+character order is a guess) and the state in the coding of "Saves" above,
 with other keys: the word pass's stream key 0xd5c1 (Escha 0xd727), modulus 0xdb2 and
 threshold 0x6d9 (0xec2, 0x761), the byte runs' keys 0x9f73, 0xaee3, 0x394d (0xa22f, 0xa129,
 0x394d); the bit swap's key, the runs' lengths, the trailer and the two packings are the
