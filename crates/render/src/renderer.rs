@@ -1519,7 +1519,8 @@ impl Renderer {
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 1, &[instance_set], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 2, &[sets[outline_tex], sets[white], sets[white]], &[]);
                 d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, pipeline_layout, 5, &[ao_set], &[]);
-                for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_none() && !d.eye) {
+                // Over the draws the scene drew (in view, shown and in sight), as the forward pass below.
+                for draw in draws.iter().filter(|d| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now)) && !hidden[d.instance as usize] && d.field.is_none() && !d.eye && !d.sky && shown(d) && in_sight(d)) {
                     let Some(colour) = draw.outline else { continue };
                     let mut per_draw = [0u8; 12];
                     per_draw[..4].copy_from_slice(&draw.instance.to_le_bytes());
