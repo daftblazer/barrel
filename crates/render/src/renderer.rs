@@ -639,10 +639,19 @@ impl Renderer {
         let normal_entry = [vk::SpecializationMapEntry { constant_id: 1, offset: 0, size: 4 }, vk::SpecializationMapEntry { constant_id: 5, offset: 4, size: 4 }];
         let normal_data: Vec<u8> = [u32::from(from_scene), u32::from(settings.motion)].iter().flat_map(|v| v.to_le_bytes()).collect();
         let normal_special = vk::SpecializationInfo::default().map_entries(&normal_entry).data(&normal_data);
+        // The distant view's pipeline (`sky_pipeline`): `KIND` 3, its far path alone; the forward
+        // pass over the characters (`forward_pipeline`): `KIND` 4, the hull alone.
+        let kind_entry = [normal_entry[0], normal_entry[1], vk::SpecializationMapEntry { constant_id: 4, offset: 8, size: 4 }];
+        let kind_data = |kind: u32| -> Vec<u8> { [u32::from(from_scene), u32::from(settings.motion), kind].iter().flat_map(|v| v.to_le_bytes()).collect() };
+        let (far_data, hull_data) = (kind_data(3), kind_data(4));
+        let far_special = vk::SpecializationInfo::default().map_entries(&kind_entry).data(&far_data);
+        let hull_special = vk::SpecializationInfo::default().map_entries(&kind_entry).data(&hull_data);
         let stages = [
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(vs).name(c"main").specialization_info(&vertex_special),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(fs).name(c"main").specialization_info(&normal_special),
         ];
+        let far_stages = [stages[0], stages[1].specialization_info(&far_special)];
+        let hull_stages = [stages[0], stages[1].specialization_info(&hull_special)];
         let vbind = [vk::VertexInputBindingDescription { binding: 0, stride: size_of::<Vertex>() as u32, input_rate: vk::VertexInputRate::VERTEX }];
         let vattr = [
             vk::VertexInputAttributeDescription { location: 0, binding: 0, format: vk::Format::R32G32B32_SFLOAT, offset: 0 },
@@ -806,7 +815,7 @@ impl Renderer {
         let forward_att = [sky_blend_att[0], other_slot, forward_spec, spec_kept];
         let forward_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&forward_att[..colour_targets]);
         let sky_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&sky_blend_att[..colour_targets]);
-        let sky_info = pipeline_info.depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
+        let sky_info = pipeline_info.stages(&far_stages).depth_stencil_state(&no_depth).color_blend_state(&sky_blend);
         let sky_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[sky_info], None).map_err(|(_, e)| e)?[0] };
         // The sky plane: a screen-covering triangle (no vertices) on the far plane where nothing
         // covers it, like the distant view, unblended (the clouds blend over it after).
@@ -850,7 +859,7 @@ impl Renderer {
         let outline_raster = raster.cull_mode(vk::CullModeFlags::FRONT);
         let outline_info = pipeline_info.rasterization_state(&outline_raster).color_blend_state(&outline_blend);
         let outline_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[outline_info], None).map_err(|(_, e)| e)?[0] };
-        let forward_info = outline_info.depth_stencil_state(&no_depth).color_blend_state(&forward_blend);
+        let forward_info = outline_info.stages(&hull_stages).depth_stencil_state(&no_depth).color_blend_state(&forward_blend);
         let forward_pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &[forward_info], None).map_err(|(_, e)| e)?[0] };
 
         // The sun's shadow map pass: the same vertex shader from the sun, depth only (the alpha
@@ -1525,10 +1534,12 @@ impl Renderer {
                 }
             }
             // The forward pass over the characters (a Ryza character's toon-ramp draws): the
-            // game's second look at them, the hull blended over the lit scene.
+            // game's second look at them, the hull blended over the lit scene; over the draws the
+            // scene drew (in view, of this field, shown and in sight), not every character's.
             if upto.outlines() {
                 let mut bound = false;
-                for draw in draws.iter().filter(|d| !hidden[d.instance as usize] && d.field.is_some() && !d.sky) {
+                let drawn = |d: &&Draw| d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &view_planes_now)) && !hidden[d.instance as usize] && d.field == Some(current_field) && !d.sky && shown(d) && in_sight(d);
+                for draw in draws.iter().filter(drawn) {
                     let (bits, _) = material(draw);
                     if bits & 128 == 0 {
                         continue;

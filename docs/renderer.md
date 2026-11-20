@@ -733,7 +733,7 @@ before the copy the water refracts) three passes run: the march (`reflect.frag`:
 half-size pixel over the occlusion's normals and view depth, the lit scene's colour at the hit, the
 alpha the fades' complement; the steps read the view depth alone, an r32f target the derive pass
 writes beside the rgba32f one, 4 bytes a step where the whole texel is 16: on the RP6 the march
-went from about 10 ms to under 3) into level 0 of a six-level rgba16f chain (960 by 540 down to 30 by
+went from 10.3 ms to 1.8) into level 0 of a six-level rgba16f chain (960 by 540 down to 30 by
 16), the mip passes (`reflect_mip.frag`: one bilinear sample of the level above each), and the
 application (`reflect_apply.frag`), which adds `factor * w * (reflection - cube light)` to the
 scene, `w` the level 0 alpha times `vMerge.x` and the colour taken at lod `5 (1 - gloss)`. The scene
@@ -1366,7 +1366,11 @@ program for the tested draws.
 
 Each part's pipelines are made for the field's models and for the others (`model.frag`'s
 `KIND`, by `Draw::field`): the program's paths for the distant view, the characters' hull and
-the other kind are left out, so its registers are its own path's. On RADV the program for
+the other kind are left out, so its registers are its own path's. The distant view's pipeline
+(`KIND` 3) keeps the far path alone and the forward pass's (`KIND` 4) the hull alone. The forward
+pass draws over what the scene drew (in view, of this field, shown and in sight): it went over
+every toon-ramp draw of the area, 358 draws and 890,000 indices at the gate where the scene
+showed few of them, 3 ms of the RP6's frame. On RADV the program for
 every draw had 7,018 instructions and 72 registers; the two kinds' are 4,604 and 60, and 1,903
 and 48. Turnip for an Adreno 740 (`work/ir3-run.sh`, the freedreno drm-shim, nothing drawn):
 the field models' program about 5,100 instructions and 19 vec4 registers (10 waves of 16), the
