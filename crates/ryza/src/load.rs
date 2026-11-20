@@ -83,7 +83,7 @@ impl Stage {
                 return Stage::Loading { on, since, done: since >= FIELD_AT };
             }
             let notice = (since >= NOTICE_IN).then(|| (NoticeWord::Processing, since - NOTICE_IN, if since >= NOTICE_OUT { 1.0 - fade(since - NOTICE_OUT) } else { fade(since - NOTICE_IN) }));
-            return Stage::Screen { on, list: (since < FADE).then_some((from_c - LIST_AT, Some(since))), notice };
+            return Stage::Screen { on, list: (since < FADE + 5).then_some((from_c - LIST_AT, Some(since))), notice };
         }
         match from_c {
             f if f < COVER_FULL => Stage::Cover(((f + 1) as f32 / COVER_RISE).min(1.0)),

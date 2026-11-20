@@ -40,11 +40,15 @@ const BROWN: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
 /// Frames the common fade takes (`anm_common_fade_in`).
 const FADE_FRAMES: f32 = 15.0;
 
-// STAND-IN: The help bar's text is the capture's (the buttons' pictures are the game's glyphs for the pad's assignment, the words its labels); the real thing is the game's input-guide text, built from its string table (`STR_UI_0262` is empty in the shipped tables).
-/// The help bar's words with the button glyphs set before each (Select, Submenu, Back, Confirm).
-const GUIDE_TEXT: &str = "\u{4e2}Select \u{4de}Submenu \u{4d8}Back \u{4da}Confirm";
-// STAND-IN: The caption's word is the capture's; the real thing is the game's own caption text (`STR_UI_0028` is empty in the shipped tables).
-const CAPTION_TEXT: &str = "Load";
+// STAND-IN: The help bar's button glyphs are the capture's (the game picks the pictures for the pad's assignment); the words come from the string table.
+/// The help bar's entries: the button glyph and the words' string (`str_menu_define`: Select,
+/// Submenu, Back, Confirm).
+const GUIDE_ENTRIES: [(char, u32); 4] = [('\u{4e2}', 4_194_366), ('\u{4de}', 4_194_317), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+/// The caption's word: the save/load strings' "Load" (`str_saveload_define`; the layout's own
+/// `STR_UI_0028` is empty in the tables, the game sets the caption's text in code).
+const CAPTION_STRING: u32 = 4_456_470;
+/// Every string number the screen reads besides the layout's own and the party's names.
+const WORDS: [u32; 5] = [CAPTION_STRING, GUIDE_ENTRIES[0].1, GUIDE_ENTRIES[1].1, GUIDE_ENTRIES[2].1, GUIDE_ENTRIES[3].1];
 
 /// A picture, or several, of a style: where each is in the atlas, and for a stretched ("wrap")
 /// picture its left and right margins.
@@ -223,7 +227,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (STR_UI_BASE..STR_UI_BASE + 1000).contains(n) || (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n))
+            .filter(|(n, _)| (STR_UI_BASE..STR_UI_BASE + 1000).contains(n) || WORDS.contains(&n.to_owned()) || (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n))
             .collect();
         let first = |s: &Style| s.pictures.first().copied().ok_or("a style without a picture".to_string());
 
@@ -413,6 +417,12 @@ const PLATE_FRAMES: f32 = 6.4;
 const PLATE_LEAVE: f32 = 2.6;
 
 impl View {
+    /// The help bar's line: each entry's button glyph, then its words.
+    fn guide_text(&self) -> String {
+        let word = |n: u32| self.strings.get(&n).map_or("", String::as_str);
+        GUIDE_ENTRIES.iter().map(|&(glyph, n)| format!("{glyph}{}", word(n))).collect::<Vec<_>>().join(" ")
+    }
+
     fn string(&self, n: u32) -> &str {
         self.strings.get(&(STR_UI_BASE + n)).map_or("", String::as_str)
     }
@@ -425,6 +435,12 @@ impl View {
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { view: self, k, left, out: Vec::new() };
         let top = moment.opacity();
+        if top <= 0.0 {
+            // Only the help bar is left of a screen that has faded out.
+            pen.out.extend(notice);
+            self.help(&mut pen, &moment);
+            return pen.out;
+        }
         let white = |a: f32| [1.0, 1.0, 1.0, a];
         let brown = |a: f32| [BROWN[0], BROWN[1], BROWN[2], a];
 
@@ -479,17 +495,22 @@ impl View {
 
         // The caption and the help bar.
         pen.natural(CAPTION, 3, &self.caption, 0, self.caption_at, white(top));
-        pen.text(&self.caption_text, self.caption_at, CAPTION_TEXT, [BROWN[0], BROWN[1], BROWN[2], top]);
+        pen.text(&self.caption_text, self.caption_at, self.strings.get(&CAPTION_STRING).map_or("", String::as_str), [BROWN[0], BROWN[1], BROWN[2], top]);
+        pen.out.extend(notice);
+        self.help(&mut pen, &moment);
+        pen.out
+    }
+
+    /// The help bar for `moment`: it outlasts the screen's own fade-out by 5 frames.
+    fn help(&self, pen: &mut Pen, moment: &Moment) {
         // The help bar fades in 20 frames after the screen's start and out from 5 frames after the choice (read off the capture's 1580-1615).
         let guide = ((moment.age - 20) as f32 / FADE_FRAMES).clamp(0.0, 1.0) * moment.leaving.map_or(1.0, |l| 1.0 - ((l - 5) as f32 / FADE_FRAMES).clamp(0.0, 1.0));
         // STAND-IN: The plate's width steps (the capture: 533 px at 1580, full 627 from 1585, 533 at 1605, 376 at 1610-1615) are fitted as a linear grow over PLATE_FRAMES from the bar's start and, after the choice, a shrink from PLATE_LEAVE that also takes the words away; the real thing is the layout's own tween (not found in uia_*.xml).
         let grow = ((moment.age - 20) as f32 / PLATE_FRAMES).clamp(0.0, 1.0) * moment.leaving.map_or(1.0, |l| 1.0 - ((l as f32 - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0));
         let words = moment.leaving.is_none_or(|l| (l as f32) < PLATE_LEAVE);
-        pen.out.extend(notice);
         if guide > 0.0 {
-            self.help_bar(&mut pen, guide, grow, words);
+            self.help_bar(pen, guide, grow, words);
         }
-        pen.out
     }
 
     /// The loading screen `age` frames after it came up: the two frames and, turning
@@ -522,7 +543,8 @@ impl View {
     /// The help bar at the screen's lower right: a stretched plate as wide as its words.
     fn help_bar(&self, pen: &mut Pen, alpha: f32, grow: f32, words_shown: bool) {
         let s = self.help_text.size * pen.k / ATLAS_SIZE;
-        let words: f32 = GUIDE_TEXT.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
+        let guide = self.guide_text();
+        let words: f32 = guide.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
         let right = 1280.0;
         // STAND-IN: The plate is one atlas pixel of the text (size / ATLAS_SIZE layout pixels) wider than the advances' sum, fitted to the capture (0.444 layout pixels at size 16); the real thing is the game's own text-width measure.
         let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
@@ -530,7 +552,7 @@ impl View {
         let at = [right - width, self.help_at[1]];
         pen.wrap(GUIDE, 2, &self.help, at, width, [1.0, 1.0, 1.0, alpha]);
         if words_shown {
-            pen.text(&self.help_text, [1280.0, 720.0], GUIDE_TEXT, [1.0, 1.0, 1.0, alpha]);
+            pen.text(&self.help_text, [1280.0, 720.0], &guide, [1.0, 1.0, 1.0, alpha]);
         }
     }
 }
