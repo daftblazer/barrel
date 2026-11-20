@@ -200,6 +200,47 @@ struct Letter {
     spins: bool,
 }
 
+// STAND-IN: the loading notice's picture schedule (a game timer, not in the layout) is fitted to the capture: where the first and second pictures end and the step after them, in 60 Hz frames.
+const LOADING_PIC0_END: f32 = 23.5;
+const LOADING_PIC1_END: f32 = 54.25;
+const LOADING_PIC_STEP: f32 = 12.25;
+
+/// The notice's loading variant: the icon with its picture list, and the hopping word.
+struct LoadingNotice {
+    icon_at: [f32; 2],
+    pictures: Vec<[f32; 4]>,
+    /// "Please wait..." (while the saves are read) and "Processing..." (while one loads): the
+    /// letters and the hop's speed.
+    waiting: (Vec<Letter>, f32),
+    processing: (Vec<Letter>, f32),
+}
+
+/// Which word the loading notice hops.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NoticeWord {
+    Waiting,
+    Processing,
+}
+
+/// The letters of one text line: each `image` bound to the hop by its `bind_node`.
+fn read_letters(line: &Element, ctrl: &Element, icon_at: [f32; 2], line_at: [f32; 2], styles: &Element) -> Result<Vec<Letter>, String> {
+    let mut letters = Vec::new();
+    for l in line.children.iter().filter(|c| c.name == "image") {
+        let name = l.attr("name").unwrap_or("");
+        let bind = ctrl.children.iter().find(|b| b.attr("node") == Some(name)).ok_or(format!("{name}: not bound to the hop"))?;
+        let uvwh = style(styles, l.attr("style").unwrap_or(""))?.pictures[0];
+        let [x, y] = pair(l, "pos", [0.0; 2]);
+        letters.push(Letter {
+            pos: [icon_at[0] + line_at[0] + x, icon_at[1] + line_at[1] + y],
+            size: pair(l, "size_wh", [uvwh[2] / ATLAS_PER_LAYOUT, uvwh[3] / ATLAS_PER_LAYOUT]),
+            uvwh,
+            delay: bind.attr("delay").and_then(|d| d.trim().parse().ok()).unwrap_or(0.0),
+            spins: bind.attr("anim") == Some("anm_hopping"),
+        });
+    }
+    Ok(letters)
+}
+
 /// An orb of the autosave window's spinner.
 #[derive(Clone, Debug)]
 struct Orb {
@@ -219,6 +260,7 @@ pub struct Boot {
     icon: Style,
     icon_flick: f32,
     letters: Vec<Letter>,
+    loading: LoadingNotice,
     pen_style: [f32; 4],
     pen_speed: f32,
     hop_speed: f32,
@@ -309,20 +351,20 @@ impl Boot {
         let (line, line_at) = find(icon, "text_anime_creating", [0.0; 2]).ok_or("no text_anime_creating")?;
         let ctrl = line.children.iter().find(|c| c.name == "anim_ctrl").ok_or("text_anime_creating has no animation")?;
         let hop_speed = ctrl.attr("speed").and_then(|s| s.trim().parse().ok()).unwrap_or(1.0);
-        let mut letters = Vec::new();
-        for l in line.children.iter().filter(|c| c.name == "image") {
-            let name = l.attr("name").unwrap_or("");
-            let bind = ctrl.children.iter().find(|b| b.attr("node") == Some(name)).ok_or(format!("{name}: not bound to the hop"))?;
-            let uvwh = style(&styles, l.attr("style").unwrap_or(""))?.pictures[0];
-            let [x, y] = pair(l, "pos", [0.0; 2]);
-            letters.push(Letter {
-                pos: [icon_at[0] + line_at[0] + x, icon_at[1] + line_at[1] + y],
-                size: pair(l, "size_wh", [uvwh[2] / ATLAS_PER_LAYOUT, uvwh[3] / ATLAS_PER_LAYOUT]),
-                uvwh,
-                delay: bind.attr("delay").and_then(|d| d.trim().parse().ok()).unwrap_or(0.0),
-                spins: bind.attr("anim") == Some("anm_hopping"),
-            });
-        }
+        let letters = read_letters(line, ctrl, icon_at, line_at, &styles)?;
+        // The loading variant (shown on the load screen): its own icon and word, no pen.
+        let (load_icon, load_at) = find(&progress, "icon_loading", [0.0; 2]).ok_or("no icon_loading")?;
+        let word = |name: &str| -> Result<(Vec<Letter>, f32), String> {
+            let (line, line_at) = find(load_icon, name, [0.0; 2]).ok_or(format!("no {name}"))?;
+            let ctrl = line.children.iter().find(|c| c.name == "anim_ctrl").ok_or(format!("{name} has no animation"))?;
+            Ok((read_letters(line, ctrl, load_at, line_at, &styles)?, ctrl.attr("speed").and_then(|s| s.trim().parse().ok()).unwrap_or(1.0)))
+        };
+        let loading = LoadingNotice {
+            icon_at: load_at,
+            pictures: style(&styles, load_icon.attr("style").ok_or("icon_loading has no style")?)?.pictures,
+            waiting: word("text_anime_waiting")?,
+            processing: word("text_anime_loading")?,
+        };
         let (pen, _) = find(icon, "prompt_icon", [0.0; 2]).ok_or("no prompt_icon")?;
         let pen_ctrl = pen.children.iter().find(|c| c.name == "anim_ctrl").ok_or("prompt_icon has no animation")?;
         let anim_of = |name| Track::read(&anims, name, "pos");
@@ -368,6 +410,7 @@ impl Boot {
             icon: icon_style,
             icon_flick: icon.attr("flick_time").and_then(|f| f.trim().parse().ok()).ok_or("icon_saving has no flick_time")?,
             letters,
+            loading,
             pen_style: style(&styles, pen.attr("style").ok_or("prompt_icon has no style")?)?.pictures[0],
             pen_speed,
             hop_speed,
@@ -431,25 +474,43 @@ impl Boot {
         self.notice_at(t, alpha, k, left)
     }
 
-    /// The notice `t` seconds into its animations at opacity `alpha` on a `screen` of pixels
-    /// (the load path shows it while the saves are read and while one loads).
-    pub fn saving_notice(&self, t: f32, alpha: f32, screen: (u32, u32)) -> Vec<Quad> {
+    /// The loading variant of the notice (the load screen shows it while the saves are read and
+    /// while one loads): the icon and the hopping word, `t` seconds into its
+    /// animations at opacity `alpha`. No pen.
+    pub fn loading_notice(&self, word: NoticeWord, t: f32, alpha: f32, screen: (u32, u32)) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        self.notice_at(t, alpha, k, (screen.0 as f32 - 1280.0 * k) * 0.5)
+        let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
+        let color = [1.0, 1.0, 1.0, alpha];
+        let n = &self.loading;
+        // The picture list's schedule is not in the layout (no `flick_time`): fitted to the
+        // capture's two runs (see the constants).
+        let frame = t * FPS;
+        let pic = if frame < LOADING_PIC0_END {
+            0
+        } else if frame < LOADING_PIC1_END {
+            1
+        } else {
+            [2, 3, 4, 1][((frame - LOADING_PIC1_END) / LOADING_PIC_STEP) as usize % 4]
+        };
+        let pic = n.pictures[pic.min(n.pictures.len() - 1)];
+        let [x, y] = [left + n.icon_at[0] * k, n.icon_at[1] * k];
+        let (w, h) = (pic[2] / ATLAS_PER_LAYOUT, pic[3] / ATLAS_PER_LAYOUT);
+        let mut out = vec![self.quad(1, SAVELOAD_PICTURES, pic, [x, y, x + w * k, y + h * k], color, None)];
+        let (letters, speed) = match word {
+            NoticeWord::Waiting => &n.waiting,
+            NoticeWord::Processing => &n.processing,
+        };
+        self.word(letters, *speed, t, color, k, left, &mut out);
+        out
     }
 
-    fn notice_at(&self, t: f32, alpha: f32, k: f32, left: f32) -> Vec<Quad> {
-        let color = [1.0, 1.0, 1.0, alpha];
+    /// A hopping word's letters, in order.
+    #[allow(clippy::too_many_arguments)]
+    fn word(&self, letters: &[Letter], hop_speed: f32, t: f32, color: [f32; 4], k: f32, left: f32, out: &mut Vec<Quad>) {
         let px = |p: [f32; 2]| [left + p[0] * k, p[1] * k];
-        let mut out = Vec::new();
-        let n = self.icon.pictures.len();
-        let pic = self.icon.pictures[(t / self.icon_flick).floor() as usize % n];
-        let [x, y] = px(self.icon_at);
-        let (w, h) = (pic[2] / ATLAS_PER_LAYOUT, pic[3] / ATLAS_PER_LAYOUT);
-        out.push(self.quad(1, SAVELOAD_PICTURES, pic, [x, y, x + w * k, y + h * k], color, None));
-        for l in &self.letters {
+        for l in letters {
             // The hop's clock is the control's speed times the time, the letter's delay later.
-            let tau = t * self.hop_speed - l.delay;
+            let tau = t * hop_speed - l.delay;
             let (dy, rot, scale) = if l.spins {
                 (self.hop[0].at(tau)[1], self.hop[1].at(tau)[2], self.hop[2].at(tau)[0])
             } else {
@@ -462,6 +523,18 @@ impl Boot {
             let spin = (rot != 0.0).then(|| Spin::About { pivot: [cx, cy], angle: rot.to_radians() });
             out.push(self.quad(0, SAVELOAD_LETTERS, l.uvwh, rect, color, spin));
         }
+    }
+
+    fn notice_at(&self, t: f32, alpha: f32, k: f32, left: f32) -> Vec<Quad> {
+        let color = [1.0, 1.0, 1.0, alpha];
+        let px = |p: [f32; 2]| [left + p[0] * k, p[1] * k];
+        let mut out = Vec::new();
+        let n = self.icon.pictures.len();
+        let pic = self.icon.pictures[(t / self.icon_flick).floor() as usize % n];
+        let [x, y] = px(self.icon_at);
+        let (w, h) = (pic[2] / ATLAS_PER_LAYOUT, pic[3] / ATLAS_PER_LAYOUT);
+        out.push(self.quad(1, SAVELOAD_PICTURES, pic, [x, y, x + w * k, y + h * k], color, None));
+        self.word(&self.letters, self.hop_speed, t, color, k, left, &mut out);
         // The pen hangs from the icon's bottom right corner, turned about its top left.
         // A looping animation restarts on the first 60 Hz tick after its period (the game steps in
         // whole frames and drops the remainder), so the second pass runs a part of a frame behind.

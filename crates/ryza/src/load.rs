@@ -8,6 +8,7 @@
 
 use barrel_render::text::Quad;
 
+use crate::boot::NoticeWord;
 use crate::title_menu::{Hold, Input};
 
 /// The black cover over the menu rises by 1/18 a frame from the button and is full 20 frames
@@ -42,7 +43,7 @@ pub enum Stage {
     /// The load screen's own drawing: the list (with its age and, once a save was chosen, the
     /// frames since) and the notice over it (its animation's frames and opacity), the cursor on
     /// slot `on`.
-    Screen { on: usize, list: Option<(i32, Option<i32>)>, notice: Option<(i32, f32)> },
+    Screen { on: usize, list: Option<(i32, Option<i32>)>, notice: Option<(NoticeWord, i32, f32)> },
     /// The loading screen after a save was chosen, in frames since the choice; `true` once the
     /// run is to go on into the field.
     Loading { on: usize, since: i32, done: bool },
@@ -78,14 +79,14 @@ impl Stage {
             if since >= LOADING_AT {
                 return Stage::Loading { on, since, done: since >= FIELD_AT };
             }
-            let notice = (since >= NOTICE_IN).then(|| (since - NOTICE_IN, if since >= NOTICE_OUT { 1.0 - fade(since - NOTICE_OUT) } else { fade(since - NOTICE_IN) }));
+            let notice = (since >= NOTICE_IN).then(|| (NoticeWord::Processing, since - NOTICE_IN, if since >= NOTICE_OUT { 1.0 - fade(since - NOTICE_OUT) } else { fade(since - NOTICE_IN) }));
             return Stage::Screen { on, list: (since < FADE).then_some((from_c - LIST_AT, Some(since))), notice };
         }
         match from_c {
             f if f < COVER_FULL => Stage::Cover(((f + 1) as f32 / COVER_RISE).min(1.0)),
             f if f < NOTICE_AT => Stage::Black,
             f if f < LIST_AT + FADE => {
-                let notice = Some((f - NOTICE_AT, if f < LIST_AT { fade(f - NOTICE_AT) } else { 1.0 - fade(f - LIST_AT) }));
+                let notice = Some((NoticeWord::Waiting, f - NOTICE_AT, if f < LIST_AT { fade(f - NOTICE_AT) } else { 1.0 - fade(f - LIST_AT) }));
                 Stage::Screen { on: cursor(&input.list_holds, count, frame), list: (f >= LIST_AT).then_some((f - LIST_AT, None)), notice }
             }
             f => Stage::Screen { on: cursor(&input.list_holds, count, frame), list: Some((f - LIST_AT, None)), notice: None },
@@ -114,12 +115,12 @@ mod tests {
         assert_eq!(Stage::at(&i, 2, 872), Stage::Cover(16.0 / 18.0));
         assert_eq!(Stage::at(&i, 2, 877), Stage::Black);
         // the notice from 1448 (capture) with 2/15 at 1450
-        assert_eq!(Stage::at(&i, 2, 857 + 50), Stage::Screen { on: 0, list: None, notice: Some((2, 2.0 / 15.0)) });
+        assert_eq!(Stage::at(&i, 2, 857 + 50), Stage::Screen { on: 0, list: None, notice: Some((NoticeWord::Waiting, 2, 2.0 / 15.0)) });
         // the list from 1556, the notice fading out as it fades in
-        assert_eq!(Stage::at(&i, 2, 857 + 160), Stage::Screen { on: 0, list: Some((4, None)), notice: Some((112, 1.0 - 4.0 / 15.0)) });
+        assert_eq!(Stage::at(&i, 2, 857 + 160), Stage::Screen { on: 0, list: Some((4, None)), notice: Some((NoticeWord::Waiting, 112, 1.0 - 4.0 / 15.0)) });
         assert_eq!(Stage::at(&i, 2, 857 + 176), Stage::Screen { on: 0, list: Some((20, None)), notice: None });
         // a button on a save: the list fades out, the notice in, then the loading screen and the field
-        assert_eq!(Stage::at(&i, 2, 1057 + 5), Stage::Screen { on: 0, list: Some((49, Some(5))), notice: Some((4, 4.0 / 15.0)) });
+        assert_eq!(Stage::at(&i, 2, 1057 + 5), Stage::Screen { on: 0, list: Some((49, Some(5))), notice: Some((NoticeWord::Processing, 4, 4.0 / 15.0)) });
         assert_eq!(Stage::at(&i, 2, 1057 + 125), Stage::Loading { on: 0, since: 125, done: false });
         assert_eq!(Stage::at(&i, 2, 1057 + 130), Stage::Loading { on: 0, since: 130, done: true });
     }

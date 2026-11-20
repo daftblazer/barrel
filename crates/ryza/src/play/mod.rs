@@ -1805,8 +1805,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Op
                         if let Some((age, leaving)) = list {
                             quads.extend(view.quads(&save_slots, barrel_ryza::load_view::Moment { age, leaving, on }, (width, height)));
                         }
-                        if let Some((age, alpha)) = notice {
-                            quads.extend(boot.saving_notice(age as f32 / 60.0, alpha, (width, height)));
+                        if let Some((word, age, alpha)) = notice {
+                            quads.extend(boot.loading_notice(word, age as f32 / 60.0, alpha, (width, height)));
                         }
                         layer.set(&gpu, &quads)?;
                         own_layer = true;
