@@ -136,11 +136,21 @@ What the capture shows (read, not in a table):
   where its picture is not clear); the tool disc's mask hides only (the tool sits inside it).
 
 Left:
-- Markers: the 6 icons (3 townsfolk, `mmap_icon` picture 5, and 3 gimmicks, picture at
-  (1902, 3127) of the field atlas) and one destination marker with two additive glows
-  (`a21_field.g1t#1`, pulsing alpha) drawn above the frame. Their centres follow
-  `(1729 + (Mx - X) / 80, 886 + (Mz - Z) / 83.3)` pixels for a thing at world (Mx, Mz) and her at
-  (X, Z); which townsfolk and gimmicks show (the tables name no minimap flag) is not found.
+- Markers (read 2026-11-20 off `hud-walk` 2030-3330 against the tables, not built): a marker's
+  centre is `(1729, 886) + (thing - her) / 83.33` pixels on 1080 lines in x and z alike (125
+  game units a layout pixel; all 18 exit markers of the six frames fit to under half a pixel;
+  the terrain's fitted 120 in x is likely 125 too). Which things:
+  - Exits (picture at (1902, 3127) of the field atlas): the field's `FIELDMAP_CHANGE_EX`
+    gimmicks (`gimmick_fieldmap_<field>.xml`; in Rasenboden fixID 13, 6, 9 in view).
+  - Townsfolk (`mmap_icon` picture 5): the field's people at their `npcmarker.xml` places
+    (`<FIELD>_marker`, all within 37 units), the ones standing for the story and time.
+  - Destination (picture at (0.4834, 0.7634), two additive glows from `a21_field.g1t#1`,
+    pulsing): `saves\mapmarker\mapmarker.xml`, the row whose `startEv` has played and
+    `endEv0` not: its `fieldMapTag` is where the story goes next (`targetX/Z` in metres when
+    it is in that map). For the autosave it is `S08_T_BODEN`: the marker points at exit 6 (to
+    Boden; the five frames' pointing rays cross at (42607, 39481), the exit is at (42618,
+    39467)) and, being off the map, sits on a ring 120 pixels (80 layout pixels) from the
+    middle in that direction.
 - STAND-INs: the basket's count (225 in the capture), the clock hour from the save's `time` word
   (50 to the hour fits the one capture: 493 shows AM 10; the game's clock does not advance in the
   50 seconds walked), the clock picture by period (picture 2 for 10 AM; the others guessed), the
