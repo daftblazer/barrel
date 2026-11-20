@@ -122,28 +122,43 @@ Not done, in order of what it blocks:
   info panel's own fade multiplies it (alpha = fade squared while the screen comes in); the cursor row's
   blink is `anm_common_blink` (120/255 times it) counted from 1556; the help bar fades in from 1576; on a
   button (1600) the screen fades out over 15 frames and the help bar from 1605. Fitted: the help
-  bar's plate is one atlas pixel of its text wider than the advances (`help_bar`); the caption's "Load"
-  and the bar's words are the capture's (`STR_UI_0028` and `STR_UI_0262` are empty in the shipped tables).
+  bar's plate is one atlas pixel of its text wider than the advances (`help_bar`).
   `MainFont00` (heading, figures) is `font::MAIN_FONT_00_HD1080`, 1,774 records ending 8 bytes before
   the other's; party names are the string table's 262148 + the character's id (0 Ryza, 2 Lent, 3 Tao).
   Left of it:
-  - **The help bar's plate moves**: at 1580 it is 533 px wide (its left edge by the text, 1387), full
-    (1293) by 1585, back to 533 at 1605 and 376 (1544) at 1610-1615 with the text apparently changed;
-    Barrel draws the full width throughout (mismatches at 1560-1580 under the bar's first frames and
-    1605-1615). The tween and the changed text are not read (one sample each).
+  - **The help bar's plate moves** (done as a fit): the plate's width runs linearly between its shortest
+    (376.5 px, 251 layout px) and the words' width over 6.4 frames from the bar's start (1576) (533 px
+    at 1580 is 4/6.4 of the way, full by 1585); after the choice (1600) the words vanish at 2.6 frames
+    and the plate shrinks by the same rule (533 at 1605, 376.5 at 1610), the bar outliving the screen's
+    own fade by 5 frames (`PLATE_*` in `load_view.rs`). The layout files (`uia_*.xml`) hold no such
+    animation: it is the game's code (a tween on the bar's width as its text changes); a one-line
+    fit stands in. The words now come from the string tables (`str_menu_define`: Select, Submenu, Back,
+    Confirm; the button glyphs stay the capture's), the caption's "Load" from `str_saveload_define`
+    (4456470): the layout's `STR_UI_0028` / `STR_UI_0262` are empty in every table (the `.xml.e` twin
+    decrypts to the same bytes), the game sets those texts in code.
   - **The cursor's alpha at the fade-out** (1605: 14/255 in the capture) looks truncated to bytes at each
     step; Barrel multiplies floats.
   - **A one-frame fade of the plate** and rows other than 2 are untested: the capture has two saves.
-- **The notice at 1450-1555 and 1615-1720 is not matched**: the game draws 14 quads (the saving icon,
-  eleven letters of another word, the pen) where `boot::Boot::saving_notice` (the boot's "creating
-  system data") draws 23. Its fade (alpha 34/255 at 1450, step 1/15 a frame from 1448; out from 1556 over
-  the list's fade in; in again from 1601 and out from 1707) is in `load.rs`. Left: the letters of the
-  loading variant (another node of `uil_a21_saveload_progress.xml`, or another word) and the icon's
-  picture step (the capture's picture index goes 0, 1, 2 at 1450, 1500, 1555; Barrel steps faster).
+- **The notice (done, `Boot::loading_notice(word, t, alpha, screen)`)**: it is `icon_loading` of
+  `uil_a21_saveload_progress.xml` (14 quads: the icon from `gen_a21_saveload02_load` and 13 letters; no
+  pen) with the word "Please wait..." (`text_anime_waiting`) while the saves are read and
+  "Processing..." (`text_anime_loading`) once one is chosen; the boot's "creating system data" is
+  `icon_saving` and shares the code (the hop, `Boot::word`). A reusable piece: it takes the
+  seconds since the notice appeared and its opacity. What drives it: the letters hop from the notice's
+  first frame (`anm_hopping`, one letter every 0.1 s, the ten dots last; no restart between the two
+  runs); the picture list steps on a schedule that is not in the layout (the icon has no
+  `flick_time`): picture 1 to 23.5 frames, picture 2 to 54.25, then 3, 4, 5, 2 in turn every 12.25
+  frames (`LOADING_PIC*`, fitted to the capture's two runs at 5-frame samples, so each edge is good
+  to a frame). Its fade: in from 1448 over 15 frames, out from 1555 (a frame before the list)
+  and from 1707; drawn under the help bar and over the rows. Not matched: at 1610 two letters
+  near a quarter turn are drawn by the game with the quad's corners in another order (the same
+  picture) and one is 1 px off; 1620 has 3 mismatches likewise.
 - **The loading screen (1725)**: three quads at 0 mismatches against the game's (outside frame, inside
   frame, rolling text, from `uil_a21_loading.xml`); Barrel adds its black fill (1 mismatch). Left out
   after the first frame: the glows and the light ring (drawn additively, which the layer has no mode
-  for) and the inside frame's swing about the vertical axis.
+  for) and the inside frame's swing about the vertical axis. Not built: the capture holds one frame
+  of it (1725, then the field), with none of the glows in it, so there is nothing to match against; an
+  additive mode would need a per-quad blend option in the render crate's text layer.
 - **The black frames (1420-1445)**: the game draws a 9600 x 3240 quad of `fm_d02_barrel_02#1` (white
   colour, black texel) after a black fill the trace hides; Barrel draws the fill only: 2 mismatches a
   frame, the same pixels. The same two sit in every screen frame above.
