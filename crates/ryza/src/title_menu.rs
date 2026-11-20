@@ -79,7 +79,18 @@ pub struct Input {
     /// The frame of the button at the prompt.
     pub press: Option<i32>,
     pub holds: Vec<Hold>,
+    /// The frame of the button on the menu's item under the cursor.
+    pub choose: Option<i32>,
+    /// On the load screen: the directions and the frame of the button on a save.
+    pub list_holds: Vec<Hold>,
+    pub confirm: Option<i32>,
 }
+
+/// The frames the chosen item takes to fade out once chosen, from `CHOSEN_START`: 196, 121 and
+/// 45 of 255 on the capture's frames 0, 5 and 10 after the button.
+// STAND-IN: The fade's start (196/255) and length (13 frames) are fitted to those three values; the real thing is the item's own leave animation.
+pub const CHOSEN_FADE: i32 = 13;
+const CHOSEN_START: f32 = 196.0 / 255.0;
 
 /// The menu's layout and animations.
 #[derive(Clone, Debug, PartialEq)]
@@ -251,6 +262,21 @@ impl Menu {
         (slot * SLOTS + base) * 0.5 - n as f32 * slot * 0.5 + k as f32 * slot
     }
 
+    /// The item the button on frame `choose` took (`new_game`, `load_game`, ...), the cursor
+    /// being where `input` has moved it.
+    pub fn chosen(&self, input: &Input, choose: i32) -> Option<&'static str> {
+        let press = self.pressed(input)?;
+        let shown = self.shown(input);
+        let n = shown.len();
+        let first = shown.iter().position(|&i| i == LOAD_GAME).unwrap_or(0);
+        let since = choose - press - wait_frames(MENU_WAIT) + 2 - self.settled(n);
+        if since < 1 {
+            return None;
+        }
+        let on = self.moves(input, n, first, choose - since + 1, choose).last().map_or(first, |m| m.1);
+        Some(NAMES[shown[on]])
+    }
+
     /// The frame the button at the prompt counts from, if it does: the prompt is all the way in.
     pub fn pressed(&self, input: &Input) -> Option<i32> {
         input.press.filter(|&p| p as f32 >= (self.ready * 60.0).ceil())
@@ -315,7 +341,9 @@ impl Menu {
         let n = shown.len();
         let first = shown.iter().position(|&i| i == LOAD_GAME).unwrap_or(0);
         let since = e - self.settled(n);
-        let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, frame) } else { Vec::new() };
+        // Once an item is chosen the cursor and the pulse stand where they were.
+        let live = input.choose.map_or(frame, |c| frame.min(c));
+        let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, live) } else { Vec::new() };
         let on = moves.last().map_or(first, |m| m.1);
         let mut out = Vec::new();
         if since >= 1 {
@@ -333,7 +361,9 @@ impl Menu {
             // The turn about the upright line through the cursor's node as it comes in, and the
             // pictures' own turning.
             let swing = self.in_turn.at(t * self.in_turn_speed)[1].rem_euclid(360.0).to_radians();
-            let spin = self.rotate.at(loop_shown(since, self.rotate.duration()))[2];
+            // STAND-IN: From the button on an item the cursor's turn runs one frame ahead (the capture's icons sit 1.5 degrees on from the loop's from that frame on); the real thing is the cursor's own leave.
+            let ahead = i32::from(input.choose.is_some_and(|c| frame >= c));
+            let spin = self.rotate.at(loop_shown(since + ahead, self.rotate.duration()))[2];
             let (aw, ah) = self.atlas[1];
             for icon in &self.icons {
                 let turned = (spin * icon.turns).rem_euclid(360.0).to_radians();
@@ -370,12 +400,16 @@ impl Menu {
             let alpha = match selected {
                 // The selected item's pulse: down to half and back, from when it was selected.
                 true => {
-                    let ticks = moves.last().map_or(since + 1, |m| frame - m.0 + 1);
+                    let ticks = moves.last().map_or(since + 1 - (frame - live), |m| live - m.0 + 1);
                     let d = self.blink.duration();
                     let phase = loop_time(ticks as f32, 2.0 * d, 1.0);
                     self.blink.at(if phase < d { phase } else { 2.0 * d - phase })[3] / 255.0
                 }
                 false => self.slide_color.at(t)[3] / 255.0,
+            };
+            let alpha = match input.choose.filter(|&c| selected && frame >= c) {
+                Some(c) => CHOSEN_START * (1.0 - (frame - c) as f32 / CHOSEN_FADE as f32).max(0.0),
+                None => alpha,
             };
             // the game's opacity is a byte: under one step of it nothing is drawn
             if t <= 0.0 || alpha * 255.0 < 1.0 {

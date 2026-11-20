@@ -24,6 +24,8 @@ pub mod player;
 pub mod walk;
 pub mod solids;
 pub mod save;
+pub mod saves;
+pub mod load;
 pub mod story;
 pub mod event;
 pub mod telop;

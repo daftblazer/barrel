@@ -41,6 +41,7 @@ use barrel_render::settings::RenderSettings;
 use barrel_render::*;
 use barrel_ryza::environment::{Light, Time, Weather};
 use barrel_ryza::install::Install;
+use barrel_ryza::load as flow;
 use glam::{Mat4, Vec3};
 
 mod actors;
@@ -127,6 +128,10 @@ struct Args {
     /// title frame of the button at the prompt, `--title-keys F:down:N,F:up:N,...` a direction
     /// going down on frame F for N frames, `--title-saves` as if a save existed.
     title_input: barrel_ryza::title_menu::Input,
+    /// `--saves DIR`: the folder holding `<user id>/GameData<NN>` and `AutoSaveData`, which the
+    /// title's Load Game lists (read only). In a window without it the original's own folder in a
+    /// Steam library's Proton prefix is searched.
+    saves: Option<String>,
     /// `--boot`: the boot screens (system-data notice, the two logos, the autosave window) before
     /// the title, and `--boot-at S` (or `BARREL_BOOT_AT`): the seconds into the boot the first
     /// frame shows (the title follows `barrel_ryza::boot::TITLE_START` seconds in).
@@ -156,7 +161,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -191,11 +196,25 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--title-at" => a.title_at = value()?.parse()?,
             "--title-press" => a.title_input.press = Some(value()?.parse()?),
             "--title-saves" => a.title_input.saves = true,
+            "--saves" => a.saves = Some(value()?),
             "--title-keys" => {
+                // F:down:N / F:up:N hold a direction on the menu for N frames; F:choose the button
+                // on the menu's item; F:ldown:N / F:lup:N a direction on the load list; F:ok the
+                // button on a save (title frames).
+                use barrel_ryza::title_menu::Hold;
                 for key in value()?.split(',') {
-                    let [from, way, held] = key.split(':').collect::<Vec<_>>()[..] else { return Err("--title-keys F:down:N,...".into()) };
-                    let (from, way) = (from.parse::<i32>()?, if way == "up" { -1 } else { 1 });
-                    a.title_input.holds.push(barrel_ryza::title_menu::Hold { from, until: Some(from + held.parse::<i32>()?), way });
+                    let parts = key.split(':').collect::<Vec<_>>();
+                    let from = parts.first().ok_or("--title-keys F:down:N,...")?.parse::<i32>()?;
+                    let held = || -> Result<i32> { Ok(from + parts.get(2).ok_or("--title-keys F:down:N,...")?.parse::<i32>()?) };
+                    match parts.get(1).copied() {
+                        Some("down") => a.title_input.holds.push(Hold { from, until: Some(held()?), way: 1 }),
+                        Some("up") => a.title_input.holds.push(Hold { from, until: Some(held()?), way: -1 }),
+                        Some("ldown") => a.title_input.list_holds.push(Hold { from, until: Some(held()?), way: 1 }),
+                        Some("lup") => a.title_input.list_holds.push(Hold { from, until: Some(held()?), way: -1 }),
+                        Some("choose") => a.title_input.choose = Some(from),
+                        Some("ok") => a.title_input.confirm = Some(from),
+                        _ => return Err("--title-keys F:down:N,...".into()),
+                    }
                 }
             }
             "--boot" => (a.boot, a.title) = (true, true),
@@ -536,14 +555,41 @@ const PLACING_TICKS: u32 = 600;
 /// `--game DIR`, the command line's INSTALL, `BARREL_GAME_DIR`, the config's, Steam's, else the
 /// "Locate game files" screen; every game file is read through the layers over it
 /// (`barrel_files`).
-pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
+/// The input the path from the menu to the field follows: the button on the menu counting only
+/// where it loads.
+fn flow_input(input: &barrel_ryza::title_menu::Input, loads: &dyn Fn(&barrel_ryza::title_menu::Input, i32) -> bool) -> barrel_ryza::title_menu::Input {
+    barrel_ryza::title_menu::Input { choose: input.choose.filter(|&c| loads(input, c)), ..input.clone() }
+}
+
+/// A save the title's load screen chose: the run goes on into the field from it, in the same
+/// window.
+struct Handoff {
+    root: std::path::PathBuf,
+    save: std::path::PathBuf,
+    pump: Option<window::Pump>,
+}
+
+pub fn run(raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
+    let mut next = run_once(raw, chosen)?;
+    while let Some(h) = next {
+        // Her place and the story's progress are the save's (`--save`), the field the one it names.
+        let mut args = vec![h.root.to_string_lossy().into_owned(), "-".into(), "-".into(), "--save".into(), h.save.to_string_lossy().into_owned()];
+        if h.pump.is_some() {
+            args.push("--window".into());
+        }
+        next = run_once(args, Some(locate::Resolved { root: h.root, pump: h.pump }))?;
+    }
+    Ok(())
+}
+
+fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<Option<Handoff>> {
     let game = match chosen {
         Some(game) => game,
         None => {
             let given = locate::take_option(&mut raw, "--game").map(std::path::PathBuf::from);
             let launched = locate::take_game_program(&mut raw);
             let named = raw.first().filter(|a| !a.starts_with("--")).map(std::path::PathBuf::from).or(launched);
-            let Some(game) = locate::resolve(barrel_files::find::Title::Ryza, given, named)? else { return Ok(()) };
+            let Some(game) = locate::resolve(barrel_files::find::Title::Ryza, given, named)? else { return Ok(None) };
             game
         }
     };
@@ -1365,6 +1411,17 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
     // The keys pressed this frame, for the title's menu, and what the player has done there.
     let mut title_keys: Vec<winit::keyboard::KeyCode> = Vec::new();
     let mut title_input = a.title_input.clone();
+    // The saves the title's Load Game lists: `--saves`, else (in a window) the original's own
+    // folder; the save the player chose goes on into the field.
+    let save_slots = match (a.title, &a.saves, pump.is_some()) {
+        (true, Some(dir), _) => barrel_ryza::saves::find(Some(Path::new(dir))),
+        (true, None, true) => barrel_ryza::saves::find(None),
+        _ => None,
+    }
+    .map(|d| barrel_ryza::saves::slots(&d))
+    .unwrap_or_default();
+    title_input.saves |= !save_slots.is_empty();
+    let mut handoff: Option<std::path::PathBuf> = None;
     // The title's music and voice (on the device in a window; offscreen only the cue log).
     let mut title_sound = a.title.then(|| barrel_ryza::sound::TitleSound::new(&install.root, pump.is_some()));
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
@@ -1391,6 +1448,10 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
                 }
                 instances[instance as usize].model = barrel_render::render_space(actor.placed(Vec3::from(at), yaw.to_radians()));
             }
+        }
+        // The load screen's save is chosen and loaded: the field follows, in the same window.
+        if handoff.is_some() && pump.is_some() {
+            break;
         }
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
@@ -1623,20 +1684,30 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             };
             // The player's keys in a window (the pad's buttons stand for them): Enter at the
             // prompt, the arrows on the menu. A direction is held while its key is down.
+            let frame = (title_seconds * 60.0).round() as i32;
+            // The button on the menu's item counts only on Load Game, with saves to load.
+            let loads = |input: &barrel_ryza::title_menu::Input, at: i32| menu.chosen(input, at) == Some("load_game") && !save_slots.is_empty();
             if let Some(p) = pump.as_ref() {
                 use winit::keyboard::KeyCode as K;
-                let frame = (title_seconds * 60.0).round() as i32;
-                if title_keys.contains(&K::Enter) && menu.pressed(&title_input).is_none() {
-                    title_input.press = Some(frame);
+                let listing = matches!(flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame), flow::Stage::List(_));
+                if title_keys.contains(&K::Enter) {
+                    if menu.pressed(&title_input).is_none() {
+                        title_input.press = Some(frame);
+                    } else if title_input.choose.is_none() && loads(&title_input, frame) {
+                        title_input.choose = Some(frame);
+                    } else if listing && title_input.confirm.is_none() {
+                        title_input.confirm = Some(frame);
+                    }
                 }
                 for (key, way) in [(K::ArrowDown, 1), (K::ArrowUp, -1)] {
                     let held = p.held(key);
-                    for h in title_input.holds.iter_mut().filter(|h| h.way == way && h.until.is_none() && !held) {
+                    let holds = if listing { &mut title_input.list_holds } else { &mut title_input.holds };
+                    for h in holds.iter_mut().filter(|h| h.way == way && h.until.is_none() && !held) {
                         h.until = Some(frame);
                     }
                     if title_keys.contains(&key) {
                         // (a pad's direction is not held as a key is: it counts as a tap)
-                        title_input.holds.push(barrel_ryza::title_menu::Hold { from: frame, until: (!held).then_some(frame + 1), way });
+                        holds.push(barrel_ryza::title_menu::Hold { from: frame, until: (!held).then_some(frame + 1), way });
                     }
                 }
             }
@@ -1653,8 +1724,22 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
             if let Some(sound) = title_sound.as_mut() {
                 sound.tick(title_seconds);
             }
-            // The event's fade over the title: black from a point of the Gust logo.
+            // The path from the menu's Load Game to the field (`barrel_ryza::load`).
             let mut quads = quads;
+            let cover_texture = if boot.is_some() { barrel_ryza::boot::LOGO_GUST } else { 2 };
+            match flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame) {
+                flow::Stage::Title => {}
+                flow::Stage::Cover(alpha) => quads.push(flow::cover(alpha, (width, height), cover_texture)),
+                flow::Stage::Black => quads = vec![flow::cover(1.0, (width, height), cover_texture)],
+                flow::Stage::List(on) => quads = flow::list_quads(title, &save_slots, on, false, (width, height)),
+                flow::Stage::Loading(on, done) => {
+                    quads = vec![flow::cover(1.0, (width, height), cover_texture)];
+                    if done {
+                        handoff = save_slots.get(on).map(|s| s.file.clone());
+                    }
+                }
+            }
+            // The event's fade over the title: black from a point of the Gust logo.
             let showing_title = boot.as_ref().is_none_or(|_| a.boot_at + clock >= barrel_ryza::boot::TITLE_START);
             let alpha = title_play.as_ref().filter(|_| showing_title).map_or(0.0, |p| actors::cover(&p.stage));
             if alpha > 0.0 {
@@ -1837,7 +1922,7 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         d.destroy_device(None);
         gpu.instance.destroy_instance(None);
     }
-    Ok(())
+    Ok(handoff.map(|save| Handoff { root: std::path::PathBuf::from(&a.install), save, pump }))
 }
 
 /// A debug aid for comparing a frame with the game's: the sky's clock (seconds; the clouds'

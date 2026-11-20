@@ -12,6 +12,7 @@ barrel-engine = { path = "../engine" }
 barrel-audio = { path = "../audio" }
 barrel-render = { path = "../render" }
 ash = "0.38"
+libc = "0.2"
 glam = "0.33"
 winit = { version = "0.30", default-features = false, features = ["wayland", "x11", "rwh_06"] }
 raw-window-handle = "0.6"

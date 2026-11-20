@@ -326,6 +326,24 @@ impl Title {
         out
     }
 
+    /// `text` in the title's font at layout size `size` with its pen at layout `(x, y)` (the
+    /// line's top), on a `screen` of pixels.
+    pub fn text_quads(&self, text: &str, (x, y): (f32, f32), size: f32, color: [f32; 4], screen: (u32, u32)) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
+        let s = size * k / ATLAS_SIZE;
+        let (aw, ah) = self.atlas[1];
+        let (mut pen, top) = (left + x * k, (y + TEXT_TOP) * k);
+        let mut out = Vec::new();
+        for g in text.chars().filter_map(|c| self.glyphs.get(&c)) {
+            let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.width as f32, g.height as f32);
+            let (l, t) = (pen + g.x_offset as f32 * s, top + g.y_offset as f32 * s);
+            out.push(Quad { turn: false, spin: None, rect: [l, t, l + gw * s, t + gh * s], uv: [gx / aw, gy / ah, (gx + gw) / aw, (gy + gh) / ah], color, texture: FONT });
+            pen += g.advance as f32 * s;
+        }
+        out
+    }
+
     /// The version string, right-aligned at its node: the outline (the text black at half
     /// opacity set at each of the 3 x 3 offsets of the outline's reach, columns first), then the
     /// text white.

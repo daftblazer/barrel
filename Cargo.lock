@@ -175,6 +175,7 @@ dependencies = [
  "barrel-formats",
  "barrel-render",
  "glam",
+ "libc",
  "raw-window-handle",
  "winit",
 ]
