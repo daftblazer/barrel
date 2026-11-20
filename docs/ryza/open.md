@@ -312,6 +312,38 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     1 - frames / 13 (it was 196/255 flat): the Settings capture starts at 188 where the pulse
     stood lower; Load Game's three rows still match.
 
+## Sound cues (the game's own requests)
+
+ryza-recomp `scenarios/load-cues.sh` with `scenarios/hooks/sound.hooks` logs the game's sound
+requests over load-rasen's path; `tools/ryza_cues.py HOOKS_LOG stream.xml sfx.xml` turns the
+log into cue lines (`<game frame> <kind> <hash>`), the answer key (`work/scenarios/load-cues/cues.txt`):
+
+```text
+545 music a5ba0cbd    BGM00054_SY_02_TITLE01 (title from 543 with saves: title frame 2)
+641 voice 8c7effb2    the title call, asked for at 545 with a 1.6 s delay
+1235 effect a699d027  SE_ETC_008_PRESS_START
+1400 effect 09c3999b  SE_SYS_001_CLICK (Continue)
+1600 effect 09c3999b  SE_SYS_001_CLICK (the save)
+1725 stop -           the load stops every channel
+1751 music 03bea3b2   BGM00003_FM_03_ISLAND01, Rasenboden by day
+```
+
+- **The sound manager** is the object at `[0x141b7a588]` (vtable `0x1413da2e0`). `+0x20`
+  (`0x140762860`) plays a request: word 0 the hash, word 2 a delay in seconds, word 3 or 4 a
+  volume. `+0x38` stops (first argument a channel, 0 to 7). Every hash is a stream id (the
+  KTSR chunk id, `barrel-tool ktsr-ls`) or an sfx.xml row; voice clips have no table.
+- **Music numbers.** Music is asked for by number (`0x14031f700`, `0x1403200a0`): 5000 + the
+  tag's number, so 5054 is `BGM00054_*` and 5003 `BGM00003_*`. The number's hash is the
+  stream.xml row whose tag starts `BGM<number - 5000, 5 digits>`.
+- **A field's music** is the field's row of a static table in `.rdata` (rows of 0x48 bytes,
+  one per `FIELDMAP_*` number from 0: 101 rows from `0x1411e01f0`, found by their ids): +0x04 the
+  day music, +0x08 the night music (numbers, -1 none), +0x38 `0x000e0000 | (map + 1)`, +0x40 a
+  pointer to the field's Shift-JIS name (`☆ラーゼン地区`). Rasenboden (map 5): 5003 by day, 5004
+  by night. The field picks the night one when `0x1405a0b80` (the time of day's period) is 2
+  to 4, at half volume for period 4 (`0x1404d38d0`). Map 12 becomes 13 when flag `0x6e` is set.
+- **Effects** come from the `SE_*.ktsl2asbin` banks, loaded whole at the start (so file
+  reads never show them); Barrel does not read those banks yet (docs/formats.md, KTSR).
+
 ## Event commands against the game's own log
 
 The game runs every command through per-subject queues (`0x140489410` steps a runner's queue:
