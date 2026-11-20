@@ -1002,6 +1002,18 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   sysmem and why, bins, LRZ, GPU time; `work/rp6-trace.py`). That says whether the 15.6 ms no
   scale removes is the bins replaying draws, the vertex program, or a pass Turnip runs in
   sysmem.
+- **On the RP6 (2026-11-20, a1f0c1a to 7860ae8).** The gate at Low 1080p: 51.9 ms (d27631b),
+  46.3 with the night's PC work, 34.9 now; the game's own is about 27. The trace showed two
+  passes out of proportion: the reflection march (10.3 ms: each step read the whole rgba32f
+  texel for its depth; now an r32f target of its own, 1.8 ms) and the forward pass over the
+  characters (4.1 ms: every toon-ramp draw of the area, 358 draws; now the scene's drawn
+  ones). The HALF build: 1.3 ms off the scene, 4% of the pixels by up to 11 levels (not
+  taken). A d16 shadow map: 0.5 ms (not taken). Left, by turning parts off: the scene 23.7
+  ms, of which the models 18.7 (their shading 10.5, the sun's shadow lookup 7.7 of the
+  scene with the terrain's), the terrain 3.9, binning 3.9 (888 draws, 14 bins of 960 by 160
+  at 20 bytes a pixel); the shadow maps 6.3 (587 casters). Next: a position-only vertex
+  stream for binning and the depth part (the vertex is 72 bytes), and fewer bytes a pixel in
+  the scene pass.
 - **The files.** A Rasenboden run (with her) reads 22 files from four archives (2026-11-14):
   `PACK00_01.PAK` (3.06 GB: only `shader\texture\chara_rmp.g1t`), `PACK00_02.PAK` (2.04 GB:
   her model, face and motions), `PACK00_03.PAK` (13.69 GB: the field, its objects, environment
