@@ -1314,3 +1314,50 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   reads the block by its own layout (the 416 bytes after `vEye` at +80 with `vATest` at +176)
   would settle it. `emScl` by evening and its
   flicker need a run at evening.
+
+## Outfits (B4)
+
+Step 1 of the outfit mods: `barrel-tool chara-gltf` (docs/formats.md, "glTF export") and
+`tools/blender/render_glb.py`. Checked in Blender 5.3 (Workbench, flat): every costume exports
+with every vertex weighted, and the glb of `pc00a` posed with motion 0 (idle, frame 20) and
+motion 21 (run, frame 8) shows no torn or stretched mesh (hat, vest, sleeves, skirt panels, boots
+all follow; looked at front, side and back). Every submesh of every costume is drawn by the
+colour pass at LOD 0 (the models have no other LODs; no shadow-only submeshes were skipped:
+`skipped []` in each export). Model sets that exist: `pc00a` to `pc00i`, `pc00k`, `pc00l`,
+`pc00a_wet`; `pc00j`, `pc00m` ... and other `_wet` sets are not in the archives.
+
+Pieces by shader hash, the same in every costume: `E24D26E6` eyes (2), `6679C989` face and mouth
+(2), `B82041B9` eyebrows, `C86A7C58` hair strands, `E905E6C7` the hair, `9767D5FD` a 290-vertex
+bowl (the cap under a hat), `339F19F6` the outfit and the skin pieces (arms, legs, neck, hands),
+`26EDF6BF` more skin or small accessories, `CB0965E5` and `4196223C` the cloth-simulated pieces
+(cape, sleeve ties, skirt panels). Piece columns: judged from `--each` sheets for `pc00a`, `pc00i`
+and `pc00l`; the rest from the same hashes and vertex counts (marked ~).
+
+| Costume | Looks like | Submeshes | Pieces (submesh numbers) |
+|---|---|---|---|
+| pc00a | default: yellow hooded vest, cream top, red shorts, thigh boots, beret | 25 | cloth: vest 0, pendant 1, flap 2, sleeve ties 3-4 and 6-7, frill 5; eyes 8-9; face 10-11; outfit (top, shorts, belt, boots in one mesh) 12; accessories (necklace, clips, sleeve pieces) 13; ribbon/glove bits 14; body skin 15-17; inner top 18; cap 19; hair 20-22; bottle 23; brows 24 |
+| pc00b | blue smiley tee, black shorts, sandals, blue slime beret | 15 | eyes 0-1; face 2-3; tee, shorts, sandals 4; skin 5-9 (~); cap 10; hair 11-13; brows 14 |
+| pc00c | white graphic tee, red shorts, sandals, cream beret | 15 | as pc00b (tee 4, skin 5-9 ~) |
+| pc00d | white cropped blouse with bow, frilled bloomers, grey stockings, brown boots, no hat | 25 | cloth (blouse/cape and ties) 0-9; eyes 10-11; face 12-13; outfit 14-15 (~); skin 16-19 (~); cap 20; hair 21-23; brows 24 |
+| pc00e | default in black and white, black beret | 25 | as pc00a (outfit 12, skin 14-18 ~) |
+| pc00f | orange vest, light-blue sleeves, blue shorts, pale-blue beret | 25 | as pc00a |
+| pc00g | pink vest, yellow shorts, pale-blue beret | 25 | as pc00a |
+| pc00h | default without the vest: camisole, red shorts, thigh boots | 18 | cloth 0-1; eyes 2-3; face 4-5; outfit 6; skin 7-11 (~); cap 12; hair 13-15; bottle 16; brows 17 |
+| pc00i | white bikini and sandals | 16 | halter ties (cloth) 0; eyes 1-2; face 3-4; bikini top and bottom, headband, sandals 5; body skin 6-9; cloth patch 10; cap 11; hair 12-14; brows 15 |
+| pc00k | light-blue party dress, lace shoulders, heels | 16 | eyes 0-1; face 2-3; dress, shoes 4-5 (~); skin 6-10 (~); cap 11; hair 12-14; brows 15 |
+| pc00l | red and black dress, stockings, white gloves, hair bun | 29 | cloth skirt panels 0-13; eyes 14-15; face 16-17; stockings, shoes, skirt 18; bodice, cuffs, chain 19; gold pins 20; gloves 21-22; body skin 23; dress top 24 ~; cap 25; hair 26-27; brows 28 |
+| pc00a_wet | default, wet look (muted colours, hair stuck down) | 25 | as pc00a |
+
+Swimsuit: only `pc00i`. Its bikini is (c): its own submesh (5, with the headband and sandals)
+over a complete skin body (6: torso, arms, hips, with the swimsuit's area tinted); the skin is
+not cut away under it. (`pc00b` and `pc00c` are tees over shorts, not swimsuits.)
+
+Left over, not solved:
+- `pc00l`'s cloth submeshes (0-13: the red skirt panels, ribbons) hang as flat fans at her feet in
+  the bind pose: placed from the cloth control points at rest (`place_cloths`), which the game's
+  simulation then moves; the export carries them rigid on the cloth's parent joint. Her other
+  costumes' cloth pieces (vest, sleeve ties) sit right.
+- The game's shader hashes have no readable names, so a material's `extras.shader` is the hash.
+- Eye overlays, hair highlights and the toon ramp are carried only as extra images; the base
+  colour is the albedo alone.
+- Costume `pc00a_wet` and the others were not looked at per submesh (marked ~ above).

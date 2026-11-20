@@ -222,6 +222,28 @@ weighs most on them; reading the joint through the index map instead gives 23, a
 palette's first word 69 to 79. Across all of Escha's models, every vertex's bone slot is
 inside its palette (`barrel g1m-scan` checks it).
 
+### glTF export
+
+`barrel-tool chara-gltf INSTALL CHARA OUT.glb [--pose MOTION] [--only N,M]` (`crates/cli/src/chara_gltf.rs`,
+writer in `gltf.rs`) writes a Ryza DX character (`pc00a`, a costume `pc00b` ..., `pc00a_wet`) as one
+binary glTF 2.0. Coordinates are glTF's: y up, metres, right-handed. Game units are
+centimetres (the scale is 0.01), and the game is left-handed, so x is negated as the renderer
+does when it draws (positions, normals, joint translations; a rotation (x, y, z, w) becomes
+(x, -y, -z, w); triangle winding is swapped). She then faces +z. Each submesh the colour pass
+(mesh group 0) draws at LOD 0 is its own mesh and node `subNN_matM` with one primitive:
+POSITION, NORMAL, TEXCOORD_0, COLOR_0 if present, JOINTS_0/WEIGHTS_0 (`Geometry::skin`: up to
+four distinct joints, largest first, weights normalised; a submesh with no palette rides joint
+0). The `_default` mesh's cloth pieces are placed as the game's load places them (at rest on
+their parent joints). The skeleton is the joint nodes in bind pose, named from `Oid.bin` through
+the index map (`joint_N` without a name), one skin over all joints with inverse bind matrices.
+Materials: the kind-1 texture (else the first) is the base colour as an embedded PNG
+(alpha-masked when the texture is not opaque); every texture of the material is embedded and
+listed in the material's `extras` (kind, subtype, layer, pack index, image) with the
+submesh's shader (the model names its shaders by hash, `@339F19F6`; no readable names) and its
+parameter set. `--pose N` adds motion N (`motion::path`, found in her motion sets) as a glTF
+animation, a key every 1/30 s for every joint. `--only` keeps the listed submeshes.
+`tools/blender/render_glb.py` renders a glb headless (`--each`: every submesh alone).
+
 ## Animations (`*.g1a`)
 
 Read by `barrel_formats::g1a`. All 6,010 of Escha's animations read (version `0042` in

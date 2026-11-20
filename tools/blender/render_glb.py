@@ -1,7 +1,7 @@
 """Render a character glb (barrel-tool chara-gltf) from the front, side and back into one PNG.
 
     blender -b -P tools/blender/render_glb.py -- IN.glb OUT.png [--views front,side,back]
-            [--frame N] [--size PIXELS] [--only-mesh SUBSTRING]
+            [--frame N] [--size PIXELS] [--only-mesh SUBSTRING] [--each]
 
 Workbench, flat lighting, texture colours: the textures show as they are, unlit. Prints the
 joint count, the vertex count and whether every vertex has skin weights. --frame sets the
@@ -21,7 +21,7 @@ def parse():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if len(argv) < 2:
         sys.exit(__doc__)
-    opts = {"in": argv[0], "out": argv[1], "views": ["front", "side", "back"], "frame": None, "size": 900, "only": None}
+    opts = {"in": argv[0], "out": argv[1], "views": ["front", "side", "back"], "frame": None, "size": 900, "only": None, "each": False}
     i = 2
     while i < len(argv):
         if argv[i] == "--views":
@@ -30,6 +30,10 @@ def parse():
             opts["frame"] = int(argv[i + 1])
         elif argv[i] == "--size":
             opts["size"] = int(argv[i + 1])
+        elif argv[i] == "--each":
+            opts["each"] = True
+            i += 1
+            continue
         elif argv[i] == "--only-mesh":
             opts["only"] = argv[i + 1]
         else:
@@ -46,7 +50,7 @@ def main():
     if o["frame"] is not None:
         scene.frame_set(o["frame"])
 
-    meshes = [ob for ob in scene.objects if ob.type == "MESH" and ob.name.startswith("sub") and (o["only"] is None or o["only"] in ob.name)]
+    meshes = sorted([ob for ob in scene.objects if ob.type == "MESH" and ob.name.startswith("sub") and (o["only"] is None or o["only"] in ob.name)], key=lambda ob: ob.name)
     armatures = [ob for ob in scene.objects if ob.type == "ARMATURE"]
     for ob in scene.objects:
         if ob.type not in ("MESH",):
@@ -112,24 +116,46 @@ def main():
     tmp = os.path.splitext(o["out"])[0]
     shots = []
     dist = max(size) * 3 + 2
-    for name in o["views"]:
+    # --each: the front view of every submesh alone (in order, row by row), to tell the pieces apart.
+    jobs = [(name, None) for name in o["views"]]
+    if o["each"]:
+        scene.render.resolution_y = o["size"]
+        jobs = [("front", ob) for ob in meshes]
+    for k, (name, only) in enumerate(jobs):
+        if only is not None:
+            for ob in meshes:
+                ob.hide_render = ob is not only
         d = mathutils.Vector(views[name])
-        cam.location = mathutils.Vector(centre) + d * dist
+        here = centre
+        if only is not None:
+            # Fit the camera to this submesh alone so small pieces fill their tile.
+            m = only.evaluated_get(dg).to_mesh()
+            co = np.empty(len(m.vertices) * 3, dtype=np.float32)
+            m.vertices.foreach_get("co", co)
+            w = np.array(only.matrix_world)
+            co = co.reshape(-1, 3) @ w[:3, :3].T + w[:3, 3]
+            here = (co.min(axis=0) + co.max(axis=0)) / 2
+            cam_data.ortho_scale = max(float((co.max(axis=0) - co.min(axis=0)).max()) * 1.2, 0.05)
+        cam.location = mathutils.Vector(here) + d * dist
         cam.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
-        path = "%s_%s.png" % (tmp, name)
+        path = "%s_%s_%d.png" % (tmp, name, k)
         scene.render.filepath = path
         bpy.ops.render.render(write_still=True)
         shots.append(path)
+    columns = 8 if o["each"] else len(shots)
 
     # One image, the views side by side.
     imgs = [bpy.data.images.load(p) for p in shots]
     w, h = imgs[0].size
-    out = np.zeros((h, w * len(imgs), 4), dtype=np.float32)
+    rows = (len(imgs) + columns - 1) // columns
+    out = np.zeros((h * rows, w * columns, 4), dtype=np.float32)
     for k, im in enumerate(imgs):
         px = np.empty(w * h * 4, dtype=np.float32)
         im.pixels.foreach_get(px)
-        out[:, k * w:(k + 1) * w] = px.reshape(h, w, 4)
-    final = bpy.data.images.new("sheet", w * len(imgs), h)
+        r, c = divmod(k, columns)
+        # Blender's pixel rows run bottom to top: the first row of tiles goes at the top.
+        out[(rows - 1 - r) * h:(rows - r) * h, c * w:(c + 1) * w] = px.reshape(h, w, 4)
+    final = bpy.data.images.new("sheet", w * columns, h * rows)
     final.pixels.foreach_set(out.reshape(-1))
     final.filepath_raw = o["out"]
     final.file_format = "PNG"
