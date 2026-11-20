@@ -598,6 +598,15 @@ pub fn run(mut raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()>
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
         a.story = barrel_ryza::save::story(&state, &pe).map_err(|e| format!("{save}: {e}"))?;
         eprintln!("{save}: {} story events played", barrel_ryza::save::events_done(&state).map_or(0, |e| e.len()));
+        // FIELD `-` without an event: the save's field and her place in it, as the game loads it.
+        if a.field == "-" && a.event.is_none() {
+            let place = barrel_ryza::save::place(&state).map_err(|e| format!("{save}: {e}"))?;
+            a.field = barrel_ryza::maps::field_maps(&pe).get(place.map).ok_or(format!("{save}: field map {} not in the executable", place.map))?.clone();
+            if a.ryza.is_none() {
+                a.ryza = Some((Vec3::from(place.at), place.turn, "00000".into(), 0.0));
+            }
+            eprintln!("{save}: {} at {:?}, turn {:.1}°", a.field, place.at, place.turn);
+        }
     }
     // `--event NAME --at T`: the event's stage T seconds in; with FIELD `-`, its field (the
     // field map it last changed to, by the executable's `FIELDMAP_*` names).

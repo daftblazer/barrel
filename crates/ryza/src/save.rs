@@ -53,6 +53,26 @@ pub fn events_done(state: &[u8]) -> Result<Vec<usize>, Error> {
     Ok(flags.iter().enumerate().filter(|&(_, &f)| f != 0).map(|(i, _)| i).collect())
 }
 
+/// Where a save puts Ryza: the field map's number (`FIELDMAP_*`, `maps::field_maps`), her
+/// turn (degrees about y, 0 toward +z) and her feet in game units (1 cm).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Place {
+    pub map: usize,
+    pub turn: f32,
+    pub at: [f32; 3],
+}
+
+/// The save's place (`global`: a big-endian count of 76 bytes, then big-endian words: a 0, the
+/// map, the turn in degrees, her feet in metres, then words not read). The game puts her there on
+/// loading (ryza-recomp `load-path`: an autosave's 5, -1.0, 325.2, 61.80, 303.34 m arrive as
+/// (32520, 6180, 30334) facing 1 degree off +z).
+pub fn place(state: &[u8]) -> Result<Place, Error> {
+    let d = find(state, &["global"]).ok_or(Error::Corrupt("save: no global record"))?;
+    let word = |i: usize| d.get(4 + i * 4..8 + i * 4).map(|w| u32::from_be_bytes(w.try_into().unwrap())).ok_or(Error::Corrupt("save: global cut short"));
+    let metres = |i: usize| word(i).map(|w| f32::from_bits(w) * 100.0);
+    Ok(Place { map: word(1)? as usize, turn: f32::from_bits(word(2)?), at: [metres(3)?, metres(4)?, metres(5)?] })
+}
+
 /// The story a save is at: its played events named by the executable's `EVENT_*` enum.
 pub fn story(state: &[u8], pe: &barrel_formats::pe::Pe) -> Result<crate::story::Story, Error> {
     const FIRST: &str = "EVENT_AA01_010";
@@ -67,6 +87,20 @@ pub fn story(state: &[u8], pe: &barrel_formats::pe::Pe) -> Result<crate::story::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `global` as the autosave of ryza-recomp's `load-path` has it.
+    #[test]
+    fn place_reads_global() {
+        let words = [0, 5, (-1.0f32).to_bits(), 325.2f32.to_bits(), 61.8001f32.to_bits(), 303.3401f32.to_bits()];
+        let mut body = 76u32.to_be_bytes().to_vec();
+        body.extend(words.iter().flat_map(|w| w.to_be_bytes()));
+        body.resize(4 + 76, 0);
+        let mut state = vec![0u8; 0x20];
+        state.extend(rec("global", &body));
+        let p = place(&state).unwrap();
+        assert_eq!((p.map, p.turn), (5, -1.0));
+        assert!((p.at[0] - 32520.0).abs() < 0.01 && (p.at[1] - 6180.01).abs() < 0.01 && (p.at[2] - 30334.01).abs() < 0.01);
+    }
 
     fn rec(name: &str, contents: &[u8]) -> Vec<u8> {
         let mut r = ((4 + name.len() + 1 + contents.len()) as u32).to_le_bytes().to_vec();
