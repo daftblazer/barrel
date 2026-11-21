@@ -1676,6 +1676,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     };
     let mut sync = ring::Frames::new(&gpu)?;
     let mut prev_vp = None;
+    // The temporal upscalers' and TAA's sub-pixel jitter: the frames drawn so far with it.
+    let mut jitter_index = 0u32;
+    let mut prev_drawn_vp: Option<Mat4> = None;
     let mut last = std::time::Instant::now();
     let started = last;
     let (mut stale, mut frame_no) = (false, 0u32);
@@ -2269,6 +2272,23 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (_, _, true, Some((l, _, _))) => vec![l],
             _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
+        // The view-projection drawn with: shifted by this frame's sub-pixel jitter when TAA or a
+        // temporal upscaler is on, in a window (as Escha; `settings::jitter`, a clip-space
+        // translation by the offset in pixels x 2 / the scene's size). Offscreen pictures are
+        // single frames and keep the plain one. The look slots keep the plain one for motion.
+        let (draw_vp, frame_jitter) = if renderer.settings.jitter && pump.is_some() {
+            let (sw, sh) = renderer.targets.scene_size;
+            let (jx, jy) = if renderer.settings.fsr3 { barrel_render::settings::jitter_cycle(jitter_index, barrel_render::fsr3::jitter_phase_count(sw as i32, width as i32) as u32) } else { barrel_render::settings::jitter(jitter_index) };
+            jitter_index = jitter_index.wrapping_add(1);
+            let mut j = Mat4::IDENTITY;
+            j.w_axis.x = 2.0 * jx / sw as f32;
+            j.w_axis.y = 2.0 * jy / sh as f32;
+            (j * view.vp, (jx, jy))
+        } else {
+            (view.vp, (0.0, 0.0))
+        };
+        let same_camera = prev_drawn_vp.is_some_and(|p: Mat4| p.abs_diff_eq(view.vp, 1e-5));
+        prev_drawn_vp = Some(view.vp);
         let frame = Frame {
             image,
             width,
@@ -2285,7 +2305,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             shown: &shown,
             in_sight: &in_sight,
             material: &material,
-            draw_vp: view.vp,
+            draw_vp,
             view_planes: view_planes(&view.vp),
             shadow_vp: view.shadow_vp,
             shadow_cascades: view.shadow_cascades,
@@ -2315,7 +2335,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             tone_scale: environment.as_ref().map_or([0.0; 3], |(_, _, l, _, _, _, _)| l.color_scale),
             tone_vivid,
             filter: 0.0,
-            camera: Camera { fov, near: view.near, far: view.far, ..Camera::default() },
+            camera: Camera { jitter: frame_jitter, fov, near: view.near, far: view.far, dt: frame_dt, same: same_camera },
             freeze_now: false,
             frozen_weight: 0.0,
             // Before the title the game shows its boot screens over black: no scene shows.
