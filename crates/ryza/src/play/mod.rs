@@ -1773,7 +1773,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 Some(r) => barrel_ryza::walk::step(&mut r.player, &mut cam, &sticks, dt, r.ground.as_ref(), r.walls.as_ref()),
                 None => cam.steer(sticks.right, dt),
             }
-            (yaw, pitch, dist, look_height) = (180.0 - cam.yaw, cam.pitch, cam.distance(), cam.look_height());
+            // The title keeps its own fixed camera (`title::CAMERA`, set after `cam` was made).
+            if !a.title {
+                (yaw, pitch, dist, look_height) = (180.0 - cam.yaw, cam.pitch, cam.distance(), cam.look_height());
+            }
             if let Some(r) = rig.as_mut() {
                 // Her pose: the motion playing, the last one mixed out over it.
                 let local = |(m, t): (u32, f32)| barrel_engine::skin::local_pose(&r.skeleton, &r.anims.iter().find(|(n, _)| *n == m).unwrap_or(&r.anims[0]).1, t);
