@@ -304,12 +304,12 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   - *Keyboard*: the ten commands (strings 655914 to 655923) in the template window of the key
     assignment layout, a line under each, the cyan cursor (`gen_a21v2_cmn_cursor_s`) blinking
     twice as fast as the others', the scroll bar's bare track, and the description panel drawn
-    after the list, empty (its heading's mask shows: the game draws it where no text reads it).
+    after the list, empty (its heading's mask goes to the mask target as a clip with nothing under it, so the
+    heading is plain brown as in the game's picture).
     A (open a key assignment) is not built.
   - *Controller*: the pad's picture (`a24_option_steam` texture 0) with the sixteen buttons'
     pictures (font glyphs U+04D8 + 51 pixels each in the atlas) and the cursor's glow on the first.
-    The game draws the glow additively; Barrel's text layer has no additive blend, so the glow is
-    drawn plainly (a visible difference, the trace is the same). The cursor moves over the
+    The glow is added over the picture, as the game's (`Layer::set_blended`). The cursor moves over the
     sixteen buttons; nothing can be assigned.
   - *The cursor's blink* is the frame count since a frame before the last tab change, wrapping
     every 121 frames (`options::BLINK_LOOP`, replacing the 0.8% slow rate), with the clock at

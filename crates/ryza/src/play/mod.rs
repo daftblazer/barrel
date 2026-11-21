@@ -2255,8 +2255,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         let blink_age = tab_change.map_or(age, |f| (frame - f + (1)).min(age));
                         let blink = if pump.is_some() { (blink_age * barrel_ryza::options::blink_speed(tab)) as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
                         let clips;
-                        (quads, clips) = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
-                        layer.set_clipped(&gpu, &quads, &clips)?;
+                        let glow;
+                        (quads, clips, glow) = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
+                        layer.set_blended(&gpu, &quads, &clips, glow)?;
                         own_layer = true;
                         showing_options = true;
                     }

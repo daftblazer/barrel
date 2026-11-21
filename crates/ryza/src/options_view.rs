@@ -479,6 +479,8 @@ struct Pen<'a> {
     /// The rows' name masks: the game draws `sys_no_image` into a mask target, not the screen,
     /// and the row's name reads it (ryza-recomp scenarios/settings-tabs.sh, frame 1495).
     clips: Vec<Clip>,
+    /// The quads added to what is under them (the Controller cursor's glow).
+    glow: std::ops::Range<usize>,
 }
 
 /// One text's look: size, font and alignment as the layout gives them.
@@ -696,15 +698,15 @@ impl View {
 
     /// The screen's quads for `screen` at `moment`, in draw order, on a window of `window` pixels,
     /// and its clips (each row's name inside its mask).
-    pub fn quads(&self, s: &Screen, moment: Moment, window: (u32, u32)) -> (Vec<Quad>, Vec<Clip>) {
+    pub fn quads(&self, s: &Screen, moment: Moment, window: (u32, u32)) -> (Vec<Quad>, Vec<Clip>, std::ops::Range<usize>) {
         let k = window.1 as f32 / LAYOUT_HEIGHT;
         let left = (window.0 as f32 - 1280.0 * k) * 0.5;
-        let mut pen = Pen { view: self, k, left, out: Vec::new(), clips: Vec::new() };
+        let mut pen = Pen { view: self, k, left, out: Vec::new(), clips: Vec::new(), glow: 0..0 };
         let fade = (moment.age as f32 / FADE_FRAMES).clamp(0.0, 1.0);
         let white = [1.0; 4];
         let brown = |a: f32| Self::rgba(BROWN, a);
         if moment.age <= 0 {
-            return (pen.out, pen.clips);
+            return (pen.out, pen.clips, pen.glow);
         }
 
         // The background (the screen's picture tiled twice over: 3840 x 2160 style pixels drawn at twice their layout size) and the caption.
@@ -747,15 +749,20 @@ impl View {
             Page::Keys => {
                 self.keys(&mut pen, s, moment);
                 self.panel(&mut pen, s, KEYS_PANEL_SHIFT);
-                // The heading's text mask: with no heading to read it the game's draw of it shows (settings-tabs 1675).
+                // The heading's text mask, drawn into the mask target as the rows' NO IMAGE: with no
+                // heading to read it nothing shows (the game's picture at settings-tabs 1675).
+                let at = pen.out.len();
                 pen.wrap(V2_COMMON, &self.text_mask, KEYS_MASK_AT, KEYS_MASK, [1.0; 4]);
+                for mask in at..pen.out.len() {
+                    pen.clips.push(Clip { mask, quads: mask + 1..mask + 1 });
+                }
             }
             Page::Pad => self.pad(&mut pen, s, moment),
         }
 
         // The help bar.
         self.help_bar(&mut pen, &s.help, moment);
-        (pen.out, pen.clips)
+        (pen.out, pen.clips, pen.glow)
     }
 
     /// The description panel: the item's name over its text.
@@ -788,8 +795,10 @@ impl View {
             let at = [PAD_BUTTONS_AT[side][0], PAD_BUTTONS_AT[side][1] + row * PAD_PITCH];
             pen.scaled(V2_COMMON, &self.pad_base, [at[0] + 3.0, at[1] - 7.0], [0.9; 2], white);
             if n == s.cursor {
-                // The game adds this glow over the picture; Barrel draws it plainly (docs/ryza/open.md, Settings screen).
+                // Added over the picture, as the game's glow.
+                let from = pen.out.len();
                 pen.scaled(V2_COMMON, &self.pad_light, [at[0] + 3.0, at[1] - 7.0], [0.9; 2], [1.0, 1.0, 1.0, blink]);
+                pen.glow = from..pen.out.len();
             }
             pen.text(&look, [at[0] + 31.0, at[1] + 6.0], &glyph.to_string(), white, None);
         }
