@@ -49,6 +49,9 @@ pub fn half(size: (u32, u32)) -> (u32, u32) {
 pub struct View {
     pub rows: [[f32; 4]; 3],
     pub scale: [f32; 4],
+    /// A temporal resolve (TAA, FSR 3, GSR 2) follows: the noise's 4 by 4 pattern moves every
+    /// frame so the resolve averages it away (`ao.frag`, `noise`).
+    pub temporal: bool,
 }
 
 impl View {
@@ -69,6 +72,7 @@ impl View {
             // vViewParam: x and y of the position per unit depth over the uv: 2 tan to the right and
             // minus 2 tan down, from minus tan and tan.
             scale: [2.0 / sx, -2.0 / sy, -1.0 / sx, 1.0 / sy],
+            temporal: false,
         }
     }
 }
@@ -171,6 +175,8 @@ pub struct Occlusion {
     /// there is no geometry pre-pass.
     derive: Option<Derive>,
     maps: Option<Maps>,
+    /// Frames shaded with a temporal resolve after them (the noise's offset, `View::temporal`).
+    noise_frame: std::cell::Cell<u32>,
 }
 
 /// The pass, pipeline and inputs of [`Occlusion::derive`].
@@ -297,7 +303,7 @@ impl Occlusion {
         let sizes = [vk::DescriptorPoolSize { ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER, descriptor_count: 2 }];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().flags(vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET).max_sets(2).pool_sizes(&sizes), None)? };
         let derive = if on && from_scene { Some(Derive::new(gpu, &input, &assembly, &viewport, &raster, &msaa, &dynamic_state, shader_read)?) } else { None };
-        let mut o = Occlusion { gbuf_pass, map_pass, pipeline_layout, pipeline, modules, point, linear, pool, set_layout, on, derive, maps: None };
+        let mut o = Occlusion { gbuf_pass, map_pass, pipeline_layout, pipeline, modules, point, linear, pool, set_layout, on, derive, maps: None, noise_frame: std::cell::Cell::new(0) };
         o.make_maps(gpu, scene_size)?;
         Ok(o)
     }
@@ -498,6 +504,13 @@ impl Occlusion {
                     push[4 * k..4 * k + 4].copy_from_slice(row);
                 }
                 push[12..16].copy_from_slice(&v.scale);
+                // The noise's offset this frame (in the rows' unused w): 0 without a temporal
+                // resolve, else each of the pattern's 16 places in turn.
+                if v.temporal {
+                    let n = self.noise_frame.get();
+                    self.noise_frame.set(n.wrapping_add(1));
+                    (push[3], push[7]) = ((n % 4) as f32, ((n / 4) % 4) as f32);
+                }
                 push[16..20].copy_from_slice(&res);
                 d.cmd_push_constants(cb, self.pipeline_layout, vk::ShaderStageFlags::FRAGMENT, 0, std::slice::from_raw_parts(push.as_ptr() as *const u8, 80));
                 d.cmd_draw(cb, 3, 1, 0, 0);

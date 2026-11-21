@@ -1260,7 +1260,7 @@ impl Renderer {
                     d.cmd_draw_indexed(cb, draw.index_count, 1, draw.first_index, 0, 0);
                 }
                 d.cmd_end_render_pass(cb);
-                self.ao.shade(gpu, cb, self.settings.occlusion.then(|| ao::View::of(&draw_vp)).as_ref());
+                self.ao.shade(gpu, cb, self.settings.occlusion.then(|| ao::View { temporal: self.settings.taa || self.settings.fsr3 || self.settings.gsr2, ..ao::View::of(&draw_vp) }).as_ref());
             } else {
                 self.ao.shade(gpu, cb, None);
             }

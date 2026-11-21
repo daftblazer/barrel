@@ -48,8 +48,11 @@ vec3 neighbour(ivec2 p, vec3 n, float n_dot_p) {
 // jitters the directions' start angle, y the march's start along its first step) is filled by
 // the game at run time and is not in the capture. x is a Bayer matrix; y is 0, which brings the
 // regions' mean occlusion nearer the game's (mid tree 0.479 against its 0.457, where a Bayer y
-// gives 0.524): a start off the pixel shortens every march.
+// gives 0.524): a start off the pixel shortens every march. With a temporal resolve after it the
+// pattern moves by a whole texel a frame through its 16 places (the rows' w: Barrel's choice, so
+// the resolve averages the pattern as the game's own picture shows none), else it stays put.
 vec2 noise(ivec2 p) {
+    p += ivec2(pc.rot_x.w, pc.rot_y.w);
     const int bayer[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
     return vec2(bayer[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + 1.0 / 32.0, 0.0);
 }

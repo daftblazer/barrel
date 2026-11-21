@@ -705,6 +705,13 @@ mistake for a day). `u46` in the events does not play its movie yet.
   `BARREL_PAD_SCRIPT` (a scripted pad, `crates/render/src/pad.rs`) is a test aid, not a game
   feature.
 
+- **The occlusion noise moves under a temporal resolve** (Ryza; `ao.frag` `noise`,
+  `ao::View::temporal`). The game's 4 by 4 noise is filled at run time and not read, so a Bayer
+  matrix stands in; held still it shows as a fine grid of dots on skin close up (the user saw it
+  on her neck, 2026-11-21; gone with a flat noise). With TAA, FSR 3 or GSR 2 on, the pattern
+  moves one texel a frame through its 16 places and the resolve averages it away; without one,
+  and in single-frame offscreen pictures, it stays put (frame 0), so checks are unchanged.
+
 ## Sound
 
 `barrel-audio` keeps sound apart from the renderer. `Mixer` adds the playing sounds (each a
