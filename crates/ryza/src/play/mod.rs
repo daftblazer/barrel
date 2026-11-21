@@ -1671,6 +1671,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let (mut stale, mut frame_no) = (false, 0u32);
     // The keys pressed this frame, for the title's menu, and what the player has done there.
     let mut title_keys: Vec<winit::keyboard::KeyCode> = Vec::new();
+    let mut pad_any = false;
     let mut title_input = a.title_input.clone();
     title_input.saves |= !save_slots.is_empty();
     // The load screen's own layer, with the views of its screens (built when there are saves to list).
@@ -1689,6 +1690,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     }
     // The cursor's row when the holds were last cleared (a tab change clears them).
     let mut options_base = 0usize;
+    let mut menu_input = barrel_ryza::menu_input::MenuInput::default();
+    // The Settings tab and row last printed (`settings: tab N row M`).
+    let mut shown_row: Option<(usize, usize)> = None;
     let mut showing_options = false;
     // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
     let mut hud = match (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some() {
@@ -1758,7 +1762,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         // The player's input, in a window: her lean against the camera, the camera's turn.
         if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
-            title_keys = p.take_pressed();
+            // The pad is read as menu input (not as keys); the field reads the sticks.
+            p.set_menu_pad(true);
+
+            let pad_pressed;
+            (title_keys, pad_pressed) = p.take_input();
+            pad_any = !pad_pressed.is_empty();
+            p.set_script_frame(sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64);
             if !p.pump() || (title_keys.contains(&K::Escape) && !showing_options) || a.frames.is_some_and(|n| sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 >= i64::from(n)) {
                 break;
             }
@@ -1997,24 +2007,60 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 use winit::keyboard::KeyCode as K;
                 let in_settings = matches!(barrel_ryza::options::Stage::at(settings_at(&title_input), frame), barrel_ryza::options::Stage::Screen { .. });
                 let listing = in_settings || matches!(flow::Stage::at(&flow_input(&title_input, &loads), save_slots.len(), frame), flow::Stage::Screen { list: Some((_, None)), .. });
-                if title_keys.contains(&K::Enter) {
-                    if menu.pressed(&title_input).is_none() {
+                // The keyboard and the pad feed one menu input (`barrel_ryza::menu_input`).
+                use barrel_ryza::menu_input::{Action as Act, Actions};
+                let keys = |ks: &dyn Fn(&K) -> bool| {
+                    const KEYS: [(K, Act); 9] = [
+                        (K::ArrowUp, Act::Up),
+                        (K::ArrowDown, Act::Down),
+                        (K::ArrowLeft, Act::Left),
+                        (K::ArrowRight, Act::Right),
+                        (K::Enter, Act::Confirm),
+                        (K::Escape, Act::Back),
+                        (K::Backspace, Act::Back),
+                        (K::KeyQ, Act::TabPrev),
+                        (K::KeyE, Act::TabNext),
+                    ];
+                    KEYS.iter().fold(Actions::default(), |acc, &(k, a)| acc.with(a, acc.has(a) || ks(&k)))
+                };
+                use barrel_render::pad::Pad;
+                let lean = p.menu_lean();
+                let pad = [
+                    (Act::Up, p.pad_down(Pad::Up) || lean.y > 0),
+                    (Act::Down, p.pad_down(Pad::Down) || lean.y < 0),
+                    (Act::Left, p.pad_down(Pad::Left) || lean.x < 0),
+                    (Act::Right, p.pad_down(Pad::Right) || lean.x > 0),
+                    (Act::Confirm, p.pad_down(Pad::South)),
+                    (Act::Back, p.pad_down(Pad::East)),
+                    (Act::TabPrev, p.pad_down(Pad::LeftShoulder)),
+                    (Act::TabNext, p.pad_down(Pad::RightShoulder)),
+                ]
+                .into_iter()
+                .fold(Actions::default(), |acc, (a, on)| acc.with(a, on));
+                menu_input.frame(keys(&|k| title_keys.contains(k)), keys(&|k| p.held(*k)), pad, pad_any);
+                let pressed = |a| menu_input.pressed(a);
+                // Any button leaves "Press any button" (the keyboard's is Enter); the rest wait for A.
+                if menu.pressed(&title_input).is_none() {
+                    if pressed(Act::Confirm) || menu_input.any_pad {
                         title_input.press = Some(frame);
-                    } else if title_input.choose.is_none() && (loads(&title_input, frame) || menu.chosen(&title_input, frame) == Some("setting")) {
+                    }
+                } else if pressed(Act::Confirm) {
+                    if title_input.choose.is_none() && (loads(&title_input, frame) || menu.chosen(&title_input, frame) == Some("setting")) {
                         title_input.choose = Some(frame);
                     } else if listing && !in_settings && title_input.confirm.is_none() {
                         title_input.confirm = Some(frame);
                     }
                 }
                 if in_settings {
-                    // Left and right change the row's value, Q and E the tab; Escape leaves (saving to Barrel's config).
-                    for (key, way) in [(K::ArrowLeft, -1), (K::ArrowRight, 1)] {
-                        if title_keys.contains(&key) {
+                    // Left and right change the row's value, Q and E (LB and RB) the tab; Escape
+                    // (B) leaves, saving to Barrel's config.
+                    for (act, way) in [(Act::Left, -1), (Act::Right, 1)] {
+                        if pressed(act) {
                             options_state.change(way);
                         }
                     }
-                    for (key, way) in [(K::KeyQ, -1), (K::KeyE, 1)] {
-                        if title_keys.contains(&key) {
+                    for (act, way) in [(Act::TabPrev, -1), (Act::TabNext, 1)] {
+                        if pressed(act) {
                             options_state.tab_by(way);
                             if let Some(s) = sound.as_mut() {
                                 s.request("page", barrel_ryza::sound::Cue::effect(i64::from(frame), barrel_ryza::sound::PAGE));
@@ -2023,7 +2069,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             options_base = options_state.cursor[options_state.tab];
                         }
                     }
-                    if title_keys.contains(&K::Escape) {
+                    if pressed(Act::Back) {
+                        eprintln!("settings: left (game frame {})", sound_base + i64::from(frame));
+                        shown_row = None;
                         if options_state.changed {
                             save_options(&options_state);
                             options_state.changed = false;
@@ -2036,14 +2084,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                     }
                 }
-                for (key, way) in [(K::ArrowDown, 1), (K::ArrowUp, -1)] {
-                    let held = p.held(key);
+                for (act, way) in [(Act::Down, 1), (Act::Up, -1)] {
+                    let held = menu_input.held(act);
                     let holds = if listing { &mut title_input.list_holds } else { &mut title_input.holds };
                     for h in holds.iter_mut().filter(|h| h.way == way && h.until.is_none() && !held) {
                         h.until = Some(frame);
                     }
-                    if title_keys.contains(&key) {
-                        // (a pad's direction is not held as a key is: it counts as a tap)
+                    if pressed(act) {
+                        // (a tap shorter than a frame is a one-frame hold)
                         holds.push(barrel_ryza::title_menu::Hold { from: frame, until: (!held).then_some(frame + 1), way });
                     }
                 }
@@ -2077,7 +2125,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 let pressed = menu.pressed(&title_input);
                 let menu_steps = title_input.holds.iter().any(|h| pressed.is_some_and(|p| h.from > p) && h.steps_at(frame));
-                if menu_steps || title_input.list_holds.iter().any(|h| h.steps_at(frame)) {
+                let rule = if showing_options { barrel_ryza::options::REPEAT } else { barrel_ryza::title_menu::MENU_REPEAT };
+                if menu_steps || title_input.list_holds.iter().any(|h| h.steps_by(frame, rule)) {
                     sound.request("cursor", Cue::effect(now, CURSOR));
                 }
                 sound.tick(now);
@@ -2136,7 +2185,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     if let Some((layer, view, strings)) = options_screen.as_mut() {
                         let tab = options_state.tab;
                         let n = barrel_ryza::options::entries(tab).len().max(1);
-                        options_state.cursor[tab] = (options_base + barrel_ryza::options::cursor_on(&title_input, n, frame)) % n;
+                        options_state.cursor[tab] = barrel_ryza::options::cursor_on(&title_input, options_base, n, frame);
+                        if shown_row != Some((tab, options_state.cursor[tab])) {
+                            shown_row = Some((tab, options_state.cursor[tab]));
+                            eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));
+                        }
                         let blink = if pump.is_some() { age as f32 } else { age as f32 * barrel_ryza::options::BLINK_RATE + barrel_ryza::options::BLINK_START };
                         quads = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
                         layer.set(&gpu, &quads)?;

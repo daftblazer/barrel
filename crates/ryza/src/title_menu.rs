@@ -73,10 +73,39 @@ impl Hold {
     /// Whether the cursor takes a step on `frame` because of this hold: the frame it went
     /// down, then after `REPEAT_FIRST` frames and every `REPEAT_NEXT` while it stays down.
     pub fn steps_at(&self, frame: i32) -> bool {
+        self.steps_by(frame, MENU_REPEAT)
+    }
+
+    /// The same under another repeat rule.
+    pub fn steps_by(&self, frame: i32, rule: Repeat) -> bool {
         let age = frame - self.from;
-        age >= 0 && self.until.is_none_or(|u| frame < u) && (age == 0 || (age >= REPEAT_FIRST && (age - REPEAT_FIRST) % REPEAT_NEXT == 0))
+        age >= 0 && self.until.is_none_or(|u| frame < u) && (age == 0 || (age >= rule.first && (age - rule.first) % rule.next == 0))
+    }
+
+    /// Every step this hold takes up to `frame`: (frame, way, whether it is a repeat). A press
+    /// wraps at a list's ends; a repeat stops there.
+    pub fn steps_until(&self, frame: i32, rule: Repeat) -> Vec<(i32, i32, bool)> {
+        let end = self.until.unwrap_or(i32::MAX).min(frame + 1);
+        let (mut out, mut at, mut repeat) = (Vec::new(), self.from, false);
+        while at < end {
+            out.push((at, self.way, repeat));
+            at += if repeat { rule.next } else { rule.first };
+            repeat = true;
+        }
+        out
     }
 }
+
+/// How a held direction repeats, in frames (60 a second): the step at once, the next after
+/// `first`, then every `next`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Repeat {
+    pub first: i32,
+    pub next: i32,
+}
+
+/// The title menu's (and the load list's) repeat.
+pub const MENU_REPEAT: Repeat = Repeat { first: REPEAT_FIRST, next: REPEAT_NEXT };
 
 /// What the player has done on the title, in title frames (60 a second from its start).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -619,5 +648,20 @@ mod tests {
         let w = input(&[(1300, 1, 6), (1320, 1, 6), (1340, 1, 6), (1360, 1, 6), (1380, -1, 6), (1400, 1, 140)]);
         assert_eq!((core(1346, &w), core(1361, &w), core(1366, &w), core(1386, &w)), (849.25, 816.25, 651.25, 849.25));
         assert_eq!((core(1406, &w), core(1436, &w), core(1443, &w), core(1458, &w), core(1473, &w), core(1530, &w)), (651.25, 651.25, 717.25, 786.25, 849.25, 849.25));
+    }
+}
+
+#[cfg(test)]
+mod repeat_tests {
+    use super::*;
+
+    #[test]
+    fn a_hold_steps_at_once_then_by_the_rule() {
+        let rule = Repeat { first: 30, next: 10 };
+        let h = Hold { from: 100, until: Some(160), way: 1 };
+        let at: Vec<i32> = (90..170).filter(|&f| h.steps_by(f, rule)).collect();
+        assert_eq!(at, [100, 130, 140, 150]);
+        let steps = h.steps_until(1000, rule);
+        assert_eq!(steps, [(100, 1, false), (130, 1, true), (140, 1, true), (150, 1, true)]);
     }
 }

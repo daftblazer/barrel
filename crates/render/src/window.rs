@@ -18,6 +18,17 @@ pub struct Pump {
     pad: Option<crate::pad::Gamepad>,
     /// Which way the left stick leaned last frame (for menu steps on a lean).
     lean: (i8, i8),
+    /// A screen that reads the pad itself (as menu input, [`Pump::pad_down`] and
+    /// [`Pump::menu_lean`]) asks for the pad not to stand in for keys.
+    menu_pad: bool,
+    /// The scripted pad (`BARREL_PAD_SCRIPT`) and the run's frame (60 Hz) it is read at.
+    script: Option<crate::pad::Script>,
+    script_frame: i64,
+    /// The buttons down now (the pad's and the script's), and the left stick's menu directions.
+    down: std::collections::HashSet<crate::pad::Pad>,
+    menu_lean: crate::pad::Lean,
+    /// The sticks as read now: the script's where it holds one, else the pad's.
+    sticks: ([f32; 2], [f32; 2]),
     /// A new window size or fullscreen to open again with at the next scene's start (the
     /// compositor keeps a live window's size: `reopen`).
     pub pending: Option<crate::settings::Display>,
@@ -137,7 +148,19 @@ impl Pump {
             libc::signal(libc::SIGTERM, stop_signal as *const () as libc::sighandler_t);
             libc::signal(libc::SIGINT, stop_signal as *const () as libc::sighandler_t);
         }
-        Ok(Pump { event_loop, state, pad: crate::pad::Gamepad::open(), lean: (0, 0), pending: None })
+        Ok(Pump {
+            event_loop,
+            state,
+            pad: crate::pad::Gamepad::open(),
+            lean: (0, 0),
+            menu_pad: false,
+            script: crate::pad::Script::load_env(),
+            script_frame: 0,
+            down: Default::default(),
+            menu_lean: Default::default(),
+            sticks: ([0.0; 2], [0.0; 2]),
+            pending: None,
+        })
     }
 
     /// Closes the window and opens it again as `display` has it (between scenes: nothing may
@@ -187,7 +210,28 @@ impl Pump {
     /// The pad's sticks as read, (x right, y up) each: the left one walks, the right one turns
     /// the camera. Zero without a pad.
     pub fn sticks(&self) -> ([f32; 2], [f32; 2]) {
-        self.pad.as_ref().map_or(([0.0; 2], [0.0; 2]), |g| (g.left, g.right))
+        self.sticks
+    }
+
+    /// Asks that the pad no longer stands for keys (and its left stick for the arrows): the
+    /// caller reads [`Pump::pad_down`] and [`Pump::menu_lean`] instead.
+    pub fn set_menu_pad(&mut self, on: bool) {
+        self.menu_pad = on;
+    }
+
+    /// The run's frame (60 Hz) the scripted pad is read at, from the next [`Pump::pump`].
+    pub fn set_script_frame(&mut self, frame: i64) {
+        self.script_frame = frame;
+    }
+
+    /// Whether pad button `b` is down now (the scripted pad's too).
+    pub fn pad_down(&self, b: crate::pad::Pad) -> bool {
+        self.down.contains(&b)
+    }
+
+    /// The directions the left stick holds as menu input (with hysteresis).
+    pub fn menu_lean(&self) -> crate::pad::Lean {
+        self.menu_lean
     }
 
     /// Whether the window changed size since the last call.
@@ -201,23 +245,52 @@ impl Pump {
         if let PumpStatus::Exit(_) = self.event_loop.pump_app_events(Some(std::time::Duration::ZERO), &mut self.state) {
             return false;
         }
+        let mut real = ([0.0; 2], [0.0; 2]);
+        let mut down = std::collections::HashSet::new();
         if let Some(g) = self.pad.as_mut() {
             for b in g.poll() {
-                self.state.pressed.extend_from_slice(pad_keys(b));
+                if !self.menu_pad {
+                    self.state.pressed.extend_from_slice(pad_keys(b));
+                }
                 self.state.pad_pressed.push(b);
             }
-            // A lean of the left stick past half way steps through menus like the arrows.
-            let [x, y] = g.left;
-            let lean = (if x > 0.5 { 1 } else if x < -0.5 { -1 } else { 0 }, if y > 0.5 { 1 } else if y < -0.5 { -1 } else { 0 });
-            use winit::keyboard::KeyCode as K;
-            if lean.0 != self.lean.0 && lean.0 != 0 {
-                self.state.pressed.push(if lean.0 > 0 { K::ArrowRight } else { K::ArrowLeft });
+            real = (g.left, g.right);
+            down.clone_from(g.down());
+            if !self.menu_pad {
+                // A lean of the left stick past half way steps through menus like the arrows.
+                let [x, y] = g.left;
+                let lean = (if x > 0.5 { 1 } else if x < -0.5 { -1 } else { 0 }, if y > 0.5 { 1 } else if y < -0.5 { -1 } else { 0 });
+                use winit::keyboard::KeyCode as K;
+                if lean.0 != self.lean.0 && lean.0 != 0 {
+                    self.state.pressed.push(if lean.0 > 0 { K::ArrowRight } else { K::ArrowLeft });
+                }
+                if lean.1 != self.lean.1 && lean.1 != 0 {
+                    self.state.pressed.push(if lean.1 > 0 { K::ArrowUp } else { K::ArrowDown });
+                }
+                self.lean = lean;
             }
-            if lean.1 != self.lean.1 && lean.1 != 0 {
-                self.state.pressed.push(if lean.1 > 0 { K::ArrowUp } else { K::ArrowDown });
-            }
-            self.lean = lean;
         }
+        // The scripted pad is a second pad: its presses come as the real one's do.
+        if let Some(s) = &self.script {
+            let (buttons, left, right) = s.at(self.script_frame);
+            for b in buttons {
+                if down.insert(b) && !self.down.contains(&b) {
+                    if !self.menu_pad {
+                        self.state.pressed.extend_from_slice(pad_keys(b));
+                    }
+                    self.state.pad_pressed.push(b);
+                }
+            }
+            if left != [0.0; 2] {
+                real.0 = left;
+            }
+            if right != [0.0; 2] {
+                real.1 = right;
+            }
+        }
+        self.down = down;
+        self.sticks = real;
+        self.menu_lean.update(real.0);
         !self.state.closed && !STOPPED.load(std::sync::atomic::Ordering::Relaxed)
     }
 }

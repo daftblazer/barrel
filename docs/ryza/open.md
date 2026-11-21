@@ -332,10 +332,28 @@ captures every 5 frames, `barrel-parity quads`):
 - Not tried in the game yet: D-pad / stick left and right (they change a value, and the run's
   saves must stay as they are), X and Y on this screen.
 
-Barrel today maps only A (Enter), B (Backspace) and the D-pad (arrows) to keys, as presses
-(`window.rs` `pad_keys`); Settings changes tab on Q / E and leaves on Escape, and holds read
-the keyboard's held keys, so on a pad Settings neither changes tab nor leaves, and holds and
-the stick do nothing.
+Barrel's Ryza screens before the field read the keyboard and the pad as one menu input
+(`barrel_ryza::menu_input`, `Pump::set_menu_pad`: the pad does not stand in for keys there). A
+scripted pad (`BARREL_PAD_SCRIPT=file`, lines `<60 Hz game frame> <button> <frames held>`, buttons
+A B X Y LB RB LT RT UP DOWN LEFT RIGHT START BACK and `LX=v` / `LY=v` stick axes) feeds the same
+place as the real one; Settings prints `settings: tab N row M` (N from the Game tab) when either
+changes, and `settings: left` on leaving.
+
+| Where | Button | Does | Barrel |
+|---|---|---|---|
+| Title | any pad button, Enter | leaves "Press any button" | yes |
+| Title menu, load list | D-pad, left stick, arrows | move (a press wraps; held 37 frames, then every 15, stops at the ends) | yes |
+| Title menu, load list | A, Enter | choose / load the save | yes |
+| Load list | B | back to the menu | no (the keyboard has none either) |
+| Settings | D-pad, left stick, arrows | move (a press wraps; held 30 frames, then every 10, stops at the end) | yes |
+| Settings | left, right, arrows | change the row's value (a press only; a held repeat is not read) | yes |
+| Settings | LB / RB, Q / E | previous / next tab (stops at the ends) | yes |
+| Settings | B, Backspace, Escape | leave, writing Barrel's config | yes |
+| Settings | X, Y | not tried in the game | no |
+| Field | left stick, right stick, buttons | as before (`take_input`, `sticks`) | unchanged |
+
+The stick counts as a direction from 0.4 and until it falls under 0.2257 (Barrel's choice, see
+`docs/engine.md`, "Deliberate differences"); the game's threshold is not read.
 
 ## Sound cues (the game's own requests)
 

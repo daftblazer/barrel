@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use crate::graphics::{self, Item, Quality};
 use crate::options_view::{Kind, Row, Screen};
-use crate::title_menu::Input;
+use crate::title_menu::{Hold, Input, Repeat};
 
 /// The black cover rises as the load screen's (`load::COVER_RISE`, 20 frames to full) and the
 /// screen fades in from the frame after it is full (capture: bg alpha 11/15 on the 30th frame
@@ -50,9 +50,21 @@ impl Stage {
     }
 }
 
-/// The rows' directions held on the screen, as the title's list: `input.list_holds`.
-pub fn cursor_on(input: &Input, count: usize, frame: i32) -> usize {
-    crate::load::cursor(&input.list_holds, count, frame)
+/// A held direction on this screen: the step at once, the next after 30 frames, then every 10
+/// (read off the game).
+pub const REPEAT: Repeat = Repeat { first: 30, next: 10 };
+
+/// The row the cursor is on at `frame` among `count`, from `base`, the rows' directions held on
+/// the screen as `input.list_holds`: a press wraps at the ends, a held repeat stops there.
+pub fn cursor_on(input: &Input, base: usize, count: usize, frame: i32) -> usize {
+    let n = count.max(1) as i32;
+    let mut steps: Vec<_> = input.list_holds.iter().flat_map(|h| h.steps_until(frame, REPEAT)).filter(|s| s.0 <= frame).collect();
+    steps.sort_by_key(|s| s.0);
+    let mut on = base as i32 % n;
+    for (_, way, repeat) in steps {
+        on = if repeat { (on + way).clamp(0, n - 1) } else { (on + way).rem_euclid(n) };
+    }
+    on as usize
 }
 
 /// How a row's value is chosen.
@@ -376,6 +388,21 @@ fn keys(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_press_wraps_and_a_held_repeat_stops_at_the_end() {
+        let hold = |from, until, way| Hold { from, until: Some(until), way };
+        let input = |holds| Input { list_holds: holds, ..Input::default() };
+        // Five rows from the first: one press up wraps to the last.
+        assert_eq!(cursor_on(&input(vec![hold(10, 11, -1)]), 0, 5, 20), 4);
+        // Held down from the second row of five: steps at 100, 130, 140, 150 reach the last at 140 and stay.
+        let held = input(vec![hold(100, 400, 1)]);
+        let at = |f| cursor_on(&held, 1, 5, f);
+        assert_eq!([at(99), at(100), at(129), at(130), at(140), at(150), at(300)], [1, 2, 2, 3, 4, 4, 4]);
+        // A fresh press at the end wraps.
+        let again = input(vec![hold(100, 400, 1), hold(500, 501, 1)]);
+        assert_eq!(cursor_on(&again, 1, 5, 500), 0);
+    }
 
     #[test]
     fn the_screen_comes_up_after_the_cover() {

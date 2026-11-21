@@ -693,6 +693,12 @@ mistake for a day). `u46` in the events does not play its movie yet.
   start, not live. Game, Camera and Audio values are kept and read by nothing yet. The tabs
   turn with Q and E in a window; Keyboard and Controller are empty.
 
+- **Ryza's menu stick.** The left stick steps menus (title, load list, Settings) once it leans
+  past 0.4 and stops being a direction under 0.2257 (the field walk's dead zone), so a stick
+  resting near one threshold does not retrigger. The game's own thresholds are not read.
+  `BARREL_PAD_SCRIPT` (a scripted pad, `crates/render/src/pad.rs`) is a test aid, not a game
+  feature.
+
 ## Sound
 
 `barrel-audio` keeps sound apart from the renderer. `Mixer` adds the playing sounds (each a
