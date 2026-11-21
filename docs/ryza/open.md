@@ -312,6 +312,31 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     1 - frames / 13 (it was 196/255 flat): the Settings capture starts at 188 where the pulse
     stood lower; Load Game's three rows still match.
 
+## Controller (Ryza)
+
+Ryza reads the pad through a newer input layer than Escha's (the XInput calls are at
+`0x140a3ee5b` / `0x140a3fc9d`; the pad object's vtable is `0x14178e8d8`; Escha's
+`{slot, mask}` table is not in this executable). What each button does is read off the game
+instead: ryza-recomp `scenarios/settings-pad.sh` (Settings opened from the title at 1460,
+captures every 5 frames, `barrel-parity quads`):
+
+- **RB / LB** change the tab right / left (1500 and 1560: Game → Graphics → next; 1620 back).
+  The help bar slides its text over 10 frames after each change.
+- **Left stick** (pushed past its dead zone) moves the cursor as the D-pad does: a tap at 1680
+  moved it one row.
+- **D-pad held** (1860 for 60 frames): the first step at once (it wrapped from the last row to
+  the first), the next 30 frames later (1890), then every 10 (1900, 1910); a held step stops at
+  the last row (no wrap). The stick held (1740) stepped the same way.
+- **B** leaves Settings (2000: the title from 2005). A confirms (the title's menu, the load
+  screen's save, as before).
+- Not tried in the game yet: D-pad / stick left and right (they change a value, and the run's
+  saves must stay as they are), X and Y on this screen.
+
+Barrel today maps only A (Enter), B (Backspace) and the D-pad (arrows) to keys, as presses
+(`window.rs` `pad_keys`); Settings changes tab on Q / E and leaves on Escape, and holds read
+the keyboard's held keys, so on a pad Settings neither changes tab nor leaves, and holds and
+the stick do nothing.
+
 ## Sound cues (the game's own requests)
 
 ryza-recomp `scenarios/load-cues.sh` with `scenarios/hooks/sound.hooks` logs the game's sound
