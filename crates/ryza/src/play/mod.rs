@@ -501,6 +501,7 @@ fn options_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &
         ("\\data\\x64\\res_en\\ui\\a21_caption.g1t", 0),
         ("\\data\\x64\\res_cmn\\ui\\sys_no_image.g1t", 0),
         ("\\data\\x64\\res_en\\ui\\a21_mix.g1t", 2),
+        ("\\data\\x64\\res_cmn\\ui\\a24_option_steam.g1t", 0),
     ];
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -520,6 +521,7 @@ fn options_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &
         common_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
         caption_styles: &read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_caption.xml")?,
         mix_styles: &read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_mix.xml")?,
+        pad_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a24_option_steam.xml")?,
         anims: &read("\\saves\\ui_en\\uia_common.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
         atlases,
@@ -2251,7 +2253,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));
                         }
                         let blink_age = tab_change.map_or(age, |f| (frame - f + (1)).min(age));
-                        let blink = if pump.is_some() { blink_age as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
+                        let blink = if pump.is_some() { (blink_age * barrel_ryza::options::blink_speed(tab)) as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
                         let clips;
                         (quads, clips) = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
                         layer.set_clipped(&gpu, &quads, &clips)?;

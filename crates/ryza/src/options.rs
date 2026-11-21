@@ -215,7 +215,7 @@ pub fn entries(tab: usize) -> Vec<Entry> {
             // The four display rows are stored settings (the next start reads the ones it has).
             let resolutions = [655_380, 655_379, 655_378, 655_377, 655_376, 655_375, 655_382, 655_383].map(Word::Id);
             vec![
-                words(720_909, 786_445, "resolution", &resolutions, 5),
+                words(720_909, 786_445, "resolution", &resolutions, RESOLUTION_DEFAULT),
                 words(720_910, 786_446, "window_mode", &[Word::Id(655_385), Word::Id(655_386), Word::Id(655_387)], 0),
                 words(721_315, 786_851, "frame_rate", &[655_646, 655_645, 655_644, 655_643, 655_647].map(Word::Id), 1),
                 onoff(721_314, 786_850, "vsync", 0),
@@ -241,9 +241,15 @@ pub fn entries(tab: usize) -> Vec<Entry> {
         }
         // The key assignments' commands (Field, Combat, Synthesis); the pad's tab is a diagram without rows.
         4 => (655_914..=655_923).map(|name| Entry { name, text: 0, control: Control::Assign, default: 0, key: "", graphics: None }).collect(),
+        // The controller's sixteen buttons, the left side then the right (they have no words on the list).
+        5 => (0..16).map(|_| Entry { name: 0, text: 0, control: Control::Assign, default: 0, key: "", graphics: None }).collect(),
         _ => Vec::new(),
     }
 }
+
+/// The sizes of the Screen Resolution row, in its order (the string numbers `655_380` ... `655_383` read the same).
+const RESOLUTIONS: [&str; 8] = ["960x540", "1024x576", "1280x720", "1366x768", "1600x900", "1920x1080", "2560x1440", "3840x2160"];
+const RESOLUTION_DEFAULT: i32 = 5;
 
 /// The settings the screen shows and changes.
 #[derive(Clone, Debug, PartialEq)]
@@ -391,6 +397,12 @@ impl State {
                 out.push((i.config_key().to_string(), i.levels()[self.graphics.level(i)].to_string()));
             }
         }
+        // The display rows go to the keys the window reads at its next start, once either was moved off its default.
+        let (resolution, mode) = (self.values["resolution"], self.values["window_mode"]);
+        if (resolution, mode) != (RESOLUTION_DEFAULT, 0) {
+            out.push(("window".into(), RESOLUTIONS[resolution as usize % RESOLUTIONS.len()].into()));
+            out.push(("fullscreen".into(), if mode == 0 { "off" } else { "on" }.into()));
+        }
         let mut keys: Vec<_> = self.values.iter().collect();
         keys.sort();
         for (k, v) in keys {
@@ -520,6 +532,31 @@ mod tests {
         assert_eq!(back.option("cursor_speed"), Some(6));
         assert_eq!(back.graphics.quality, Quality::Custom);
         assert_eq!(back.graphics.level(Item::Occlusion), s.graphics.level(Item::Occlusion));
+    }
+
+    #[test]
+    fn the_display_rows_go_to_the_windows_keys_once_moved() {
+        let mut s = State::new(graphics::Settings::default());
+        assert!(!s.store("").contains("\nwindow ") && !s.store("").starts_with("window "));
+        // Graphics tab: Screen Resolution one step down (1600x900), Window Settings one on (Borderless).
+        s.tab = 3;
+        s.change(-1);
+        s.cursor[3] = 1;
+        s.change(1);
+        let text = s.store("fullscreen off\nwindow 800x600\n");
+        assert!(text.contains("window 1600x900") && text.contains("fullscreen on"));
+        assert!(!text.contains("800x600"));
+    }
+
+    #[test]
+    fn the_list_scrolls_when_the_cursor_leaves_its_window() {
+        let mut s = State::new(graphics::Settings::default());
+        s.tab = 3;
+        for (on, first) in [(11, 0), (12, 1), (21, 10), (15, 10), (9, 9), (0, 0)] {
+            s.cursor[3] = on;
+            s.follow();
+            assert_eq!(s.first[3], first, "cursor {on}");
+        }
     }
 
     #[test]

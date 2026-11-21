@@ -280,10 +280,10 @@ mod tests {
     const INI: &str = "[Graphics]\r\nScreenWidth=1920\r\nGRAPHICS_QUALITY_ALL=3\r\nGRAPHICS_QUALITY_TEX=1\r\nGRAPHICS_ANTIAILIASING=1\r\nGRAPHICS_DOF=0\r\nGRAPHICS_AO=0\r\nGRAPHICS_BLOOM=0\r\nGRAPHICS_GRASS_RANGE=0\r\nGRAPHICS_TEXTURE_FILTERING=0\r\nGRAPHICS_LOD_DIST=9\r\n[Input]\r\nGRAPHICS_DOF=1\r\n";
 
     #[test]
-    fn nothing_given_is_high_everywhere() {
+    fn nothing_given_is_high_everywhere_but_the_anti_aliasing_at_fxaa() {
         let s = Settings::default();
         assert_eq!((s.quality, s.given), (Quality::High, false));
-        assert_eq!(s.level(Item::AntiAliasing), 2);
+        assert_eq!(s.level(Item::AntiAliasing), 1);
         assert_eq!(s.level(Item::GrassDensity), 2);
         assert_eq!(s.level(Item::DepthOfField), 1);
     }

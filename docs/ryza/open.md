@@ -290,8 +290,42 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   fitted), `<KEY_ASSIGN_FIELD_CAMERA_MOVE>` is the right stick's picture, the Camera tab has the
   DX names and order (Y-Axis, X-Axis, Zoom, the speeds, Autocorrect), the cursor's blink starts
   again on a tab change, "Change" shows in the help bar only on a tab with a choice row, and the
-  volumes start at 5. Camera, Game and Audio match (`settings-tab0`, `1`, `5`); Graphics,
-  Keyboard and Controller do not yet.
+  volumes start at 5. Camera, Game and Audio match (`settings-tab0`, `1`, `5`).
+- **Graphics, Keyboard and Controller (2026-11-21), all 25 rows of `checks-settings.txt` at 0
+  mismatches** (`settings-tab2` to `4`, `settings-scroll1620` to `2150`).
+  - *Graphics*: 22 rows (Screen Resolution, Window Settings, Frame Rate Limit, Vertical Sync, then
+    Overall Quality to Grass Density, Texture Filtering, Shadow Draw Distance, Water Quality, LOD
+    Distance; no Motion Blur). The list scrolls: `State::follow` keeps the cursor inside the
+    twelve rows shown, and the plain list draws the scroll bar's thumb (`a21_mix` texture 2,
+    style `gen_a21_mix02_flame01_sb`) over its track when it has more rows than it shows. The
+    four last items are `graphics::Item`s the config already had; the game's High preset has the
+    anti-aliasing at FXAA, so `Settings::default` does (it matters only once the quality is Custom).
+    A held direction repeats every 8 frames after 30 and stops at the last row (a press wraps).
+  - *Keyboard*: the ten commands (strings 655914 to 655923) in the template window of the key
+    assignment layout, a line under each, the cyan cursor (`gen_a21v2_cmn_cursor_s`) blinking
+    twice as fast as the others', the scroll bar's bare track, and the description panel drawn
+    after the list, empty (its heading's mask shows: the game draws it where no text reads it).
+    A (open a key assignment) is not built.
+  - *Controller*: the pad's picture (`a24_option_steam` texture 0) with the sixteen buttons'
+    pictures (font glyphs U+04D8 + 51 pixels each in the atlas) and the cursor's glow on the first.
+    The game draws the glow additively; Barrel's text layer has no additive blend, so the glow is
+    drawn plainly (a visible difference, the trace is the same). The cursor moves over the
+    sixteen buttons; nothing can be assigned.
+  - *The cursor's blink* is the frame count since a frame before the last tab change, wrapping
+    every 121 frames (`options::BLINK_LOOP`, replacing the 0.8% slow rate), with the clock at
+    119.06 on the wrapping frame itself (`blink_clock`); on the Keyboard tab it runs at twice
+    the speed. The rows' directions held before a scripted tab change count for the tab left.
+  - *Display rows* (resolution, window mode, frame rate limit, vertical sync) are stored as
+    `option_` keys; once the resolution or the window mode is moved off its default they also
+    write the window's own `window WxH` and `fullscreen on|off` lines (Borderless and
+    Fullscreen both mean on). The frame rate limit and vertical sync have no Barrel setting yet.
+  - *Fitted* (each `// STAND-IN:` in the code): the thumb's height and travel
+    (`options_view::View::thumb`), the Keyboard and Controller pages' places (`KEYS_*`, `PAD_*`),
+    the help plate's extra atlas pixel(s) (one, and one more where the last glyph reaches past its
+    advance), the zero-height middle's 1.5-pixel tiles (`segments`), the key list panel's one
+    pixel shift, the draw distances' words (Long is the capture's; Close and Normal are the
+    string table's nearest, unseen), and the names DOF (3.7 px) and Bloom (3.0 px) dropping like
+    Vibration, Dash and Autosave.
 - **Working.** Up and Down move the cursor (the title's holds, as the load list), Left and Right
   change the row (a choice wraps, a number stops at its ends), Q and E change the tab, Escape
   leaves for the title menu and writes the changes to Barrel's own config (the graphics config
@@ -301,10 +335,11 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   graphics apply on the next start** (the renderer reads the settings once; no live rebuild).
   Unit test: `options::tests::a_change_goes_to_the_config_and_back`.
 - **Left over (each kept and stored, not honoured, or not built):**
-  - Keyboard and Controller tabs (the key assignments, `uil_quick_menu_key_assignment.xml`,
-    `uil_quick_menu_controller_settings.xml`) show no rows. The Graphics tab has no Screen
-    Resolution, Window Settings or Motion Blur rows (resolution and window are Barrel's display
-    config; there is no motion blur).
+  - Keyboard and Controller tabs show the game's pages but assign nothing (A on a command, the
+    pad's buttons), and show no key names. Frame Rate Limit and Vertical Sync are stored only;
+    Texture Filtering, Shadow Draw Distance, Water Quality and LOD Distance are
+    `graphics::Item`s the presets read. Frames the capture did not cover (the list's scroll back
+    up, a tab's cursor after Escape) follow the same rules, unchecked.
   - Every Game, Camera and Audio value is stored only: nothing reads them (volumes too, here: the
     title's sound has no volume setting yet; Difficulty, Dash, camera inversion ... belong to the
     field and the event code). Their order and descriptions on the Camera and Audio tabs are the
@@ -316,8 +351,8 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     Autosave sit 3.0 px (Autosave 3.7) lower than the others in the rows and in the description's
     heading (`NAME_DROPS`); the rows' pitch (`ROW_PITCH` 34.27 layout px) and the plain list's
     shift (`PLAIN_SHIFT`); the centred texts' fits (`CENTER_FIT`, `KEY_FIT`, `NUM_FIT`); the cursor's
-    blink runs 0.8% slow against the capture's frame count (`options::BLINK_RATE`, in a window it
-    is the frame count itself); the help plate is two atlas pixels wider than the text.
+    blink loop of 121 frames (`options::BLINK_LOOP`; in a window it is the frame count itself); the
+    help plate's extra atlas pixels.
   - The title menu's chosen-item fade is now 0.878 of the pulse's opacity at the button times
     1 - frames / 13 (it was 196/255 flat): the Settings capture starts at 188 where the pulse
     stood lower; Load Game's three rows still match.

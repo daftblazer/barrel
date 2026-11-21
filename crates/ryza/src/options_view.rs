@@ -33,7 +33,8 @@ pub const BG_05: usize = 8;
 pub const CAPTION: usize = 9;
 pub const NO_IMAGE: usize = 10;
 pub const MIX: usize = 11;
-pub const TEXTURES: usize = 12;
+pub const PAD: usize = 12;
+pub const TEXTURES: usize = 13;
 
 // STAND-IN: the Keyboard page's places (layout pixels) are the layout's nodes summed (the template's window at its menu's node, the scroll bar and the commands' rows inside it: `uil_quick_menu_key_assignment.xml`) and then read off the capture's quads (settings-tabs 1675, whose rows sit 50.4 pixels, 33.6 layout, apart).
 const KEYS_WINDOW_AT: [f32; 2] = [200.0 / 1.5, 148.0];
@@ -51,6 +52,14 @@ const KEYS_PANEL_SHIFT: [f32; 2] = [-1.0, 0.0];
 // STAND-IN: the heading's mask (the layout's `image_mask`, 340 x 22) at the Keyboard layout's info_window, summed from its nodes and read off the capture's quads.
 const KEYS_MASK_AT: [f32; 2] = [789.0, 160.0];
 const KEYS_MASK: [f32; 2] = [340.0, 22.0];
+// STAND-IN: the Controller page's places (layout pixels) are the layout's nodes summed (the root's -1, quickMenu's -8 down, controller_settings' 30 down, each side's group and the button's own node) and the picture's own offsets read off the capture's quads (settings-tabs 1735).
+const PAD_IMAGE_AT: [f32; 2] = [322.0, 213.0];
+const PAD_BUTTONS_AT: [[f32; 2]; 2] = [[274.0, 196.0], [945.0, 195.0]];
+const PAD_PITCH: f32 = 56.0;
+/// The buttons' glyphs, the left side from the top (view, LT, LB, L stick, the pad's four arrows), then the right (menu, RT, RB, Y, B, A, X, R stick).
+const PAD_GLYPHS: [char; 16] = ['\u{4ec}', '\u{4e5}', '\u{4e3}', '\u{4f4}', '\u{4f0}', '\u{4ef}', '\u{4f1}', '\u{4ee}', '\u{4eb}', '\u{4e9}', '\u{4e7}', '\u{4de}', '\u{4d8}', '\u{4da}', '\u{4dc}', '\u{4f5}'];
+/// The template's text size (24) the glyph pictures are set in.
+const PAD_GLYPH_SIZE: f32 = 24.0;
 /// How many rows the lists show.
 const ROWS_SHOWN: usize = 12;
 /// Frames the common fade takes (`anm_common_fade_in`).
@@ -95,9 +104,10 @@ pub struct Sources<'a> {
     pub common_styles: &'a [u8],
     pub caption_styles: &'a [u8],
     pub mix_styles: &'a [u8],
+    pub pad_styles: &'a [u8],
     pub anims: &'a [u8],
     pub glyphs: [HashMap<char, Glyph>; 2],
-    /// The atlases in style pixels, by texture number (`OPTION` ... `CAPTION`, `MIX`; the others are 0).
+    /// The atlases in style pixels, by texture number (`OPTION` ... `CAPTION`, `MIX`, `PAD`; the others are 0).
     pub atlases: [(u32, u32); TEXTURES],
 }
 
@@ -232,6 +242,9 @@ pub struct View {
     cursor: Style,
     key_cursor: Style,
     text_mask: Style,
+    pad_image: Style,
+    pad_base: Style,
+    pad_light: Style,
     key_line: Style,
     key_name: Label,
     cursor_at: [f32; 2],
@@ -279,6 +292,7 @@ impl View {
             parse(src.common_styles, "uis_gen_a21_common")?,
             parse(src.caption_styles, "uis_gen_a21_caption")?,
             parse(src.mix_styles, "uis_gen_a21_mix")?,
+            parse(src.pad_styles, "uis_gen_a24_option_steam")?,
         ];
         let styles: Vec<&Element> = styles.iter().collect();
         let st = |e: &Element| style_of(&styles, e);
@@ -422,6 +436,9 @@ impl View {
             cursor: st(cursor_n)?,
             key_cursor: by_name("gen_a21v2_cmn_cursor_s")?,
             text_mask: by_name("gen_a21v2_cmn_msk_text1")?,
+            pad_image: by_name("gen_a24_opt_stl_controller")?,
+            pad_base: by_name("gen_a21v2_cmn_key_ccl_base")?,
+            pad_light: by_name("gen_a21v2_cmn_key_ccl_base_hi")?,
             key_line: by_name("gen_a21_common02_line")?,
             key_name: text_label(key_name_n),
             cursor_at,
@@ -733,7 +750,7 @@ impl View {
                 // The heading's text mask: with no heading to read it the game's draw of it shows (settings-tabs 1675).
                 pen.wrap(V2_COMMON, &self.text_mask, KEYS_MASK_AT, KEYS_MASK, [1.0; 4]);
             }
-            Page::Pad => {}
+            Page::Pad => self.pad(&mut pen, s, moment),
         }
 
         // The help bar.
@@ -756,6 +773,25 @@ impl View {
             let at = moved([self.body_text_at[0], self.body_text_at[1] + n as f32 * (self.body_text.size + LINE_SPACE)]);
             let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, 1.0))).collect();
             pen.runs(&body, at, &chars, None);
+        }
+    }
+
+    /// The Controller page: the pad's picture with a button's picture on each side of it, the
+    /// cursor's glow on the chosen one.
+    fn pad(&self, pen: &mut Pen, s: &Screen, moment: Moment) {
+        let white = [1.0; 4];
+        pen.natural(PAD, &self.pad_image, 0, PAD_IMAGE_AT, white);
+        let blink = self.blink.at(moment.blink.rem_euclid(120.0) / 60.0)[3] / 255.0;
+        let look = Look { size: PAD_GLYPH_SIZE, small: true, align: Align::Center, centred: None };
+        for (n, glyph) in PAD_GLYPHS.iter().enumerate() {
+            let (side, row) = (n / 8, (n % 8) as f32);
+            let at = [PAD_BUTTONS_AT[side][0], PAD_BUTTONS_AT[side][1] + row * PAD_PITCH];
+            pen.scaled(V2_COMMON, &self.pad_base, [at[0] + 3.0, at[1] - 7.0], [0.9; 2], white);
+            if n == s.cursor {
+                // The game adds this glow over the picture; Barrel draws it plainly (docs/ryza/open.md, Settings screen).
+                pen.scaled(V2_COMMON, &self.pad_light, [at[0] + 3.0, at[1] - 7.0], [0.9; 2], [1.0, 1.0, 1.0, blink]);
+            }
+            pen.text(&look, [at[0] + 31.0, at[1] + 6.0], &glyph.to_string(), white, None);
         }
     }
 
