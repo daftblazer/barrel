@@ -207,7 +207,7 @@ pub struct ClothSim {
     v: Vec<Vec3>,
     s: Vec<Vec3>,
     parent: Option<DMat4>,
-    /// The parent's smoothed velocity and spin (world), what its acceleration is taken against.
+    /// The parent's velocity and spin of the last step (world), what its next acceleration is taken against.
     velocity_state: DVec3,
     spin_state: DVec3,
 }
@@ -465,7 +465,7 @@ impl ClothSim {
         }
         rot *= s.parent_spin_scale as f64;
 
-        // Accelerations against the smoothed velocity and spin, damped above the limits.
+        // Accelerations against the last step's velocity and spin, damped above the limits.
         let mut lin = (delta - self.velocity_state * dt64) / (dt64 * dt64);
         let mut ang = (rot - self.spin_state * dt64) / (dt64 * dt64);
         let (a2, r2) = (lin.length_squared() as f32, ang.length_squared() as f32);
@@ -486,8 +486,14 @@ impl ClothSim {
                 ang *= (s.accel_clamp[1] / r2.sqrt()) as f64;
             }
         }
-        self.velocity_state += lin * dt64;
-        self.spin_state += ang * dt64;
+        // The velocity and spin the next step takes its accelerations against are this step's own,
+        // whatever the force was clamped to: the clamps bound the push on the cloth, not what is
+        // remembered. (Fitted against the capture's run start: remembering the clamped change
+        // instead keeps the velocity near zero for seconds, the drag never trails the skirt, 15.8 cm
+        // rms on the skirt against 4.4; a fraction of the change instead of all of it, 0.75 to 0.3
+        // of it, is worse.)
+        self.velocity_state = delta / dt64;
+        self.spin_state = rot / dt64;
 
         let mut gravity = to_local(self.gravity_world.as_dvec3());
         if s.gravity_axis != 0 && self.local_gravity > 0.0 {
