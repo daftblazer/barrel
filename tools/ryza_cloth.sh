@@ -13,7 +13,7 @@
 SAVE=$(ls "$LSAVES"/*/AutoSaveData/data.dat | head -1)
 RANGE=${1:-1880-2100/5}
 CAP_RUN=${CAP_RUN:-tools/capped.sh}
-W=${WALK_RASEN:?set WALK_RASEN to ryza-recomp's work/scenarios/walk-rasen}
+W=${WALK_RASEN:?set WALK_RASEN to the walk-rasen capture folder of ryza-recomp}
 IDX=${PARITY_INDEX}
 LAST=${RANGE#*-}; LAST=${LAST%/*}
 printf '1900 LY=1.0 120\n' > "$OUT/walk-rasen.pad"
