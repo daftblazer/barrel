@@ -757,12 +757,22 @@ fn save_options(state: &barrel_ryza::options::State) {
 struct Handoff {
     root: std::path::PathBuf,
     save: std::path::PathBuf,
-    pump: Option<window::Pump>,
+    /// The window's side, kept for the field (a window run only).
+    app: Option<App>,
     /// Offscreen: the picture's path and size, and the frames left of `--frames`.
     out: String,
     size: (u32, u32),
     frames_left: Option<u32>,
     carry: Carry,
+}
+
+/// What lives as long as the window does: the window and its events, the Vulkan device and the
+/// swapchain on it. A scene (title, field) is made fresh on top of it and torn down at its end;
+/// the app goes on to the next scene.
+struct App {
+    pump: window::Pump,
+    gpu: Gpu,
+    presenter: present::Presenter,
 }
 
 /// What the field takes on from the title's run: the sound (its device, its cues) and where the
@@ -777,23 +787,23 @@ struct Carry {
 }
 
 pub fn run(raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
-    let mut next = run_once(raw, chosen, Carry::default())?;
+    let mut next = run_once(raw, chosen, Carry::default(), None)?;
     while let Some(h) = next {
         // Her place and the story's progress are the save's (`--save`), the field the one it names.
-        let out = if h.pump.is_some() { "-".to_string() } else { h.out };
+        let out = if h.app.is_some() { "-".to_string() } else { h.out };
         let mut args = vec![h.root.to_string_lossy().into_owned(), "-".into(), out, "--save".into(), h.save.to_string_lossy().into_owned(), "--size".into(), format!("{}x{}", h.size.0, h.size.1)];
-        if h.pump.is_some() {
+        if h.app.is_some() {
             args.push("--window".into());
         }
         if let Some(n) = h.frames_left {
             args.extend(["--frames".into(), n.to_string()]);
         }
-        next = run_once(args, Some(locate::Resolved { root: h.root, pump: h.pump }), h.carry)?;
+        next = run_once(args, Some(locate::Resolved { root: h.root, pump: None }), h.carry, h.app)?;
     }
     Ok(())
 }
 
-fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry) -> Result<Option<Handoff>> {
+fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry, app: Option<App>) -> Result<Option<Handoff>> {
     let game = match chosen {
         Some(game) => game,
         None => {
@@ -1360,24 +1370,31 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     if a.window {
         eprintln!("graphics: {graphics:?}, {display:?}");
     }
-    // The window the locate screen opened is the one to play in (a process has one event loop).
-    let mut pump = match kept_pump.take() {
-        Some(mut p) if a.window => {
-            p.reopen(display)?;
-            Some(p)
+    // The window to play in: the one the previous scene kept (with its device and swapchain),
+    // else the one the locate screen opened (a process has one event loop), else a new one.
+    let (mut pump, gpu, mut presenter) = match app {
+        Some(App { pump, gpu, presenter }) => (Some(pump), gpu, Some(presenter)),
+        None => {
+            let pump = match kept_pump.take() {
+                Some(mut p) if a.window => {
+                    p.reopen(display)?;
+                    Some(p)
+                }
+                _ => a.window.then(|| window::Pump::open(display)).transpose()?,
+            };
+            let raw_display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
+            let gpu = Gpu::new(raw_display)?;
+            let presenter = match (&pump, raw_display) {
+                (Some(p), Some(raw_display)) => {
+                    let handle = raw_window_handle::HasWindowHandle::window_handle(p.window())?.as_raw();
+                    let size = p.window().inner_size();
+                    let refresh = p.window().current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|mhz| mhz as f64 / 1000.0);
+                    Some(present::Presenter::new(&gpu, raw_display, handle, size.width, size.height, refresh)?)
+                }
+                _ => None,
+            };
+            (pump, gpu, presenter)
         }
-        _ => a.window.then(|| window::Pump::open(display)).transpose()?,
-    };
-    let display = pump.as_ref().map(|p| raw_window_handle::HasDisplayHandle::display_handle(p.window()).map(|h| h.as_raw())).transpose()?;
-    let gpu = Gpu::new(display)?;
-    let mut presenter = match (&pump, display) {
-        (Some(p), Some(display)) => {
-            let handle = raw_window_handle::HasWindowHandle::window_handle(p.window())?.as_raw();
-            let size = p.window().inner_size();
-            let refresh = p.window().current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|mhz| mhz as f64 / 1000.0);
-            Some(present::Presenter::new(&gpu, display, handle, size.width, size.height, refresh)?)
-        }
-        _ => None,
     };
     if let Some(p) = &presenter {
         (width, height) = (p.extent.width, p.extent.height);
@@ -1643,7 +1660,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         false => None,
     };
     let bytes = u64::from(width) * u64::from(height) * 4;
-    let readback = match pump {
+    let readback = match &pump {
         Some(_) => None,
         None => Some(gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?),
     };
@@ -1699,6 +1716,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         s.schedule(barrel_ryza::sound::Cue::music(carry.music_at, hash));
     }
     let (sound_base, mut handoff_at, mut music_at) = (carry.frame, 0i64, 0i64);
+    if pump.is_some() && !a.title {
+        eprintln!("field: entered");
+    }
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
     let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
     loop {
@@ -1739,7 +1759,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
             title_keys = p.take_pressed();
-            if !p.pump() || (title_keys.contains(&K::Escape) && !showing_options) || a.frames.is_some_and(|n| frame_no >= n) {
+            if !p.pump() || (title_keys.contains(&K::Escape) && !showing_options) || a.frames.is_some_and(|n| sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 >= i64::from(n)) {
                 break;
             }
             let now = std::time::Instant::now();
@@ -2326,18 +2346,26 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
     }
     sync.destroy(&gpu, renderer.pool)?;
-    if let Some(p) = presenter {
-        p.destroy(&gpu);
-    }
     scene.destroy(&gpu);
     renderer.destroy(&gpu)?;
-    unsafe {
-        d.destroy_device(None);
-        gpu.instance.destroy_instance(None);
-    }
-    let frames_left = a.frames.map(|n| n.saturating_sub(frame_no).max(1));
+    let frames_left = a.frames.map(|n| if pump.is_some() { n } else { n.saturating_sub(frame_no).max(1) });
     let carry = Carry { sound: sound.take(), frame: handoff_at, music_at };
-    Ok(handoff.map(|save| Handoff { root: std::path::PathBuf::from(&a.install), save, pump, out: a.out.clone(), size: a.size, frames_left, carry }))
+    // Into the field the window, device and swapchain go on (the scene's own resources are gone,
+    // the device is idle); otherwise they end with the run.
+    let app = match (handoff.is_some(), pump.take(), presenter.take()) {
+        (true, Some(pump), Some(presenter)) => Some(App { pump, gpu, presenter }),
+        (_, _, presenter) => {
+            if let Some(p) = presenter {
+                p.destroy(&gpu);
+            }
+            unsafe {
+                gpu.device.destroy_device(None);
+                gpu.instance.destroy_instance(None);
+            }
+            None
+        }
+    };
+    Ok(handoff.map(|save| Handoff { root: std::path::PathBuf::from(&a.install), save, app, out: a.out.clone(), size: a.size, frames_left, carry }))
 }
 
 /// A debug aid for comparing a frame with the game's: the sky's clock (seconds; the clouds'

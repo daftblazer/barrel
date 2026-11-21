@@ -23,6 +23,10 @@ pub struct Pump {
     pub pending: Option<crate::settings::Display>,
 }
 
+/// How many OS windows this process has made (printed as each is, `window: created N`, so a
+/// scripted run can check that a play keeps its one window).
+static CREATED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// The keys a pad button stands for on every screen: the game's menus confirm with A and go
 /// back with B and step with the D-pad (`docs/engine.md`, "Controller"). The rest of the pad
 /// means something else on each screen; the field and events read it as pad buttons
@@ -66,7 +70,11 @@ impl PumpState {
                 .with_inner_size(winit::dpi::PhysicalSize::new(d.width, d.height))
                 .with_fullscreen(d.fullscreen.then_some(winit::window::Fullscreen::Borderless(None)));
             match event_loop.create_window(attrs) {
-                Ok(w) => self.window = Some(w),
+                Ok(w) => {
+                    let n = CREATED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    eprintln!("window: created {n}");
+                    self.window = Some(w);
+                }
                 Err(e) => self.error = Some(e.to_string()),
             }
         }
