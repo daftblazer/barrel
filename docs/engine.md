@@ -605,6 +605,12 @@ mistake for a day). `u46` in the events does not play its movie yet.
 
 ## Deliberate differences
 
+- **Ryza's run loop enters at a fitted phase.** When her run motion takes over from the start
+  motion it begins 0.35 s into its loop (`player::RUN_LOOP_PHASE`, a stand-in: the game's
+  hand-over is not read); with 0 the pelvis's cloth pins were 3.1 cm off the game's over the
+  run, with 0.35 1.0 cm. Her position does not depend on it (she moves at the lean's speed).
+  Lockstep checks on her walk see the pose of the run differ in phase, not the path.
+
 - **The Options screen's second page.** The game's Options screen (layout 511) has one page
   (volumes, Fast Forward Event, Voice Language, Default, Confirm); Barrel adds a second, the
   graphics page (`play/options.rs`, `docs/renderer.md`, "Graphics settings"). Down off "Confirm"

@@ -1207,15 +1207,32 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
   (`rampIndex` 3 for her coat's cloth, 1 elsewhere) are read. Her face takes its default expression
   and blinks (every 4 s, a stand-in timing); the other expressions and the eyes' directions
   are not used. Her skirt, jacket hem and hair move by the game's cloth solver (the model's NUNO
-  pieces, docs/formats.md "Cloth pieces"). Not done there: the parent's rotation limit and the
-  game's smoothing of the parent's acceleration (plain differences stand in), and the other
-  characters' cloth. The `.swg` settings (10 records over 652 swing bones, docs/formats.md
-  "Swing settings") are a separate system the field does not run for her. Seen by eye against
-  the game (P2's end): her hair passes through her hat, one strand bends outward at idle, and
-  her jacket hem stays lifted while she runs. Likely causes are the missing rotation limit and
-  acceleration smoothing (a raw per-frame acceleration throws the hem up), no collision against
-  the hat, and the swing bones not run. Each wants a capture of the game's pieces during a run
-  start and at idle to compare against.
+  pieces, docs/formats.md "Cloth pieces"). Measured against ryza-recomp's `walk-rasen` (her cloth's
+  control points in the capture's `vCtrl`, every 5th frame 1880 to 2100, in each piece's parent joint's
+  space; `tools/ryza_cloth.sh`, `barrel-parity cloth`, docs/parity.md): the hair's two pieces
+  (parent joint 133) were 13.7 and 13.3 cm rms off over the run (31 cm at worst) and are 2.1
+  and 2.0 (9.3 at worst); the skirt was 15.8 cm rms and is 3.1; the whole of her cloth was 10.5
+  and is 3.2. Three causes: (1) the pins of the hair pieces were carried by the wrong joints (the
+  palette's bone ids, 331 and up, were used as joint numbers: the head pieces' pins ran through
+  the hat; the skirt's low ids hid it); (2) the parent's velocity and spin were remembered
+  clamped, so the drag and the spin term never saw the run (docs/formats.md, step 2); (3) her
+  run loop's phase against the start motion (pelvis pins 3.1 cm off over the run, 1.0 with a
+  fitted 0.35 s, `player::RUN_LOOP_PHASE`, a stand-in; docs/engine.md). The game's hair points
+  lie inside the piece's colliders (Barrel's, deeper than 0.05) 17 and 18 times in the 44 frames,
+  by up to 2.1 cm; Barrel's, 0. Pictures of her head at frames 1915 to 1960 from both sides,
+  before and after (`tools/ryza_cloth_view.sh`): the strand through the hat is gone. Left: the
+  skirt and the jacket's flaps are still 3.0 to 4.2 cm rms (the skirt's pelvis pins 1.4 of it,
+  the rest the solver in motion; the skirt's worst is 28 cm at the stop, frame 2025, where
+  Barrel stops her at once and the game's pose settles over some frames) and the first frames of
+  the run (hair 9 cm at 1915). The parent's rotation limit is the jump test only (`rot` above
+  pi/8, docs/formats.md); nothing more of it is read. The pieces' collider groups hold no hat
+  collider (the hair's is the head's), and with the pins right the hair clears the hat. The
+  `.swg` settings (10 records over 652 swing bones, docs/formats.md "Swing settings") are a
+  separate system the field does not run for her: not built, and nothing in the capture moves
+  that the pieces above do not. The loop phase of her other gaits is not fitted (the capture
+  has only the run). Check rows likely to move: the `walk-*` rows compare her path only and do
+  not; the rows that draw her (`rasen-3d-*`, the pixel board's character pixels) see the
+  hair at its pinned place now.
 
 ## On handhelds
 

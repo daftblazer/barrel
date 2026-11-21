@@ -88,6 +88,22 @@ title's 3D backdrop, about 1,900 draws: shadow maps, a four-target G-buffer, lig
   the draw's own, though the view test uses the whole object's). The trace is off by one branch per draw.
 - `barrel-parity state <capture> <a-b/step> <index.tsv> <model folder>` prints, a frame a line,
   where the camera is and where a model's skinned draws are (docs/ryza/state.md).
+- `barrel-parity cloth <capture> <a-b/step> <barrel cloth trace> <index.tsv> <model folder>` compares a
+  character's cloth control points: the capture's `vCtrl` (a cloth draw's constant array: the
+  piece's points in its parent joint's space, so a walk's placement does not count) against
+  Barrel's `BARREL_TRACE_CLOTH=file` (a line a frame, each piece's points and colliders in the
+  parent's space). Each Barrel piece takes the game's draw whose points are nearest its own. It
+  prints per piece the rms of the pinned points (the body's pose, not the solver's) and of the
+  movable ones, the worst point's error, the worst frame, and how many control points lie inside
+  one of the piece's colliders (the head capsule among them) for the game's and for Barrel's
+  (deeper than 0.05; the game's points are tested against Barrel's colliders at that frame).
+  Units are game units, centimetres. `PARITY_CLOTH_FRAMES=1` adds a line per piece per frame,
+  `PARITY_CLOTH_POINTS=<frame>` every point's two places, `PARITY_CLOTH_SHIFT=<n>` compares Barrel's
+  frame n later (to find a timing offset). `tools/ryza_cloth.sh` runs the whole thing for ryza-recomp's
+  `walk-rasen`: Barrel walks her offscreen (`barrel ... --ryza X,Y,Z --turn T --walk-from 1879
+  --frames N`, the pad from `BARREL_PAD_SCRIPT` read at the game's frame, 1/60 s a frame) and
+  `tools/ryza_cloth_view.sh NAME FRAME [YAW PITCH DISTANCE]` writes a close picture of her head
+  at a frame of that walk. The walk's numbers are in docs/ryza/open.md, "Ryza in the field".
 - `barrel-parity diff3d <capture> <frame> <barrel trace> <frame> [index.tsv]` takes the game's
   G-buffer draws (four or more colour targets and a depth target) and Barrel's `scene` and
   `sky` draws, and matches them by (set of texture names the index knows, index count),

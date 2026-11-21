@@ -924,7 +924,11 @@ simulation's settings (listed below by their offset from 0x38). The tail, in ord
 
 - `a` pin records of 48 bytes: the pinned point's unit normal `{x, y, z, 0}`, four weights,
   a u32 count and four u8 palette slots (then padding): the pinned point is skinned like a
-  vertex and expressed in the parent joint's space each frame.
+  vertex and expressed in the parent joint's space each frame. The palette's entries name
+  bone ids (Ryza's hair pieces' are 331, 1077 and 1052 against joints 133 and up): they
+  go through the skeleton's id map (`Skeleton::joint`) to a joint, not taken as a joint
+  number (the skirt's low ids happen to be the same, which hid it; the hair's pins sat on
+  the wrong joints, 13 cm rms off the game's, and ran through the hat).
 - `b` u32: the `COLL` chunk's groups whose colliders act on the piece.
 - `d` ranges `{u32 first, last}`: the movable points (Ryza's skirt: 26 to 155).
 - `e` limits `{u32 point, u32 anchor, f32 length}`: the point is kept within `length` of the
@@ -977,6 +981,11 @@ Each frame (dt 1/60: one substep):
    blend)³` (1 from `blend` down): deep points keep their world place, the top rows follow.
 2. The parent's velocity (its move this frame / dt, × 0x48) and spin (the rotation vector of
    `inverse(old) × new`, `(E12−E21, E20−E02, E01−E10)·2/(1+trace)`, / dt × 0x4c) in its space.
+   The accelerations (velocity change / dt, spin change / dt) are damped above the settings'
+   limits; what is remembered for the next step is the step's own velocity and spin, not the
+   damped change added to the last (fitted on a run start in ryza-recomp's `walk-rasen`: the
+   other reading leaves the remembered velocity near zero for seconds and the skirt 15.8 cm rms
+   off the game's, this one 4.4).
 3. Normals `S = normalize(cross)` of `right − left` and `down − up` (an absent neighbour: the
    point itself).
 4. Integrate: `R = P`; force = local gravity + a spin term; `V = (V + F dt)(1 − damping)`;

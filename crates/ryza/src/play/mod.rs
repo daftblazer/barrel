@@ -1511,7 +1511,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let (pitch_range, length_range) = follow.map_or(((-10.0, 70.0), (150.0, 3000.0)), |c| (c.pitch_range, c.length_range));
     // The walk's camera (`barrel_ryza::walk`), in the game's yaw (the view's is 180 minus it);
     // the locals above are what it gives the view each frame.
-    let mut cam = barrel_ryza::walk::Camera::new(180.0 - yaw, pitch, dist, pitch_range);
+    // (A walked offscreen run with `--look-at` is steered by the capture's camera yaw, whatever angle the picture is taken from.)
+    let walk_yaw = if a.walk_from.is_some() && a.look_at.is_some() { WALK_CAMERA_YAW } else { 180.0 - yaw };
+    let mut cam = barrel_ryza::walk::Camera::new(walk_yaw, pitch, dist, pitch_range);
     if follow.is_some() && rig.is_some() {
         cam = cam.following();
     }
@@ -2488,6 +2490,8 @@ fn cloud_map_override() -> Result<Option<Vec<u8>>> {
 // STAND-IN: Shift's lean is chosen: a stick lean of this length walks.
 /// The lean Shift holds the keys to (the stick's throw, before its dead zone).
 const SHIFT_LEAN: f32 = 0.5;
+/// The camera's yaw in the game's terms in ryza-recomp's `walk-rasen` (the walk check's `--camera -1.00,8.00,400`).
+const WALK_CAMERA_YAW: f32 = -1.0;
 
 /// The field's environment: the diffuse cube map's light, the set's light and its sky fog.
 type Environment = ([[f32; 3]; 9], [[f32; 3]; 9], Light, (barrel_ryza::environment::Fog, barrel_ryza::environment::SkyGlow, barrel_ryza::environment::DomeLight, barrel_ryza::environment::Clouds), barrel_ryza::environment::Fog, barrel_ryza::environment::CharaLight, [f32; 2]);
