@@ -500,6 +500,7 @@ fn options_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &
         ("\\data\\x64\\res_cmn\\ui\\a21_bg05.g1t", 0),
         ("\\data\\x64\\res_en\\ui\\a21_caption.g1t", 0),
         ("\\data\\x64\\res_cmn\\ui\\sys_no_image.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_mix.g1t", 2),
     ];
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -517,6 +518,7 @@ fn options_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &
         v2_various_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
         common_styles: &read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
         caption_styles: &read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_caption.xml")?,
+        mix_styles: &read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_mix.xml")?,
         anims: &read("\\saves\\ui_en\\uia_common.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
         atlases,
@@ -2236,6 +2238,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         let tab = options_state.tab;
                         let n = barrel_ryza::options::entries(tab).len().max(1);
                         options_state.cursor[tab] = barrel_ryza::options::cursor_on(&title_input, options_base, n, frame);
+                        options_state.follow();
                         if shown_row != Some((tab, options_state.cursor[tab])) {
                             shown_row = Some((tab, options_state.cursor[tab]));
                             eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));

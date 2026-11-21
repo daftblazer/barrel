@@ -50,9 +50,11 @@ impl Stage {
     }
 }
 
-/// A held direction on this screen: the step at once, the next after 30 frames, then every 10
-/// (read off the game).
-pub const REPEAT: Repeat = Repeat { first: 30, next: 10 };
+/// A held direction on this screen: the step at once, the next after 30 frames, then every 8
+/// (the capture's 22-row Graphics list with the direction held 220 frames: the cursor on rows 2 to
+/// 21 at frames fitting 1650 + 8 a row to within the 5-frame sampling).
+// STAND-IN: the repeat's period (8 frames) is fitted to that capture; the real thing is the game's own key repeat timer.
+pub const REPEAT: Repeat = Repeat { first: 30, next: 8 };
 
 /// The row the cursor is on at `frame` among `count`, from `base`, the rows' directions held on
 /// the screen as `input.list_holds`: a press wraps at the ends, a held repeat stops there.
@@ -95,7 +97,7 @@ pub struct Entry {
 }
 
 /// The string numbers the screen reads (the rest of the table is left out).
-const WORD_RANGES: [(u32, u32); 9] = [(4_521_985, 4_522_200), (720_897, 721_100), (786_433, 786_600), (655_360, 655_700), (6_619_137 + 780, 6_619_137 + 790), (6_619_923, 6_619_925), (6_619_972, 6_619_974), (6_620_020, 6_620_050), (4_194_304, 4_194_400)];
+const WORD_RANGES: [(u32, u32); 12] = [(4_521_985, 4_522_200), (720_897, 721_100), (721_314, 721_320), (786_433, 786_600), (786_850, 786_856), (655_360, 655_700), (655_914, 655_924), (6_619_137 + 780, 6_619_137 + 790), (6_619_923, 6_619_925), (6_619_972, 6_619_974), (6_620_020, 6_620_050), (4_194_304, 4_194_400)];
 
 /// The words a screen reads, by string number, from the string table's bytes.
 pub fn read_strings(table: &[u8]) -> Result<HashMap<u32, String>, String> {
@@ -137,6 +139,8 @@ fn level_word(name: &'static str) -> Word {
         "On" => Word::Id(655_397),
         "Fxaa" => Word::Id(655_638),
         "Taa" => Word::Id(655_637),
+        "Linear" => Word::Id(655_641),
+        "Anisotropic" => Word::Id(655_640),
         other => Word::Text(other),
     }
 }
@@ -178,7 +182,13 @@ pub fn entries(tab: usize) -> Vec<Entry> {
         3 => {
             let item = |name: u32, i: Item| Entry { name, text: name + 65_536, control: Control::Words(i.levels().iter().map(|&l| level_word(l)).collect()), default: 0, key: "", graphics: Some(Some(i)) };
             let quality = Entry { name: 720_911, text: 720_911 + 65_536, control: Control::Words(["Low", "Middle", "High", "Custom"].map(level_word).to_vec()), default: 2, key: "", graphics: Some(None) };
+            // The four display rows are stored settings (the next start reads the ones it has).
+            let resolutions = [655_380, 655_379, 655_378, 655_377, 655_376, 655_375, 655_382, 655_383].map(Word::Id);
             vec![
+                words(720_909, 786_445, "resolution", &resolutions, 5),
+                words(720_910, 786_446, "window_mode", &[Word::Id(655_385), Word::Id(655_386), Word::Id(655_387)], 0),
+                words(721_315, 786_851, "frame_rate", &[655_646, 655_645, 655_644, 655_643, 655_647].map(Word::Id), 1),
+                onoff(721_314, 786_850, "vsync", 0),
                 quality,
                 item(720_912, Item::Texture),
                 item(720_913, Item::Shadow),
@@ -193,6 +203,10 @@ pub fn entries(tab: usize) -> Vec<Entry> {
                 item(720_922, Item::PointLights),
                 item(720_923, Item::GrassRange),
                 item(720_924, Item::GrassDensity),
+                item(721_318, Item::Filtering),
+                item(721_316, Item::ShadowDistance),
+                item(721_319, Item::Water),
+                item(721_317, Item::LodDistance),
             ]
         }
         _ => Vec::new(),
@@ -204,6 +218,8 @@ pub fn entries(tab: usize) -> Vec<Entry> {
 pub struct State {
     pub tab: usize,
     pub cursor: [usize; TABS.len()],
+    /// The first row shown on each tab (the list scrolls when the cursor leaves its window).
+    pub first: [usize; TABS.len()],
     /// The game options' values by their keys.
     values: HashMap<&'static str, i32>,
     pub graphics: graphics::Settings,
@@ -219,7 +235,7 @@ impl State {
                 values.insert(e.key, e.default);
             }
         }
-        State { tab: FIRST_TAB, cursor: [0; TABS.len()], values, graphics, changed: false }
+        State { tab: FIRST_TAB, cursor: [0; TABS.len()], first: [0; TABS.len()], values, graphics, changed: false }
     }
 
     fn value(&self, e: &Entry) -> i32 {
@@ -239,6 +255,12 @@ impl State {
     pub fn step(&mut self, way: i32) {
         let n = entries(self.tab).len().max(1) as i32;
         self.cursor[self.tab] = (self.cursor[self.tab] as i32 + way).rem_euclid(n) as usize;
+    }
+
+    /// Scrolls the tab's list so the cursor is in its window of twelve rows.
+    pub fn follow(&mut self) {
+        let (tab, on) = (self.tab, self.cursor[self.tab]);
+        self.first[tab] = self.first[tab].clamp(on.saturating_sub(11), on);
     }
 
     /// Moves to another tab, by `way` tabs (stopping at the ends).
@@ -303,6 +325,7 @@ impl State {
             tab: self.tab,
             rows,
             cursor: on,
+            first: self.first[self.tab],
             title,
             text,
             // "Change" only on a tab with a choice row (the Audio tab's gauges have none: ryza-recomp
@@ -439,7 +462,7 @@ mod tests {
         assert!(!s.store("").contains("quality"));
         // Graphics tab: an item turns the quality to Custom.
         s.tab = 3;
-        s.cursor[3] = 7;
+        s.cursor[3] = 11;
         s.change(-1);
         assert_eq!(s.graphics.quality, Quality::Custom);
         let text = s.store("window_width 1280\nvibration x\nao Off\n");

@@ -208,12 +208,14 @@ pub struct Settings {
 }
 
 impl Default for Settings {
-    /// High overall, every item at its top level.
+    /// High overall: every item at its top level but the anti-aliasing, which the game's High
+    /// preset (and its Settings screen) has at FXAA.
     fn default() -> Settings {
         let mut levels = [0u8; ITEMS];
         for item in Item::ALL {
             levels[item as usize] = item.levels().len() as u8 - 1;
         }
+        levels[Item::AntiAliasing as usize] = 1;
         Settings { quality: Quality::High, levels, given: false }
     }
 }

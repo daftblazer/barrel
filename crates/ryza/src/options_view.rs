@@ -32,8 +32,11 @@ pub const BG_08: usize = 7;
 pub const BG_05: usize = 8;
 pub const CAPTION: usize = 9;
 pub const NO_IMAGE: usize = 10;
-pub const TEXTURES: usize = 11;
+pub const MIX: usize = 11;
+pub const TEXTURES: usize = 12;
 
+/// How many rows the lists show.
+const ROWS_SHOWN: usize = 12;
 /// Frames the common fade takes (`anm_common_fade_in`).
 const FADE_FRAMES: f32 = 15.0;
 /// The help bar fades in from this many frames after the screen starts (capture: 9/15 at age 11).
@@ -49,8 +52,8 @@ const ROW_PITCH: f32 = 377.0 / 11.0;
 const PLAIN_SHIFT: [f32; 2] = [-1.0, 3.0];
 // STAND-IN: text set centred on its node (`align_v=center`) has its line top this far above the node's `pos.y` less half its size, fitted to the capture (the description's heading, the rows' names, the shoulder keys); the real thing is the game's own line box.
 const CENTER_FIT: f32 = -6.0;
-// STAND-IN: four names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144; Camera Autocorrect 4522135, 0.52 pixels in settings-tabs 1795) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
-const NAME_DROPS: [(&str, f32); 4] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47), ("Camera Autocorrect", 0.35)];
+// STAND-IN: five names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144; DOF 720917, 3.7 pixels in settings-tabs 1615; Camera Autocorrect 4522135, 0.52 pixels in settings-tabs 1795) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
+const NAME_DROPS: [(&str, f32); 5] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47), ("DOF", 2.47), ("Camera Autocorrect", 0.35)];
 const KEY_FIT: f32 = -7.8;
 const NUM_FIT: f32 = -3.53;
 // STAND-IN: the description's lines are 34 pixels apart at 1080 lines (capture), the layout's size 16 and `line_space` 10 read as 16 + 10 / 1.5.
@@ -74,9 +77,10 @@ pub struct Sources<'a> {
     pub v2_various_styles: &'a [u8],
     pub common_styles: &'a [u8],
     pub caption_styles: &'a [u8],
+    pub mix_styles: &'a [u8],
     pub anims: &'a [u8],
     pub glyphs: [HashMap<char, Glyph>; 2],
-    /// The atlases in style pixels, by texture number (`OPTION` ... `CAPTION`; the others are 0).
+    /// The atlases in style pixels, by texture number (`OPTION` ... `CAPTION`, `MIX`; the others are 0).
     pub atlases: [(u32, u32); TEXTURES],
 }
 
@@ -104,6 +108,8 @@ pub struct Screen {
     pub tab: usize,
     pub rows: Vec<Row>,
     pub cursor: usize,
+    /// The first row shown (the list scrolls with the cursor).
+    pub first: usize,
     /// The description panel: the item's name and its text (`^00` breaks a line, `<CLGR>` ... `<CLNR>` colours).
     pub title: String,
     pub text: String,
@@ -192,6 +198,7 @@ pub struct View {
     scroll: Style,
     scroll_at: [f32; 2],
     scroll_size: [f32; 2],
+    thumb: Style,
     cursor: Style,
     cursor_at: [f32; 2],
     cursor_size: [f32; 2],
@@ -236,6 +243,7 @@ impl View {
             parse(src.v2_various_styles, "uis_gen_a21v2_various")?,
             parse(src.common_styles, "uis_gen_a21_common")?,
             parse(src.caption_styles, "uis_gen_a21_caption")?,
+            parse(src.mix_styles, "uis_gen_a21_mix")?,
         ];
         let styles: Vec<&Element> = styles.iter().collect();
         let st = |e: &Element| style_of(&styles, e);
@@ -368,6 +376,7 @@ impl View {
             scroll: st(scroll_n)?,
             scroll_at,
             scroll_size: size_of(scroll_n),
+            thumb: by_name("gen_a21_mix02_flame01_sb")?,
             cursor: st(cursor_n)?,
             cursor_at,
             cursor_size: size_of(cursor_n),
@@ -667,15 +676,15 @@ impl View {
 
         // The graphics list, with the rows' template words (the game draws it under the plain list), then the plain list.
         let placeholder: Vec<Row> = (0..12).map(|_| Row { name: PLACEHOLDER.0.to_string(), value: PLACEHOLDER.1.to_string(), kind: Kind::Gauge(1.0, "0".into()) }).collect();
-        self.list(&mut pen, &self.menus[0], &placeholder, 0, moment, true);
-        self.list(&mut pen, &self.menus[1], &s.rows, s.cursor, moment, false);
+        self.list(&mut pen, &self.menus[0], &placeholder, 0, 0, moment, true);
+        self.list(&mut pen, &self.menus[1], &s.rows, s.first, s.cursor, moment, false);
 
         // The help bar.
         self.help_bar(&mut pen, &s.help, moment);
         (pen.out, pen.clips)
     }
 
-    fn list(&self, pen: &mut Pen, menu: &Menu, rows: &[Row], cursor: usize, moment: Moment, template: bool) {
+    fn list(&self, pen: &mut Pen, menu: &Menu, rows: &[Row], first: usize, cursor: usize, moment: Moment, template: bool) {
         let white = [1.0; 4];
         let at = menu.at;
         pen.wrap(V2_VARIOUS, &self.window, [at[0] + self.window_at[0], at[1] + self.window_at[1]], self.window_size, white);
@@ -683,16 +692,32 @@ impl View {
             let p = [at[0] + self.window_at[0] + l[0], at[1] + self.window_at[1] + l[1]];
             pen.wrap_scaled(V2_COMMON, &self.line, p, self.line_size, self.line_scale, Self::rgba(self.line_color, self.line_alpha));
         }
-        if menu.scroll {
+        if menu.scroll || (!template && rows.len() > ROWS_SHOWN) {
             pen.wrap(V2_VARIOUS, &self.scroll, [at[0] + self.scroll_at[0], at[1] + self.scroll_at[1]], self.scroll_size, [1.0, 1.0, 1.0, 127.0 / 255.0]);
         }
-        let blink = self.blink.at(moment.blink.rem_euclid(120.0) / 60.0)[3] / 255.0;
-        let cursor_at = [at[0] + self.cursor_at[0], at[1] + self.cursor_at[1] + cursor as f32 * ROW_PITCH];
-        pen.wrap(COMMON_2, &self.cursor, cursor_at, self.cursor_size, [1.0, 1.0, 1.0, blink]);
-        for (n, row) in rows.iter().enumerate().take(12) {
-            let o = [menu.at[0] + menu.clone[0] + menu.shift[0] + self.rows_at[0], menu.at[1] + menu.clone[1] + menu.shift[1] + self.rows_at[1] + n as f32 * ROW_PITCH];
-            self.row(pen, row, o, template || n == cursor);
+        // A list of more rows than it shows has its scroll bar's thumb over the track.
+        if !template && rows.len() > ROWS_SHOWN {
+            self.thumb(pen, [at[0] + self.scroll_at[0], at[1] + self.scroll_at[1]], first, rows.len());
         }
+        let blink = self.blink.at(moment.blink.rem_euclid(120.0) / 60.0)[3] / 255.0;
+        let cursor_at = [at[0] + self.cursor_at[0], at[1] + self.cursor_at[1] + (cursor - first) as f32 * ROW_PITCH];
+        pen.wrap(COMMON_2, &self.cursor, cursor_at, self.cursor_size, [1.0, 1.0, 1.0, blink]);
+        for (n, row) in rows.iter().skip(first).take(ROWS_SHOWN).enumerate() {
+            let o = [menu.at[0] + menu.clone[0] + menu.shift[0] + self.rows_at[0], menu.at[1] + menu.clone[1] + menu.shift[1] + self.rows_at[1] + n as f32 * ROW_PITCH];
+            self.row(pen, row, o, template || first + n == cursor);
+        }
+    }
+
+    /// The scroll bar's thumb for a list of `total` rows whose first shown row is `first`; `track`
+    /// is the bar's top left.
+    fn thumb(&self, pen: &mut Pen, track: [f32; 2], first: usize, total: usize) {
+        // STAND-IN: the thumb is 4 layout pixels shorter than its share (12 of 22 rows of 403.33) of the track, its top starts 0.67 pixels and 1.5 pixels right of the track's and it travels the rest of the track in equal steps; fitted to the capture's thumb of the 22-row Graphics list (settings-scroll: 273 to 597 pixels at 1080 lines, then 28.1 pixels a row to 554 to 878). The capture rounds the steps to whole pixels by a rule not found (27, 56, 84, 111, 139, ... of 281).
+        const TRACK: f32 = 403.33;
+        const SHORT: f32 = 4.0;
+        let height = TRACK * ROWS_SHOWN as f32 / total as f32 - SHORT;
+        let steps = (total - ROWS_SHOWN).max(1) as f32;
+        let top = track[1] + 0.67 + (TRACK - height) * first as f32 / steps;
+        pen.wrap(MIX, &self.thumb, [track[0] + 1.5, top], [10.33, height], [1.0; 4]);
     }
 
     fn row(&self, pen: &mut Pen, row: &Row, o: [f32; 2], arrows: bool) {
