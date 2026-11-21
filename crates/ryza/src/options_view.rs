@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use barrel_formats::table::{self, Element};
-use barrel_render::text::{Glyph, Quad};
+use barrel_render::text::{Clip, Glyph, Quad};
 
 use crate::font::ATLAS_SIZE;
 use crate::load_view::{Align, Label, Style, inside, label, style, TEXT_TOP};
@@ -404,6 +404,9 @@ struct Pen<'a> {
     k: f32,
     left: f32,
     out: Vec<Quad>,
+    /// The rows' name masks: the game draws `sys_no_image` into a mask target, not the screen,
+    /// and the row's name reads it (ryza-recomp scenarios/settings-tabs.sh, frame 1495).
+    clips: Vec<Clip>,
 }
 
 /// One text's look: size, font and alignment as the layout gives them.
@@ -546,20 +549,17 @@ fn segments(total: f32, a: f32, mid: f32, b: f32, u: f32) -> Vec<(f32, f32, f32,
     out
 }
 
-/// Whether `c` is the picture of a button (the font's private pictures, but for the stick's `\u{4f2}`).
+/// Whether `c` is the picture of a button (the font's private pictures).
 fn is_icon(c: char) -> bool {
-    ('\u{4d0}'..'\u{500}').contains(&c) && c != '\u{4f2}'
+    ('\u{4d0}'..'\u{500}').contains(&c)
 }
 
 /// Splits `text` into the description's lines: `^00` breaks a line, a line wraps at a space
-/// past `LINE_CHARS`, `<CLGR>`, `<CLRE>` and `<CLNR>` set the colour from the next glyph (a tag
-/// right after a break takes effect a glyph late, as the capture draws it).
+/// past `LINE_CHARS`, `<CLGR>`, `<CLRE>` and `<CLNR>` set the colour from the next glyph (the buttons' pictures stay white).
 fn description(text: &str) -> Vec<Vec<(char, [f32; 3])>> {
     let mut lines: Vec<Vec<(char, [f32; 3])>> = vec![Vec::new()];
     let mut color = BROWN;
-    let mut pending: Option<[f32; 3]> = None;
     let mut word: Vec<(char, [f32; 3])> = Vec::new();
-    let mut after_break = true;
     let mut chars = text.chars().peekable();
     let flush = |lines: &mut Vec<Vec<(char, [f32; 3])>>, word: &mut Vec<(char, [f32; 3])>| {
         let count = |l: &Vec<(char, [f32; 3])>| l.iter().map(|(c, _)| if c.is_ascii() { 1.0 } else { 2.0 }).sum::<f32>();
@@ -580,7 +580,7 @@ fn description(text: &str) -> Vec<Vec<(char, [f32; 3])>> {
                 _ => None,
             };
             if let Some(to) = to {
-                if after_break { pending = Some(to) } else { color = to }
+                color = to;
             }
             continue;
         }
@@ -588,16 +588,10 @@ fn description(text: &str) -> Vec<Vec<(char, [f32; 3])>> {
             let _: String = chars.by_ref().take(2).collect();
             flush(&mut lines, &mut word);
             lines.push(Vec::new());
-            after_break = true;
             continue;
         }
-        word.push((c, color));
-        if after_break {
-            after_break = false;
-            if let Some(p) = pending.take() {
-                color = p;
-            }
-        }
+        // A button's picture is white in any colour.
+        word.push((c, if is_icon(c) { [1.0; 3] } else { color }));
         if c == ' ' {
             flush(&mut lines, &mut word);
         }
@@ -616,16 +610,17 @@ impl View {
         [c[0], c[1], c[2], a]
     }
 
-    /// The screen's quads for `screen` at `moment`, in draw order, on a window of `window` pixels.
-    pub fn quads(&self, s: &Screen, moment: Moment, window: (u32, u32)) -> Vec<Quad> {
+    /// The screen's quads for `screen` at `moment`, in draw order, on a window of `window` pixels,
+    /// and its clips (each row's name inside its mask).
+    pub fn quads(&self, s: &Screen, moment: Moment, window: (u32, u32)) -> (Vec<Quad>, Vec<Clip>) {
         let k = window.1 as f32 / LAYOUT_HEIGHT;
         let left = (window.0 as f32 - 1280.0 * k) * 0.5;
-        let mut pen = Pen { view: self, k, left, out: Vec::new() };
+        let mut pen = Pen { view: self, k, left, out: Vec::new(), clips: Vec::new() };
         let fade = (moment.age as f32 / FADE_FRAMES).clamp(0.0, 1.0);
         let white = [1.0; 4];
         let brown = |a: f32| Self::rgba(BROWN, a);
         if moment.age <= 0 {
-            return pen.out;
+            return (pen.out, pen.clips);
         }
 
         // The background (the screen's picture tiled twice over: 3840 x 2160 style pixels drawn at twice their layout size) and the caption.
@@ -675,7 +670,7 @@ impl View {
 
         // The help bar.
         self.help_bar(&mut pen, &s.help, moment);
-        pen.out
+        (pen.out, pen.clips)
     }
 
     fn list(&self, pen: &mut Pen, menu: &Menu, rows: &[Row], cursor: usize, moment: Moment, template: bool) {
@@ -706,20 +701,12 @@ impl View {
         let mask = abs(t.mask);
         let k = pen.k;
         let rect = [pen.left + mask[0] * k, mask[1] * k, pen.left + (mask[0] + t.mask_size[0]) * k, (mask[1] + t.mask_size[1]) * k];
+        let mask_at = pen.out.len();
         pen.out.push(Quad { turn: false, spin: None, rect, uv: [0.0, 0.0, 1.0, 1.0], color: [1.0; 4], texture: NO_IMAGE });
         pen.text(&look(&self.name_text, Some(CENTER_FIT + name_drop(&row.name))), abs(t.name), &row.name, brown, None);
-        // The buttons' pictures in a value are drawn white, with the glyph after one; the rest brown (the capture's Dash and Confirm rows).
-        let mut after_icon = false;
-        let value: Vec<(char, [f32; 4])> = row
-            .value
-            .chars()
-            .map(|c| {
-                let icon = is_icon(c);
-                let white = icon || after_icon;
-                after_icon = icon;
-                (c, if white { [1.0; 4] } else { brown })
-            })
-            .collect();
+        pen.clips.push(Clip { mask: mask_at, quads: mask_at + 1..pen.out.len() });
+        // The buttons' pictures in a value are drawn white, the rest brown (the Dash and Confirm rows).
+        let value: Vec<(char, [f32; 4])> = row.value.chars().map(|c| (c, if is_icon(c) { [1.0; 4] } else { brown })).collect();
         pen.runs(&look(&self.value_text, None), abs(t.value), &value, None);
         if arrows {
             let p = self.arrow.pictures[0];

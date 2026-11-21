@@ -122,6 +122,8 @@ pub struct Input {
     /// On the load screen: the directions and the frame of the button on a save.
     pub list_holds: Vec<Hold>,
     pub confirm: Option<i32>,
+    /// On Settings: the frames of the tab buttons (LB -1, RB 1), for scripted runs.
+    pub tabs: Vec<(i32, i32)>,
 }
 
 /// The frames the chosen item takes to fade out once chosen, and the share of its pulse's opacity

@@ -495,8 +495,11 @@ fn game_quads_of(t: &Trace, events: Vec<Value>) -> Result<(Vec<Q>, usize)> {
             };
             let uv = find("TEXCOORD0").map(|(f, o)| attribute(v, f, o)).unwrap_or_default();
             let col = find("COLOR0").map(|(f, o)| attribute(v, f, o)).unwrap_or_else(|| vec![1.0; 4]);
-            // a repeated vertex joins two rectangles
-            if pts.last().is_some_and(|l| l.0 == x && l.1 == y && l.2 == uv) {
+            // a repeated vertex joins two rectangles; the first copy of the next rectangle's first
+            // corner still carries the last one's colour (its triangles have no area), so the
+            // later copy's colour is the corner's own
+            if let Some(l) = pts.last_mut().filter(|l| l.0 == x && l.1 == y && l.2 == uv) {
+                l.3 = col;
                 continue;
             }
             pts.push((x, y, uv, col));

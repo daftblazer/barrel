@@ -241,7 +241,8 @@ impl State {
 
     /// Moves to another tab, by `way` tabs (stopping at the ends).
     pub fn tab_by(&mut self, way: i32) {
-        self.tab = (self.tab as i32 + way).clamp(0, TABS.len() as i32 - 1) as usize;
+        // The game wraps (RB on Controller opens Camera: ryza-recomp scenarios/settings-tabs.sh).
+        self.tab = (self.tab as i32 + way).rem_euclid(TABS.len() as i32) as usize;
     }
 
     /// Changes the row under the cursor by `way` (a choice wraps, a number stops at its ends).

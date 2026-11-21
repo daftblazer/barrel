@@ -214,7 +214,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--title-keys" => {
                 // F:down:N / F:up:N hold a direction on the menu for N frames; F:choose the button
                 // on the menu's item; F:ldown:N / F:lup:N a direction on the load list; F:ok the
-                // button on a save (title frames).
+                // button on a save; F:lb / F:rb a tab button on Settings (title frames).
                 use barrel_ryza::title_menu::Hold;
                 for key in value()?.split(',') {
                     let parts = key.split(':').collect::<Vec<_>>();
@@ -227,6 +227,8 @@ fn args(args: Vec<String>) -> Result<Args> {
                         Some("lup") => a.title_input.list_holds.push(Hold { from, until: Some(held()?), way: -1 }),
                         Some("choose") => a.title_input.choose = Some(from),
                         Some("ok") => a.title_input.confirm = Some(from),
+                        Some("lb") => a.title_input.tabs.push((from, -1)),
+                        Some("rb") => a.title_input.tabs.push((from, 1)),
                         _ => return Err("--title-keys F:down:N,...".into()),
                     }
                 }
@@ -2041,6 +2043,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // The button on the menu's item counts only on Load Game, with saves to load.
             let loads = |input: &barrel_ryza::title_menu::Input, at: i32| menu.chosen(input, at) == Some("load_game") && !save_slots.is_empty();
             let settings_at = |input: &barrel_ryza::title_menu::Input| input.choose.filter(|&c| menu.chosen(input, c) == Some("setting"));
+            if pump.is_none() && !title_input.tabs.is_empty() {
+                // Offscreen: the tab the scripted tab buttons up to this frame lead to.
+                options_state.tab = barrel_ryza::options::FIRST_TAB;
+                for &(_, way) in title_input.tabs.iter().filter(|&&(f, _)| f <= frame) {
+                    options_state.tab_by(way);
+                }
+            }
             if let Some(p) = pump.as_ref() {
                 use winit::keyboard::KeyCode as K;
                 let in_settings = matches!(barrel_ryza::options::Stage::at(settings_at(&title_input), frame), barrel_ryza::options::Stage::Screen { .. });
@@ -2098,7 +2107,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                     }
                     for (act, way) in [(Act::TabPrev, -1), (Act::TabNext, 1)] {
-                        if pressed(act) {
+                        if pressed(act) || title_input.tabs.contains(&(frame, way)) {
                             options_state.tab_by(way);
                             if let Some(s) = sound.as_mut() {
                                 s.request("page", barrel_ryza::sound::Cue::effect(i64::from(frame), barrel_ryza::sound::PAGE));
@@ -2229,8 +2238,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));
                         }
                         let blink = if pump.is_some() { age as f32 } else { age as f32 * barrel_ryza::options::BLINK_RATE + barrel_ryza::options::BLINK_START };
-                        quads = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
-                        layer.set(&gpu, &quads)?;
+                        let clips;
+                        (quads, clips) = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
+                        layer.set_clipped(&gpu, &quads, &clips)?;
                         own_layer = true;
                         showing_options = true;
                     }

@@ -275,9 +275,17 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   over it; Barrel draws both for the same trace. The parity tool now drops Barrel's quads that
   a later opaque quad covers whole, as it did the game's (without that every quad of the first
   list showed as an extra).
-- **Scoreboard** (`options-N` rows, docs/ryza/parity.md): 0 mismatches at 1435, 1445, 1460, 1600,
-  1705, 2005 and 2100; 5 at 1765 (the Dash row's description: the buttons' pictures in the text are
-  drawn in colours Barrel does not follow, below).
+- **Scoreboard** (`options-N` rows, docs/ryza/parity.md): 0 mismatches at 1435 to 2100.
+  `settings-tabN` rows: every tab from ryza-recomp `scenarios/settings-tabs.sh` (RB every 60
+  frames from the open screen, pictures and draws at 1495 + 60 N: Game, Audio, Graphics,
+  Keyboard, Controller, Camera; RB on Controller wraps to Camera). Barrel's `--title-keys F:rb`.
+- **Two fixes read off the pictures (2026-11-21).** Each row's `sys_no_image` quad goes to a
+  mask target in the game (rt `#7`), which the row's name is drawn through; Barrel drew it on the
+  screen ("NO IMAGE" over every name) and the draw-list checks could not tell. It is now a
+  `text::Clip` (kept in the trace, not drawn). And the parity decoder took a glyph's colour from
+  the first copy of its corner in the joined strip, which still carries the glyph before's: the
+  "a glyph late" colour rules were that. A button's picture is white, everything else the text's
+  colour, at once.
 - **Working.** Up and Down move the cursor (the title's holds, as the load list), Left and Right
   change the row (a choice wraps, a number stops at its ends), Q and E change the tab, Escape
   leaves for the title menu and writes the changes to Barrel's own config (the graphics config
@@ -304,10 +312,6 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     shift (`PLAIN_SHIFT`); the centred texts' fits (`CENTER_FIT`, `KEY_FIT`, `NUM_FIT`); the cursor's
     blink runs 0.8% slow against the capture's frame count (`options::BLINK_RATE`, in a window it
     is the frame count itself); the help plate is two atlas pixels wider than the text.
-  - Button pictures' colours: in a value the picture and the glyph after it are white (the Dash
-    and Confirm rows, which match); in the Dash description the capture draws five glyph runs white
-    (the pictures and the "+") by a rule not found, 5 mismatches at 1765. The rule "a colour tag
-    after a line break takes effect a glyph late" fits the description's colour lines.
   - The title menu's chosen-item fade is now 0.878 of the pulse's opacity at the button times
     1 - frames / 13 (it was 196/255 flat): the Settings capture starts at 188 where the pulse
     stood lower; Load Game's three rows still match.
