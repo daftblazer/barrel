@@ -49,14 +49,14 @@ const ROW_PITCH: f32 = 377.0 / 11.0;
 const PLAIN_SHIFT: [f32; 2] = [-1.0, 3.0];
 // STAND-IN: text set centred on its node (`align_v=center`) has its line top this far above the node's `pos.y` less half its size, fitted to the capture (the description's heading, the rows' names, the shoulder keys); the real thing is the game's own line box.
 const CENTER_FIT: f32 = -6.0;
-// STAND-IN: three names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
-const NAME_DROPS: [(&str, f32); 3] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47)];
+// STAND-IN: four names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144; Camera Autocorrect 4522135, 0.52 pixels in settings-tabs 1795) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
+const NAME_DROPS: [(&str, f32); 4] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47), ("Camera Autocorrect", 0.35)];
 const KEY_FIT: f32 = -7.8;
 const NUM_FIT: f32 = -3.53;
 // STAND-IN: the description's lines are 34 pixels apart at 1080 lines (capture), the layout's size 16 and `line_space` 10 read as 16 + 10 / 1.5.
 const LINE_SPACE: f32 = 10.0 / 1.5;
-/// A description line holds this many half-width characters, the space after its last word counted (the capture wraps at 39 and 40; the layout's `line_char_length` is 20 full-width).
-const LINE_CHARS: f32 = 39.0;
+// STAND-IN: a description line is at most this wide (layout pixels, the advances with the space after its last word), fitted to the captures' wraps: "...the louder the " (325.33) stays on its line, "...setting it to " (326.22) breaks (ryza-recomp settings-tabs, title-options); the layout's `line_char_length` (20 full-width) is not the game's rule.
+const LINE_WIDTH: f32 = 325.75;
 
 /// The text colour of the template `TEXTCOLOR_BROWN` (26, 0, 0), the tags `<CLGR>` (green) and `<CLRE>` (red).
 const BROWN: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
@@ -555,16 +555,16 @@ fn is_icon(c: char) -> bool {
 }
 
 /// Splits `text` into the description's lines: `^00` breaks a line, a line wraps at a space
-/// past `LINE_CHARS`, `<CLGR>`, `<CLRE>` and `<CLNR>` set the colour from the next glyph (the buttons' pictures stay white).
-fn description(text: &str) -> Vec<Vec<(char, [f32; 3])>> {
+/// past `LINE_WIDTH`, `<CLGR>`, `<CLRE>` and `<CLNR>` set the colour from the next glyph (the buttons' pictures stay white).
+fn description(text: &str, advance: impl Fn(char) -> f32) -> Vec<Vec<(char, [f32; 3])>> {
     let mut lines: Vec<Vec<(char, [f32; 3])>> = vec![Vec::new()];
     let mut color = BROWN;
     let mut word: Vec<(char, [f32; 3])> = Vec::new();
     let mut chars = text.chars().peekable();
     let flush = |lines: &mut Vec<Vec<(char, [f32; 3])>>, word: &mut Vec<(char, [f32; 3])>| {
-        let count = |l: &Vec<(char, [f32; 3])>| l.iter().map(|(c, _)| if c.is_ascii() { 1.0 } else { 2.0 }).sum::<f32>();
+        let count = |l: &Vec<(char, [f32; 3])>| l.iter().map(|&(c, _)| advance(c)).sum::<f32>();
         let last = lines.last_mut().unwrap();
-        if !last.is_empty() && count(last) + count(word) > LINE_CHARS {
+        if !last.is_empty() && count(last) + count(word) > LINE_WIDTH {
             lines.push(std::mem::take(word));
         } else {
             last.append(word);
@@ -657,7 +657,9 @@ impl View {
         pen.wrap(V2_COMMON, &self.head, self.head_at, self.head_size, Self::rgba(self.head_color, 1.0));
         pen.text(&look(&self.head_text, Some(CENTER_FIT + name_drop(&s.title))), self.head_text_at, &s.title, white, None);
         let body = look(&self.body_text, None);
-        for (n, line) in description(&s.text).iter().enumerate() {
+        let font = &self.glyphs[usize::from(!body.small)];
+        let advance = |c: char| font.get(&c).map_or(0.0, |g| g.advance as f32 * body.size / ATLAS_SIZE);
+        for (n, line) in description(&s.text, advance).iter().enumerate() {
             let at = [self.body_text_at[0], self.body_text_at[1] + n as f32 * (self.body_text.size + LINE_SPACE)];
             let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, 1.0))).collect();
             pen.runs(&body, at, &chars, None);

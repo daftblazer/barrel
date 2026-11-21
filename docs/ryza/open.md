@@ -286,6 +286,12 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   the first copy of its corner in the joined strip, which still carries the glyph before's: the
   "a glyph late" colour rules were that. A button's picture is white, everything else the text's
   colour, at once.
+- **Read off the other tabs (2026-11-21):** description lines wrap by width (`LINE_WIDTH`,
+  fitted), `<KEY_ASSIGN_FIELD_CAMERA_MOVE>` is the right stick's picture, the Camera tab has the
+  DX names and order (Y-Axis, X-Axis, Zoom, the speeds, Autocorrect), the cursor's blink starts
+  again on a tab change, "Change" shows in the help bar only on a tab with a choice row, and the
+  volumes start at 5. Camera, Game and Audio match (`settings-tab0`, `1`, `5`); Graphics,
+  Keyboard and Controller do not yet.
 - **Working.** Up and Down move the cursor (the title's holds, as the load list), Left and Right
   change the row (a choice wraps, a number stops at its ends), Q and E change the tab, Escape
   leaves for the title menu and writes the changes to Barrel's own config (the graphics config

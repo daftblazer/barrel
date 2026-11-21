@@ -1700,6 +1700,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         false => None,
     };
     let mut options_state = barrel_ryza::options::State::new(game_settings.clone());
+    // The title frame of the last tab change on Settings (the cursor's blink starts again).
+    let mut tab_changed_at: Option<i32> = None;
     if let Some(c) = &config {
         options_state.load(c);
     }
@@ -2109,6 +2111,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     for (act, way) in [(Act::TabPrev, -1), (Act::TabNext, 1)] {
                         if pressed(act) || title_input.tabs.contains(&(frame, way)) {
                             options_state.tab_by(way);
+                            tab_changed_at = Some(frame);
                             if let Some(s) = sound.as_mut() {
                                 s.request("page", barrel_ryza::sound::Cue::effect(i64::from(frame), barrel_ryza::sound::PAGE));
                             }
@@ -2237,7 +2240,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             shown_row = Some((tab, options_state.cursor[tab]));
                             eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));
                         }
-                        let blink = if pump.is_some() { age as f32 } else { age as f32 * barrel_ryza::options::BLINK_RATE + barrel_ryza::options::BLINK_START };
+                        // The cursor's blink starts again a frame before a tab change (ryza-recomp settings-tabs:
+                        // 0.067 of its opacity 55 frames after each RB; from the change itself 0.086).
+                        let tab_change = if pump.is_some() { tab_changed_at } else { title_input.tabs.iter().map(|&(f, _)| f).filter(|&f| f <= frame).max() };
+                        let blink_age = tab_change.map_or(age, |f| (frame - f + (1)).min(age));
+                        let blink = if pump.is_some() { blink_age as f32 } else { blink_age as f32 * barrel_ryza::options::BLINK_RATE + barrel_ryza::options::BLINK_START };
                         let clips;
                         (quads, clips) = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
                         layer.set_clipped(&gpu, &quads, &clips)?;

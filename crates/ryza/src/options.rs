@@ -95,7 +95,7 @@ pub struct Entry {
 }
 
 /// The string numbers the screen reads (the rest of the table is left out).
-const WORD_RANGES: [(u32, u32); 7] = [(4_521_985, 4_522_200), (720_897, 721_100), (786_433, 786_600), (655_360, 655_700), (6_619_137 + 780, 6_619_137 + 790), (6_620_020, 6_620_050), (4_194_304, 4_194_400)];
+const WORD_RANGES: [(u32, u32); 9] = [(4_521_985, 4_522_200), (720_897, 721_100), (786_433, 786_600), (655_360, 655_700), (6_619_137 + 780, 6_619_137 + 790), (6_619_923, 6_619_925), (6_619_972, 6_619_974), (6_620_020, 6_620_050), (4_194_304, 4_194_400)];
 
 /// The words a screen reads, by string number, from the string table's bytes.
 pub fn read_strings(table: &[u8]) -> Result<HashMap<u32, String>, String> {
@@ -146,11 +146,12 @@ pub fn entries(tab: usize) -> Vec<Entry> {
     let normal_inverted = [Word::Id(4_522_008), Word::Id(4_522_009)];
     match tab {
         0 => vec![
-            words(4_522_130, 4_522_099, "camera_vertical", &normal_inverted, 0),
-            words(4_522_131, 4_522_100, "camera_horizontal", &normal_inverted, 0),
-            number(4_522_132, 4_522_102, "camera_vertical_speed", 1, 10, 5),
-            number(4_522_133, 4_522_103, "camera_horizontal_speed", 1, 10, 5),
+            // The DX names ("Y-Axis Camera" ...) and order, as the capture (ryza-recomp settings-tabs, 1795).
+            words(6_619_972, 4_522_099, "camera_vertical", &normal_inverted, 0),
+            words(6_619_973, 4_522_100, "camera_horizontal", &normal_inverted, 0),
             words(4_522_134, 4_522_101, "zoom_controls", &normal_inverted, 0),
+            number(6_619_923, 4_522_102, "camera_vertical_speed", 1, 10, 5),
+            number(6_619_924, 4_522_103, "camera_horizontal_speed", 1, 10, 5),
             onoff(4_522_135, 4_522_104, "camera_autocorrect", 0),
         ],
         1 => vec![
@@ -168,10 +169,11 @@ pub fn entries(tab: usize) -> Vec<Entry> {
             onoff(6_620_041, 6_620_042, "toggle_icons", 0),
         ],
         2 => vec![
-            number(4_522_147, 4_522_119, "volume_bgm", 0, 10, 10),
-            number(4_522_148, 4_522_120, "volume_sfx", 0, 10, 10),
-            number(4_522_149, 4_522_121, "volume_voice", 0, 10, 10),
-            number(4_522_150, 4_522_122, "volume_movie", 0, 10, 10),
+            // STAND-IN: the volumes' default 5 is the capture's (ryza-recomp settings-tabs: all four at 5 where every other value is at its default); the game's own defaults are not read.
+            number(4_522_147, 4_522_119, "volume_bgm", 0, 10, 5),
+            number(4_522_148, 4_522_120, "volume_sfx", 0, 10, 5),
+            number(4_522_149, 4_522_121, "volume_voice", 0, 10, 5),
+            number(4_522_150, 4_522_122, "volume_movie", 0, 10, 5),
         ],
         3 => {
             let item = |name: u32, i: Item| Entry { name, text: name + 65_536, control: Control::Words(i.levels().iter().map(|&l| level_word(l)).collect()), default: 0, key: "", graphics: Some(Some(i)) };
@@ -303,7 +305,13 @@ impl State {
             cursor: on,
             title,
             text,
-            help: vec![('\u{4e1}', word(4_521_991)), ('\u{4e0}', word(4_521_992)), ('\u{4dc}', word(655_441)), ('\u{4d8}', word(4_521_989))],
+            // "Change" only on a tab with a choice row (the Audio tab's gauges have none: ryza-recomp
+            // settings-tabs 1555; on the Game tab it stays whatever row the cursor is on).
+            help: [('\u{4e1}', word(4_521_991))]
+                .into_iter()
+                .chain(rows_in.iter().any(|e| matches!(e.control, Control::Words(_))).then(|| ('\u{4e0}', word(4_521_992))))
+                .chain([('\u{4dc}', word(655_441)), ('\u{4d8}', word(4_521_989))])
+                .collect(),
             shoulders: ['\u{4e3}', '\u{4e7}'],
         }
     }
@@ -364,7 +372,7 @@ impl State {
 const PLACEHOLDER_VALUE: &str = "1920x1080";
 
 /// The key tags of the words as the glyphs of the keyboard's and pad's buttons (`<KEY_ASSIGN_FIELD_DASH>`
-/// and `_MOVE`, `<IM00>`; the other tags are left out).
+/// `_MOVE`, `_CAMERA_MOVE`, `<IM00>`; the other tags are left out).
 // STAND-IN: the buttons' glyphs are the capture's (the game picks them for the pad's assignment).
 fn keys(text: &str) -> String {
     let mut out = String::new();
@@ -376,6 +384,7 @@ fn keys(text: &str) -> String {
         match tag {
             "KEY_ASSIGN_FIELD_DASH" => out.push('\u{4e7}'),
             "KEY_ASSIGN_FIELD_MOVE" => out.push('\u{4f2}'),
+            "KEY_ASSIGN_FIELD_CAMERA_MOVE" => out.push('\u{4f3}'),
             "IM00" => out.push('\u{4da}'),
             t if t.starts_with("CL") => out.push_str(&rest[a..=a + b]),
             _ => {}
