@@ -64,7 +64,7 @@ impl ClothDriver {
                 .iter()
                 .enumerate()
                 .map(|(k, pin)| {
-                    let carriers = (0..4).filter(|&i| pin.weights[i] > 0.0).filter_map(|i| Some((palette?.get(pin.slots[i] as usize)?.joint as usize, pin.weights[i]))).collect();
+                    let carriers = (0..4).filter(|&i| pin.weights[i] > 0.0).filter_map(|i| Some((skeleton.joint(palette?.get(pin.slots[i] as usize)?.joint)?, pin.weights[i]))).collect();
                     (cloth.points[k], carriers)
                 })
                 .collect();
@@ -123,6 +123,30 @@ impl ClothDriver {
                 }
             }
         }
+    }
+}
+
+impl ClothDriver {
+    /// The pieces' control points at `frame` as one JSON line (`BARREL_TRACE_CLOTH`): per piece its
+    /// parent joint, `cloth` (its number in the geometry) and the points in the parent's space,
+    /// `x y z` each, for `barrel-parity cloth`.
+    pub fn trace_line(&self, frame: i64) -> String {
+        use std::fmt::Write as _;
+        let mut line = format!("{{\"frame\":{frame},\"pieces\":[");
+        for (k, piece) in self.pieces.iter().enumerate() {
+            let _ = write!(line, "{}{{\"cloth\":{},\"parent\":{},\"pins\":{},\"pts\":[", if k > 0 { "," } else { "" }, piece.cloth, piece.parent, piece.pins.len());
+            for (i, p) in piece.sim.points().iter().enumerate() {
+                let _ = write!(line, "{}{:.4},{:.4},{:.4}", if i > 0 { "," } else { "" }, p.x, p.y, p.z);
+            }
+            line.push_str("],\"cols\":[");
+            for (i, c) in piece.sim.colliders().iter().enumerate() {
+                let m = c.local.to_cols_array().map(|v| format!("{v:.4}")).join(",");
+                let _ = write!(line, "{}{{\"shape\":{},\"r\":{:.4},\"h\":{:.4},\"m\":[{m}]}}", if i > 0 { "," } else { "" }, c.shape, c.radius, c.half);
+            }
+            line.push_str("]}");
+        }
+        line.push_str("]}");
+        line
     }
 }
 

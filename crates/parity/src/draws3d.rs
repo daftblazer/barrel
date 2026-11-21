@@ -45,13 +45,13 @@ fn shown_by_default(name: &str, size: u32) -> bool {
 /// A draw of the capture with what the 3D comparison needs.
 pub(crate) struct GameDraw {
     pub n: u64,
-    count: u64,
+    pub count: u64,
     instances: u64,
     topology: u64,
     pub vs: String,
     pub ps: String,
     /// Texture hashes by slot, pixel stage then vertex stage.
-    textures: Vec<(String, String)>,
+    pub textures: Vec<(String, String)>,
     pub rt: Vec<String>,
     pub ds: String,
     pub vars: Vec<Var>,
@@ -390,7 +390,7 @@ fn covers(game: &Key, barrel: &Key) -> bool {
     game.1 == barrel.1 && barrel.0.iter().all(|n| game.0.contains(n))
 }
 
-fn key(names: &HashMap<String, String>, textures: impl Iterator<Item = String>, count: u64) -> Key {
+pub(crate) fn key(names: &HashMap<String, String>, textures: impl Iterator<Item = String>, count: u64) -> Key {
     let tiny = super::TINY.get();
     let mut n: Vec<String> = textures.filter(|h| !tiny.is_some_and(|t| t.contains(h))).filter_map(|h| names.get(&h).cloned()).collect();
     n.sort();
@@ -399,7 +399,7 @@ fn key(names: &HashMap<String, String>, textures: impl Iterator<Item = String>, 
 }
 
 /// The folder of a texture's archive name, for grouping what has no match.
-fn folder(name: &str) -> String {
+pub(crate) fn folder(name: &str) -> String {
     let n = name.rsplit_once('\\').map_or(name, |p| p.0);
     n.to_string()
 }

@@ -199,6 +199,8 @@ pub struct ClothSim {
     /// Half the diagonal of the piece at rest: what a parent's jump is measured against.
     extent: f32,
     shapes: Vec<(u32, f32, f32)>,
+    /// The colliders as the last step had them, in the parent's space (for tracing).
+    placed: Vec<LocalCollider>,
     rest: Vec<Vec3>,
     p: Vec<Vec3>,
     r: Vec<Vec3>,
@@ -360,6 +362,7 @@ impl ClothSim {
             local_gravity,
             extent,
             shapes: colliders.iter().map(|c| (c.shape, c.size[0], c.size[1])).collect(),
+            placed: Vec::new(),
             p: rest.clone(),
             r: rest.clone(),
             v: vec![Vec3::ZERO; n],
@@ -369,6 +372,11 @@ impl ClothSim {
             velocity_state: DVec3::ZERO,
             spin_state: DVec3::ZERO,
         }
+    }
+
+    /// The colliders as the last step placed them, in the parent's space.
+    pub fn colliders(&self) -> &[LocalCollider] {
+        &self.placed
     }
 
     /// The points now (the parent's space).
@@ -408,6 +416,7 @@ impl ClothSim {
                 LocalCollider { shape, radius, half, local, inverse: local.inverse() }
             })
             .collect();
+        self.placed.clone_from(&cols);
         self.p[..pins.len()].copy_from_slice(pins);
         let old = self.parent.unwrap_or(parent);
         let (env, d, jump) = self.parent_motion(dt, old, parent, wind);

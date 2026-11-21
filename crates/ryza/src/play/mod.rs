@@ -119,6 +119,9 @@ struct Args {
     /// Frames to draw: in a window, quit after this many; offscreen, the same frame this many
     /// times, the last written (for `--timings`). And a lean held all along in a window (tests).
     frames: Option<u32>,
+    /// `--walk-from F`: offscreen, her walk goes on for `--frames` frames from the game's frame F,
+    /// the sticks read from `BARREL_PAD_SCRIPT` at 1/60 s a frame, the last frame written.
+    walk_from: Option<u32>,
     /// Each pass's GPU time, reported at the end (`--timings`).
     timings: bool,
     lean: [f32; 2],
@@ -170,7 +173,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -201,6 +204,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--setting-ini" => a.setting_ini = Some(value()?),
             "--timings" => a.timings = true,
             "--frames" => a.frames = Some(value()?.parse()?),
+            "--walk-from" => a.walk_from = Some(value()?.parse()?),
             "--title" => a.title = true,
             "--into-field" => a.into_field = true,
             "--title-at" => a.title_at = value()?.parse()?,
@@ -1019,7 +1023,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let dir = "\\data\\x64\\character\\pc00a\\";
             // The motion asked for, and in a window the ones the player plays.
             let mut motions = vec![(motion.parse::<u32>()?, install.read(&format!("{dir}pc00a_{motion}.elixir.gz"))?)];
-            if a.window {
+            if a.window || a.walk_from.is_some() {
                 use barrel_ryza::motion as m;
                 for n in [m::STAND, m::WALK_START, m::WALK, m::WALK_STOP, m::RUN_START, m::RUN, m::RUN_STOP] {
                     motions.push((n, install.read(&barrel_ryza::motion::path("PC00A", n))?));
@@ -1109,6 +1113,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         let lengths: Vec<(u32, f32)> = anims.iter().map(|(n, a)| (*n, a.duration)).collect();
         let mut player = barrel_ryza::player::Player::new(*at, turn.to_radians(), &lengths);
         (player.radius, player.height) = (chara.radius, chara.height);
+        // A walked offscreen run starts mid-idle: the motion time given is how far into it she stands (`--motion-time`).
+        if a.walk_from.is_some() {
+            player.clock = *time;
+        }
         // Her cloth (hair, skirt): the pieces' solvers, fed her pose each frame.
         let cloth = cloth::ClothDriver::new(geometry, &skeleton, &scene.cloth_slots, instance, chara.local_gravity);
         rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut, cloth, joints: joints.clone() });
@@ -1725,6 +1733,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     }
     // The camera's distance as drawn: pulled in by the ground behind her, easing back out.
     let (mut view_dist, mut frame_dt) = (None::<f32>, 0.0f32);
+    // A walked offscreen run: the pad script (`BARREL_PAD_SCRIPT`) and where she began.
+    let walk_script = a.walk_from.and_then(|_| barrel_render::pad::Script::load_env());
+    let walk_start = rig.as_ref().map_or(Vec3::ZERO, |r| r.player.at);
     loop {
         // Last frame's joints, then the field's moving objects at this frame's moment (the
         // game turns Rasenboden's windmills once in their motion's 12 s and stirs its trees'
@@ -1759,8 +1770,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let frames = if pump.is_some() { (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 } else { i64::from(frame_no) };
             sound.tick(sound_base + frames);
         }
-        // The player's input, in a window: her lean against the camera, the camera's turn.
-        if let Some(p) = pump.as_mut() {
+        // The player's input: in a window, her lean against the camera and the camera's turn;
+        // offscreen with `--walk-from`, the scripted pad's sticks at the game's frame, 1/60 s a frame.
+        let drive = if let Some(p) = pump.as_mut() {
             use winit::keyboard::KeyCode as K;
             // The pad is read as menu input (not as keys); the field reads the sticks.
             p.set_menu_pad(true);
@@ -1784,17 +1796,25 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // (The title's camera is fixed: its keys work the menu, and the play camera's
             // limits are not its own.)
             let (left, right) = p.sticks();
-            let mut sticks = barrel_ryza::walk::Sticks {
+            let sticks = barrel_ryza::walk::Sticks {
                 left: [key(K::KeyD) - key(K::KeyA) + left[0] + a.lean[0], key(K::KeyW) - key(K::KeyS) + left[1] + a.lean[1]],
                 right: [key(K::ArrowRight) - key(K::ArrowLeft) + right[0], right[1] - (key(K::ArrowUp) - key(K::ArrowDown))],
             };
+            Some((dt, sticks, key(K::Equal) - key(K::Minus)))
+        } else if let (Some(from), Some(script), true) = (a.walk_from, &walk_script, rig.is_some()) {
+            let (_, left, right) = script.at(i64::from(from) + i64::from(frame_no));
+            Some((1.0 / 60.0, barrel_ryza::walk::Sticks { left, right }, 0.0))
+        } else {
+            None
+        };
+        if let Some((dt, mut sticks, zoom)) = drive {
             let length = (sticks.left[0] * sticks.left[0] + sticks.left[1] * sticks.left[1]).sqrt();
-            let full = if p.held(K::ShiftLeft) || p.held(K::ShiftRight) { SHIFT_LEAN } else { 1.0 };
+            let full = if pump.as_ref().is_some_and(|p| p.held(winit::keyboard::KeyCode::ShiftLeft) || p.held(winit::keyboard::KeyCode::ShiftRight)) { SHIFT_LEAN } else { 1.0 };
             if length > full {
                 sticks.left = sticks.left.map(|v| v / length * full);
             }
             if !a.title {
-                cam.length = (cam.length * (1.0 + (key(K::Equal) - key(K::Minus)) * dt)).clamp(length_range.0, length_range.1);
+                cam.length = (cam.length * (1.0 + zoom * dt)).clamp(length_range.0, length_range.1);
             }
             if a.title {
                 sticks.right = [0.0; 2];
@@ -1804,7 +1824,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 None => cam.steer(sticks.right, dt),
             }
             // The title keeps its own fixed camera (`title::CAMERA`, set after `cam` was made).
-            if !a.title {
+            // (A walked offscreen run with `--look-at` keeps the view it was given, moved with her.)
+            if !a.title && !(a.walk_from.is_some() && a.look_at.is_some() && pump.is_none()) {
                 (yaw, pitch, dist, look_height) = (180.0 - cam.yaw, cam.pitch, cam.distance(), cam.look_height());
             }
             if let Some(r) = rig.as_mut() {
@@ -1827,11 +1848,16 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 let i = &mut instances[r.instance as usize];
                 i.prev_model = i.model;
                 i.model = render_space(Mat4::from_scale_rotation_translation(Vec3::from(r.chara.size), glam::Quat::from_rotation_y(r.player.turn), r.player.at));
-                center = (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0);
+                center = match (a.look_at, pump.is_none()) {
+                    (Some(p), true) if a.walk_from.is_some() => (p + (r.player.at - walk_start)) * Vec3::new(-1.0, 1.0, 1.0),
+                    _ => (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
+                };
                 if frame_no % 60 == 0 {
                     eprintln!("frame {frame_no} ({:.2}s): Ryza at {:?}, {:?}, motion {} at {:.2}s", started.elapsed().as_secs_f32(), r.player.at, r.player.gait, r.player.motion, r.player.clock);
                 }
             }
+        }
+        if let Some(p) = pump.as_mut() {
             // A resized window, or a swapchain gone stale: remake it and the targets.
             if let Some(pr) = presenter.as_mut()
                 && (p.take_resized() || stale)
@@ -1867,6 +1893,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let dt = if pump.is_some() { frame_dt } else { 1.0 / 60.0 };
             cloth.update(mesh, &r.joints, cloth::model_matrix(r.chara.size, r.player.turn, r.player.at), wind, dt, &mut palette);
             cloth_moves = true;
+            if let Some(path) = std::env::var_os("BARREL_TRACE_CLOTH") {
+                use std::io::Write as _;
+                let frame = i64::from(a.walk_from.unwrap_or(0)) + i64::from(frame_no);
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                    let _ = writeln!(f, "{}", cloth.trace_line(frame));
+                }
+            }
         }
         sync.wait_slot(&gpu, renderer.pool)?;
         if pump.is_some() || cloth_moves || !cast.is_empty() || !moving.is_empty() || !npc_drawn.is_empty() {
