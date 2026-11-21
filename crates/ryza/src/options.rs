@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use crate::graphics::{self, Item, Quality};
-use crate::options_view::{Kind, Row, Screen};
+use crate::options_view::{Kind, Page, Row, Screen};
 use crate::title_menu::{Hold, Input, Repeat};
 
 /// The black cover rises as the load screen's (`load::COVER_RISE`, 20 frames to full) and the
@@ -20,12 +20,26 @@ const COVER_FULL: i32 = 20;
 const COVER_RISE: f32 = 18.0;
 const SCREEN_AGE_AT: i32 = COVER_FULL - 1;
 
-/// The blink's clock against the frames: the capture's 120-frame blink ran 0.8% slow against its
-/// frame count (alpha of the cursor on five frames, 150 to 650 frames in, fitted by hand); a
-/// window's own clock is the frame count itself.
-// STAND-IN: the rate and the start are fitted to the capture's five cursor alphas (all within 1.5 / 255); the real thing is the game's clock, which advances by its own frame times.
-pub const BLINK_RATE: f32 = 0.9918;
-pub const BLINK_START: f32 = 0.3;
+/// The blink's loop in the capture's frames: the cursor's 120-frame blink restarts every 121
+/// (alpha of the cursor on the settings-scroll frames 1600 to 1860, every 5: the clock is the
+/// frame count to within the alpha's 1/255 steps, and wraps a frame late at 1680 and 1801).
+// STAND-IN: 121 is read off those alphas; the real thing is the game's own animation clock, which counts a frame at the loop's end.
+pub const BLINK_LOOP: i32 = 121;
+
+/// How many times as fast the cursor of `tab` blinks.
+pub fn blink_speed(tab: usize) -> i32 {
+    if tab == KEYS_TAB { 2 } else { 1 }
+}
+
+/// The cursor's blink clock `age` frames after it restarted, for a cursor that blinks `speed`
+/// times as fast (the key list's is twice the others'), in the animation's 120 frames.
+// STAND-IN: on the frame the loop wraps the capture draws the cursor at 251/255, as at clock 119.06 (settings-scroll 1680 and 2000); the clock there is taken as that.
+pub fn blink_clock(age: i32, speed: i32) -> f32 {
+    match (age * speed).rem_euclid(BLINK_LOOP) {
+        0 if age > 0 => 119.06,
+        c => c as f32,
+    }
+}
 
 /// Where the player is on the path from the menu to the screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,6 +90,8 @@ pub enum Control {
     Words(Vec<Word>),
     /// A number from `min` to `max` on a gauge.
     Number(i32, i32),
+    /// A command whose keys are assigned on its own screen: no value on the list.
+    Assign,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -128,6 +144,9 @@ fn number(name: u32, text: u32, key: &'static str, min: i32, max: i32, default: 
 pub const TABS: [u32; 6] = [4_522_053, 4_522_051, 4_522_052, 720_898, 720_899, 655_407];
 /// The tab the screen opens on (Game, as the capture).
 pub const FIRST_TAB: usize = 1;
+/// The Keyboard tab (a list of commands) and the Controller tab (a diagram).
+const KEYS_TAB: usize = 4;
+const PAD_TAB: usize = 5;
 
 fn level_word(name: &'static str) -> Word {
     match name {
@@ -142,6 +161,17 @@ fn level_word(name: &'static str) -> Word {
         "Linear" => Word::Id(655_641),
         "Anisotropic" => Word::Id(655_640),
         other => Word::Text(other),
+    }
+}
+
+/// The words of a graphics item's levels, lowest first. The draw distances read Close, Normal
+/// and Long and the grass density Low, Standard and High.
+// STAND-IN: only the top words (Long, High) are the capture's (settings-tabs 1615, settings-scroll 1850); the lower ones are the string table's nearest words, unseen.
+fn item_words(item: Item) -> Vec<Word> {
+    match item {
+        Item::DrawRange | Item::PointLights | Item::GrassRange => [655_400, 655_399, 655_404].map(Word::Id).to_vec(),
+        Item::GrassDensity => [655_393, 655_392, 655_391].map(Word::Id).to_vec(),
+        _ => item.levels().iter().map(|&l| level_word(l)).collect(),
     }
 }
 
@@ -180,7 +210,7 @@ pub fn entries(tab: usize) -> Vec<Entry> {
             number(4_522_150, 4_522_122, "volume_movie", 0, 10, 5),
         ],
         3 => {
-            let item = |name: u32, i: Item| Entry { name, text: name + 65_536, control: Control::Words(i.levels().iter().map(|&l| level_word(l)).collect()), default: 0, key: "", graphics: Some(Some(i)) };
+            let item = |name: u32, i: Item| Entry { name, text: name + 65_536, control: Control::Words(item_words(i)), default: 0, key: "", graphics: Some(Some(i)) };
             let quality = Entry { name: 720_911, text: 720_911 + 65_536, control: Control::Words(["Low", "Middle", "High", "Custom"].map(level_word).to_vec()), default: 2, key: "", graphics: Some(None) };
             // The four display rows are stored settings (the next start reads the ones it has).
             let resolutions = [655_380, 655_379, 655_378, 655_377, 655_376, 655_375, 655_382, 655_383].map(Word::Id);
@@ -209,6 +239,8 @@ pub fn entries(tab: usize) -> Vec<Entry> {
                 item(721_317, Item::LodDistance),
             ]
         }
+        // The key assignments' commands (Field, Combat, Synthesis); the pad's tab is a diagram without rows.
+        4 => (655_914..=655_923).map(|name| Entry { name, text: 0, control: Control::Assign, default: 0, key: "", graphics: None }).collect(),
         _ => Vec::new(),
     }
 }
@@ -277,6 +309,7 @@ impl State {
         let next = match &e.control {
             Control::Words(w) => (now + way).rem_euclid(w.len() as i32),
             Control::Number(lo, hi) => (now + way).clamp(*lo, *hi),
+            Control::Assign => return,
         };
         if next == now {
             return;
@@ -314,11 +347,13 @@ impl State {
                 match &e.control {
                     Control::Words(w) => Row { name: word(e.name), value: say(&w[v as usize % w.len()]), kind: Kind::Select },
                     Control::Number(lo, hi) => Row { name: word(e.name), value: PLACEHOLDER_VALUE.to_string(), kind: Kind::Gauge((v - lo) as f32 / (hi - lo).max(1) as f32, v.to_string()) },
+                    Control::Assign => Row { name: word(e.name), value: String::new(), kind: Kind::Select },
                 }
             })
             .collect();
         let on = self.cursor[self.tab].min(rows_in.len().saturating_sub(1));
-        let (title, text) = rows_in.get(on).map_or((String::new(), String::new()), |e| (word(e.name), word(e.text)));
+        // The Keyboard tab's panel stays empty (its commands have no description).
+        let (title, text) = rows_in.get(on).filter(|_| self.tab != KEYS_TAB).map_or((String::new(), String::new()), |e| (word(e.name), word(e.text)));
         Screen {
             caption: word(720_903),
             tabs: TABS.iter().map(|&t| word(t)).collect(),
@@ -332,9 +367,16 @@ impl State {
             // settings-tabs 1555; on the Game tab it stays whatever row the cursor is on).
             help: [('\u{4e1}', word(4_521_991))]
                 .into_iter()
+                .filter(|_| self.tab != PAD_TAB)
                 .chain(rows_in.iter().any(|e| matches!(e.control, Control::Words(_))).then(|| ('\u{4e0}', word(4_521_992))))
                 .chain([('\u{4dc}', word(655_441)), ('\u{4d8}', word(4_521_989))])
+                .chain((self.tab >= KEYS_TAB).then(|| ('\u{4da}', word(655_436))))
                 .collect(),
+            page: match self.tab {
+                KEYS_TAB => Page::Keys,
+                PAD_TAB => Page::Pad,
+                _ => Page::List,
+            },
             shoulders: ['\u{4e3}', '\u{4e7}'],
         }
     }

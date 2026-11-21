@@ -510,6 +510,7 @@ fn options_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &
     let read = |name: &str| install.read(name);
     let view = ov::View::read(ov::Sources {
         settings: &read("\\saves\\ui_cmn\\quick_menu\\uil_quick_menu_settings.xml")?,
+        keys: &read("\\saves\\ui_cmn\\quick_menu\\uil_quick_menu_key_assignment.xml")?,
         tab: &read("\\saves\\ui_cmn\\quick_menu\\uil_quick_menu_tab.xml")?,
         saveload: &read("\\saves\\ui_en\\a21_saveload\\uil_a21_saveload.xml")?,
         help: &read("\\saves\\ui_en\\a21_button_help\\uil_a21_shade.xml")?,
@@ -2237,17 +2238,20 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     if let Some((layer, view, strings)) = options_screen.as_mut() {
                         let tab = options_state.tab;
                         let n = barrel_ryza::options::entries(tab).len().max(1);
-                        options_state.cursor[tab] = barrel_ryza::options::cursor_on(&title_input, options_base, n, frame);
+                        // The cursor's blink starts again a frame before a tab change (ryza-recomp settings-tabs:
+                        // 0.067 of its opacity 55 frames after each RB; from the change itself 0.086).
+                        let tab_change = if pump.is_some() { tab_changed_at } else { title_input.tabs.iter().map(|&(f, _)| f).filter(|&f| f <= frame).max() };
+                        // The directions held before a scripted tab change belonged to the tab it left.
+                        let mut held = title_input.clone();
+                        held.list_holds.retain(|h| tab_change.is_none_or(|f| h.from >= f));
+                        options_state.cursor[tab] = barrel_ryza::options::cursor_on(&held, options_base, n, frame);
                         options_state.follow();
                         if shown_row != Some((tab, options_state.cursor[tab])) {
                             shown_row = Some((tab, options_state.cursor[tab]));
                             eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));
                         }
-                        // The cursor's blink starts again a frame before a tab change (ryza-recomp settings-tabs:
-                        // 0.067 of its opacity 55 frames after each RB; from the change itself 0.086).
-                        let tab_change = if pump.is_some() { tab_changed_at } else { title_input.tabs.iter().map(|&(f, _)| f).filter(|&f| f <= frame).max() };
                         let blink_age = tab_change.map_or(age, |f| (frame - f + (1)).min(age));
-                        let blink = if pump.is_some() { blink_age as f32 } else { blink_age as f32 * barrel_ryza::options::BLINK_RATE + barrel_ryza::options::BLINK_START };
+                        let blink = if pump.is_some() { blink_age as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
                         let clips;
                         (quads, clips) = view.quads(&options_state.screen(strings), barrel_ryza::options_view::Moment { age, blink }, (width, height));
                         layer.set_clipped(&gpu, &quads, &clips)?;

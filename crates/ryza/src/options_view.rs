@@ -35,6 +35,22 @@ pub const NO_IMAGE: usize = 10;
 pub const MIX: usize = 11;
 pub const TEXTURES: usize = 12;
 
+// STAND-IN: the Keyboard page's places (layout pixels) are the layout's nodes summed (the template's window at its menu's node, the scroll bar and the commands' rows inside it: `uil_quick_menu_key_assignment.xml`) and then read off the capture's quads (settings-tabs 1675, whose rows sit 50.4 pixels, 33.6 layout, apart).
+const KEYS_WINDOW_AT: [f32; 2] = [200.0 / 1.5, 148.0];
+const KEYS_WINDOW: [f32; 2] = [655.0, 540.0];
+const KEYS_TRACK_AT: [f32; 2] = [750.0, 179.0];
+const KEYS_TRACK: [f32; 2] = [10.0, 483.0];
+const KEYS_ROW_AT: [f32; 2] = [153.0, 176.0];
+const KEYS_PITCH: f32 = 33.6;
+const KEYS_CURSOR: [f32; 2] = [530.0, 35.0];
+const KEYS_LINE_AT: [f32; 2] = [11.0, 27.0];
+const KEYS_LINE: [f32; 2] = [560.0, 11.0];
+const KEYS_NAME_AT: [f32; 2] = [16.0, 10.0];
+// STAND-IN: the Keyboard page's description panel sits one layout pixel left of the list pages' (its own layout's info_window node; capture: 1179 against 1180.5 pixels).
+const KEYS_PANEL_SHIFT: [f32; 2] = [-1.0, 0.0];
+// STAND-IN: the heading's mask (the layout's `image_mask`, 340 x 22) at the Keyboard layout's info_window, summed from its nodes and read off the capture's quads.
+const KEYS_MASK_AT: [f32; 2] = [789.0, 160.0];
+const KEYS_MASK: [f32; 2] = [340.0, 22.0];
 /// How many rows the lists show.
 const ROWS_SHOWN: usize = 12;
 /// Frames the common fade takes (`anm_common_fade_in`).
@@ -52,8 +68,8 @@ const ROW_PITCH: f32 = 377.0 / 11.0;
 const PLAIN_SHIFT: [f32; 2] = [-1.0, 3.0];
 // STAND-IN: text set centred on its node (`align_v=center`) has its line top this far above the node's `pos.y` less half its size, fitted to the capture (the description's heading, the rows' names, the shoulder keys); the real thing is the game's own line box.
 const CENTER_FIT: f32 = -6.0;
-// STAND-IN: five names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144; DOF 720917, 3.7 pixels in settings-tabs 1615; Camera Autocorrect 4522135, 0.52 pixels in settings-tabs 1795) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
-const NAME_DROPS: [(&str, f32); 5] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47), ("DOF", 2.47), ("Camera Autocorrect", 0.35)];
+// STAND-IN: six names (Vibration, Dash, Autosave: strings 4522142, 4522020, 4522144; DOF 720917, 3.7 pixels in settings-tabs 1615; Bloom 720919, 3.0 in settings-scroll 1850; Camera Autocorrect 4522135, 0.52 pixels in settings-tabs 1795) sit lower in the capture than the rest, in the rows and in the description's heading alike (3.0 pixels; Autosave's 3.7 in its row); no cause found in the layout or the font's metrics, so the drops are the capture's.
+const NAME_DROPS: [(&str, f32); 6] = [("Vibration", 2.0), ("Dash", 2.0), ("Autosave", 2.47), ("DOF", 2.47), ("Bloom", 2.0), ("Camera Autocorrect", 0.35)];
 const KEY_FIT: f32 = -7.8;
 const NUM_FIT: f32 = -3.53;
 // STAND-IN: the description's lines are 34 pixels apart at 1080 lines (capture), the layout's size 16 and `line_space` 10 read as 16 + 10 / 1.5.
@@ -69,6 +85,7 @@ const RED: [f32; 3] = [200.0 / 255.0, 0.0, 0.0];
 /// What the screen reads of the game's files.
 pub struct Sources<'a> {
     pub settings: &'a [u8],
+    pub keys: &'a [u8],
     pub tab: &'a [u8],
     pub saveload: &'a [u8],
     pub help: &'a [u8],
@@ -100,6 +117,18 @@ pub enum Kind {
     Gauge(f32, String),
 }
 
+/// Which page of the screen the tab shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Page {
+    /// The settings list and its description panel.
+    #[default]
+    List,
+    /// The key assignments' command list (the panel stays empty).
+    Keys,
+    /// The controller's diagram.
+    Pad,
+}
+
 /// Everything the screen shows besides its layout.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Screen {
@@ -117,6 +146,7 @@ pub struct Screen {
     pub help: Vec<(char, String)>,
     /// The two shoulder keys' glyphs at the tabs' ends.
     pub shoulders: [char; 2],
+    pub page: Page,
 }
 
 /// Where a frame of the screen is.
@@ -200,6 +230,10 @@ pub struct View {
     scroll_size: [f32; 2],
     thumb: Style,
     cursor: Style,
+    key_cursor: Style,
+    text_mask: Style,
+    key_line: Style,
+    key_name: Label,
     cursor_at: [f32; 2],
     cursor_size: [f32; 2],
     rows_at: [f32; 2],
@@ -234,6 +268,7 @@ impl View {
     pub fn read(src: Sources) -> Result<View, String> {
         let parse = |b: &[u8], what: &str| table::parse(b).map_err(|e| format!("{what}: {e}"));
         let settings = parse(src.settings, "uil_quick_menu_settings")?;
+        let keys = parse(src.keys, "uil_quick_menu_key_assignment")?;
         let tab = parse(src.tab, "uil_quick_menu_tab")?;
         let saveload = parse(src.saveload, "uil_a21_saveload")?;
         let help_layout = parse(src.help, "uil_a21_shade")?;
@@ -325,6 +360,13 @@ impl View {
         let (_, left_side) = inside(help_bg, "left_side", [0.0; 2]).ok_or("uil_a21_shade: no left_side")?;
         let help_label = label(&help_layout, "text", "bg")?;
 
+        let (key_name_n, _) = {
+            let (clones, _) = node(&keys, "menu_key_assignment_clones")?;
+            let (t1, _) = inside(clones, "template_menu_text_1", [0.0; 2]).ok_or("keys: no template_menu_text_1")?;
+            let (line, _) = inside(t1, "select_line", [0.0; 2]).ok_or("keys: no select_line")?;
+            let (name, _) = inside(line, "name", [0.0; 2]).ok_or("keys: no name")?;
+            inside(name, "name_text_off", [0.0; 2]).ok_or("keys: no name_text_off")?
+        };
         let gauge_style = st(gauge_n)?;
         let blink = curve(src.anims, "anm_common_blink", "color")?;
         // Row 0's node inside the list: the template's item list and its first row's place.
@@ -378,6 +420,10 @@ impl View {
             scroll_size: size_of(scroll_n),
             thumb: by_name("gen_a21_mix02_flame01_sb")?,
             cursor: st(cursor_n)?,
+            key_cursor: by_name("gen_a21v2_cmn_cursor_s")?,
+            text_mask: by_name("gen_a21v2_cmn_msk_text1")?,
+            key_line: by_name("gen_a21_common02_line")?,
+            key_name: text_label(key_name_n),
             cursor_at,
             cursor_size: size_of(cursor_n),
             rows_at,
@@ -549,8 +595,20 @@ fn segments(total: f32, a: f32, mid: f32, b: f32, u: f32) -> Vec<(f32, f32, f32,
             out.push((at, len, a, len / u));
             at += len;
         }
-    } else if end - at > 0.001 {
-        out.push((at, end - at, a, (end - at) / u));
+    } else {
+        let tile = ATLAS_PER_LAYOUT * u;
+        if end - at > tile + 0.001 {
+            // A middle of no height taller than a layout pixel is laid in tiles of one whose
+            // source has no height, the last cut short, its source as long as it (ryza-recomp
+            // settings-tabs 1675: the key list's cursor, 4 pixels of it in 1.5, 1.5 and 1).
+            while end - at > 0.001 {
+                let len = tile.min(end - at);
+                out.push((at, len, a, if len < tile { len / u } else { 0.0 }));
+                at += len;
+            }
+        } else if end - at > 0.001 {
+            out.push((at, end - at, a, (end - at) / u));
+        }
     }
     if b > 0.0 {
         out.push((end, b * u, a + mid, b));
@@ -661,27 +719,62 @@ impl View {
             pen.text(&look(&self.key_text[n], Some(KEY_FIT)), at, &s.shoulders[n].to_string(), white, None);
         }
 
-        // The description panel.
-        pen.wrap(V2_COMMON, &self.panel, self.panel_at, self.panel_size, white);
-        pen.wrap(V2_COMMON, &self.head, self.head_at, self.head_size, Self::rgba(self.head_color, 1.0));
-        pen.text(&look(&self.head_text, Some(CENTER_FIT + name_drop(&s.title))), self.head_text_at, &s.title, white, None);
-        let body = look(&self.body_text, None);
-        let font = &self.glyphs[usize::from(!body.small)];
-        let advance = |c: char| font.get(&c).map_or(0.0, |g| g.advance as f32 * body.size / ATLAS_SIZE);
-        for (n, line) in description(&s.text, advance).iter().enumerate() {
-            let at = [self.body_text_at[0], self.body_text_at[1] + n as f32 * (self.body_text.size + LINE_SPACE)];
-            let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, 1.0))).collect();
-            pen.runs(&body, at, &chars, None);
+        match s.page {
+            Page::List => {
+                self.panel(&mut pen, s, [0.0; 2]);
+                // The graphics list, with the rows' template words (the game draws it under the plain list), then the plain list.
+                let placeholder: Vec<Row> = (0..12).map(|_| Row { name: PLACEHOLDER.0.to_string(), value: PLACEHOLDER.1.to_string(), kind: Kind::Gauge(1.0, "0".into()) }).collect();
+                self.list(&mut pen, &self.menus[0], &placeholder, 0, 0, moment, true);
+                self.list(&mut pen, &self.menus[1], &s.rows, s.first, s.cursor, moment, false);
+            }
+            Page::Keys => {
+                self.keys(&mut pen, s, moment);
+                self.panel(&mut pen, s, KEYS_PANEL_SHIFT);
+                // The heading's text mask: with no heading to read it the game's draw of it shows (settings-tabs 1675).
+                pen.wrap(V2_COMMON, &self.text_mask, KEYS_MASK_AT, KEYS_MASK, [1.0; 4]);
+            }
+            Page::Pad => {}
         }
-
-        // The graphics list, with the rows' template words (the game draws it under the plain list), then the plain list.
-        let placeholder: Vec<Row> = (0..12).map(|_| Row { name: PLACEHOLDER.0.to_string(), value: PLACEHOLDER.1.to_string(), kind: Kind::Gauge(1.0, "0".into()) }).collect();
-        self.list(&mut pen, &self.menus[0], &placeholder, 0, 0, moment, true);
-        self.list(&mut pen, &self.menus[1], &s.rows, s.first, s.cursor, moment, false);
 
         // The help bar.
         self.help_bar(&mut pen, &s.help, moment);
         (pen.out, pen.clips)
+    }
+
+    /// The description panel: the item's name over its text.
+    fn panel(&self, pen: &mut Pen, s: &Screen, shift: [f32; 2]) {
+        let white = [1.0; 4];
+        let look = |l: &Label, centred: Option<f32>| Look { size: l.size, small: l.small, align: l.align, centred };
+        let moved = |p: [f32; 2]| [p[0] + shift[0], p[1] + shift[1]];
+        pen.wrap(V2_COMMON, &self.panel, moved(self.panel_at), self.panel_size, white);
+        pen.wrap(V2_COMMON, &self.head, moved(self.head_at), self.head_size, Self::rgba(self.head_color, 1.0));
+        pen.text(&look(&self.head_text, Some(CENTER_FIT + name_drop(&s.title))), moved(self.head_text_at), &s.title, white, None);
+        let body = look(&self.body_text, None);
+        let font = &self.glyphs[usize::from(!body.small)];
+        let advance = |c: char| font.get(&c).map_or(0.0, |g| g.advance as f32 * body.size / ATLAS_SIZE);
+        for (n, line) in description(&s.text, advance).iter().enumerate() {
+            let at = moved([self.body_text_at[0], self.body_text_at[1] + n as f32 * (self.body_text.size + LINE_SPACE)]);
+            let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, 1.0))).collect();
+            pen.runs(&body, at, &chars, None);
+        }
+    }
+
+    /// The Keyboard page: the commands' list with a line under each, its cursor and its bare
+    /// scroll bar track.
+    fn keys(&self, pen: &mut Pen, s: &Screen, moment: Moment) {
+        let white = [1.0; 4];
+        pen.wrap(V2_VARIOUS, &self.window, KEYS_WINDOW_AT, KEYS_WINDOW, white);
+        pen.wrap(V2_VARIOUS, &self.scroll, KEYS_TRACK_AT, KEYS_TRACK, [1.0, 1.0, 1.0, 127.0 / 255.0]);
+        let blink = self.blink.at(moment.blink.rem_euclid(120.0) / 60.0)[3] / 255.0;
+        let look = Look { size: self.key_name.size, small: self.key_name.small, align: self.key_name.align, centred: None };
+        for (n, row) in s.rows.iter().enumerate() {
+            let at = [KEYS_ROW_AT[0], KEYS_ROW_AT[1] + n as f32 * KEYS_PITCH];
+            pen.wrap_scaled(COMMON_2, &self.key_line, [at[0] + KEYS_LINE_AT[0], at[1] + KEYS_LINE_AT[1]], KEYS_LINE, [1.0, 0.8], white);
+            if n == s.cursor {
+                pen.wrap(V2_COMMON, &self.key_cursor, at, KEYS_CURSOR, [1.0, 1.0, 1.0, blink]);
+            }
+            pen.text(&look, [at[0] + KEYS_NAME_AT[0], at[1] + KEYS_NAME_AT[1]], &row.name, Self::rgba(BROWN, 1.0), None);
+        }
     }
 
     fn list(&self, pen: &mut Pen, menu: &Menu, rows: &[Row], first: usize, cursor: usize, moment: Moment, template: bool) {
@@ -771,8 +864,10 @@ impl View {
         let look = Look { size: self.help_text.size, small: self.help_text.small, align: self.help_text.align, centred: None };
         let words = pen.width(&look, &guide) / pen.k;
         let right = 1280.0;
-        // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum (as the load screen's).
-        let full = words + 2.0 * self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum (as the load screen's), and a pixel more where the last glyph's picture reaches past its advance ("Back"'s k by one; "Confirm"'s m does not): fitted to the Game and Keyboard tabs' plates (ryza-recomp settings-tabs 1495, 1675).
+        let last = entries.last().and_then(|(_, w)| w.chars().last()).and_then(|c| self.glyphs[usize::from(!look.small)].get(&c));
+        let past = last.map_or(0.0, |g| (g.x_offset + i32::from(g.width) - g.advance as i32).max(0) as f32);
+        let full = words + (1.0 + past) * self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
         let width = PLATE_MIN + (full - PLATE_MIN) * grow;
         let at = [right - width, self.help_at[1]];
         pen.wrap(HELP, &self.help, at, [width, first(&self.help).map_or(0.0, |p| p[3] / ATLAS_PER_LAYOUT)], [1.0, 1.0, 1.0, alpha]);
