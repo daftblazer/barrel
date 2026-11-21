@@ -35,6 +35,13 @@ pub const STEP_UP: f32 = 60.0;
 /// How long the last motion takes to mix out, seconds.
 pub const BLEND: f32 = 0.2;
 
+// STAND-IN: How far into its loop the run motion is when it takes over from the start motion,
+// seconds; the real thing is the game's own hand-over between the two, not read. Fitted on
+// `walk-rasen` (the stick up from frame 1900): the pelvis's pinned cloth points, in the pelvis's
+// space, are 3.1 cm rms off over the run with 0 and 1.0 cm off with 0.35 (0.32 to 0.38 within
+// 0.2 cm of it; the loop is 0.75 s long). The walking loop's hand-over is not fitted.
+const RUN_LOOP_PHASE: f32 = 0.35;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gait {
     Stand,
@@ -89,7 +96,7 @@ impl Player {
             self.from = Some((self.motion, self.time()));
             self.since = 0.0;
             self.motion = m;
-            self.clock = 0.0;
+            self.clock = if m == motion::RUN { RUN_LOOP_PHASE } else { 0.0 };
         }
     }
 

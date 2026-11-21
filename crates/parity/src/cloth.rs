@@ -135,10 +135,12 @@ pub fn run(dir: &Path, (from, to, step): (u64, u64, u64), barrel: &Path, idx: Op
     let t = Trace { dir: dir.into() };
     let (names, _) = index(idx)?;
     let trace = trace(barrel)?;
+    // `PARITY_CLOTH_SHIFT=N`: Barrel's frame N later than the game's is compared (to find a timing offset).
+    let shift: i64 = std::env::var("PARITY_CLOTH_SHIFT").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     let mut stats: BTreeMap<u64, Stat> = BTreeMap::new();
     let mut frame = from;
     while frame <= to {
-        let (Ok(draws), Some(pieces)) = (game_draws(&t, frame), trace.get(&frame)) else {
+        let (Ok(draws), Some(pieces)) = (game_draws(&t, frame), trace.get(&((frame as i64 + shift).max(0) as u64))) else {
             frame += step;
             continue;
         };
@@ -154,7 +156,7 @@ pub fn run(dir: &Path, (from, to, step): (u64, u64, u64), barrel: &Path, idx: Op
             let s = stats.entry(p.cloth).or_default();
             (s.parent, s.n) = (p.parent, p.pts.len());
             s.frames += 1;
-            let mut frame_sum = 0f32;
+            let (mut frame_sum, mut pin_sum) = (0f32, 0f32);
             for (k, b) in p.pts.iter().enumerate() {
                 let g = [c[k * 4], c[k * 4 + 1], c[k * 4 + 2]];
                 let e2: f32 = (0..3).map(|a| (g[a] - b[a]).powi(2)).sum();
@@ -162,6 +164,7 @@ pub fn run(dir: &Path, (from, to, step): (u64, u64, u64), barrel: &Path, idx: Op
                     println!("piece {} point {k}{} game {g:.2?} barrel {b:.2?}", p.cloth, if k < p.pins { " (pin)" } else { "" });
                 }
                 if k < p.pins {
+                    pin_sum += e2;
                     s.pin2 += e2 as f64;
                     s.pinned += 1;
                     continue;
@@ -180,7 +183,7 @@ pub fn run(dir: &Path, (from, to, step): (u64, u64, u64), barrel: &Path, idx: Op
             }
             let rms = (frame_sum / (p.pts.len() - p.pins).max(1) as f32).sqrt();
             if std::env::var_os("PARITY_CLOTH_FRAMES").is_some() {
-                println!("frame {frame} piece {} rms {rms:.2}", p.cloth);
+                println!("frame {frame} piece {} rms {rms:.2} pin {:.2}", p.cloth, (pin_sum / p.pins.max(1) as f32).sqrt());
             }
             if rms > s.worst_frame.0 {
                 s.worst_frame = (rms, frame);
