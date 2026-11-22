@@ -2081,6 +2081,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 leave = r.leave;
                 scripted_holds = r.holds;
                 title_input.returned = leave.left_at();
+                title_input.returned_spin = menu.return_spin(&title_input, c);
             }
             if let Some(p) = pump.as_ref() {
                 use winit::keyboard::KeyCode as K;
@@ -2194,6 +2195,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     }
                     shown_row = None;
                     title_input.list_holds.clear();
+                    title_input.returned_spin = title_input.choose.map_or(0, |c| menu.return_spin(&title_input, c));
                     title_input.choose = None;
                     title_input.returned = Some(l);
                     options_base = 0;

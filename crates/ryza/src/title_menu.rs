@@ -131,6 +131,8 @@ pub struct Input {
     /// The screen the chosen item opened was left after this frame: the menu is shown again, the
     /// cursor still on the item, from the next.
     pub returned: Option<i32>,
+    /// The cursor's turn clock on that frame.
+    pub returned_spin: i32,
 }
 
 /// The frames the chosen item takes to fade out once chosen, and the share of its pulse's opacity
@@ -140,6 +142,11 @@ pub struct Input {
 // STAND-IN: The fade's length (13 frames), its straight line and its start (.878 of the pulse) are fitted to those six values (each within 1.5 / 255); the real thing is the item's own leave animation.
 pub const CHOSEN_FADE: i32 = 13;
 const CHOSEN_START: f32 = 0.878;
+
+/// Back from a screen the cursor's turn goes on from its clock at the button on the item, this
+/// many frames further (the capture's icons: settings-leave 1930 to 2000 and settings-leave-no 1620).
+// STAND-IN: fitted to those frames (the same 20 puts both cases' icons where the capture has them; 19 and 21 each miss); the real thing is the game's own cursor animation, which it keeps running or restarts by a rule not read.
+const RETURN_SPIN: i32 = 20;
 
 /// The menu's layout and animations.
 #[derive(Clone, Debug, PartialEq)]
@@ -326,6 +333,18 @@ impl Menu {
         Some(NAMES[shown[on]])
     }
 
+    /// The cursor's clock (the frames its turn has run) on `frame`, once the menu is up.
+    pub fn cursor_clock(&self, input: &Input, frame: i32) -> Option<i32> {
+        let press = self.pressed(input)?;
+        Some(frame - press - wait_frames(MENU_WAIT) + 2 - self.settled(self.shown(input).len()))
+    }
+
+    /// The cursor's clock when the menu comes back from the screen the item chosen on `chosen`
+    /// opened: its turn goes on from where it was, `RETURN_SPIN` frames further.
+    pub fn return_spin(&self, input: &Input, chosen: i32) -> i32 {
+        self.cursor_clock(input, chosen).unwrap_or(0) + RETURN_SPIN
+    }
+
     /// The frame the button at the prompt counts from, if it does: the prompt is all the way in.
     pub fn pressed(&self, input: &Input) -> Option<i32> {
         input.press.filter(|&p| p as f32 >= (self.ready * 60.0).ceil())
@@ -393,7 +412,8 @@ impl Menu {
         // Back from the screen an item opened: the items are all in place and the cursor comes in
         // again, counting from the frame after the screen's last.
         let back = input.returned.filter(|&r| frame > r);
-        let cursor_age = back.map_or(since, |r| frame - r);
+        // (the cursor's fade, slide and swing start one frame after the return: settings-leave-no 1620, settings-leave 1930)
+        let cursor_age = back.map_or(since, |r| frame - r - 1);
         // Once an item is chosen the cursor and the pulse stand where they were.
         let live = if back.is_some() { frame } else { input.choose.map_or(frame, |c| frame.min(c)) };
         let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, live) } else { Vec::new() };
@@ -416,7 +436,8 @@ impl Menu {
             let swing = self.in_turn.at(t * self.in_turn_speed)[1].rem_euclid(360.0).to_radians();
             // STAND-IN: From the button on an item the cursor's turn runs one frame ahead (the capture's icons sit 1.5 degrees on from the loop's from that frame on); the real thing is the cursor's own leave.
             let ahead = i32::from(back.is_none() && input.choose.is_some_and(|c| frame >= c));
-            let spin = self.rotate.at(loop_shown(cursor_age + ahead, self.rotate.duration()))[2];
+            let spin_age = back.map_or(cursor_age + ahead, |r| input.returned_spin + (frame - r));
+            let spin = self.rotate.at(loop_shown(spin_age, self.rotate.duration()))[2];
             let (aw, ah) = self.atlas[1];
             for icon in &self.icons {
                 let turned = (spin * icon.turns).rem_euclid(360.0).to_radians();
