@@ -315,7 +315,7 @@ pub fn replay(initial: &State, input: &Input, from: i32, frame: i32) -> Replay {
                 tab_change = Some(f);
             }
             Event::Change(way) if !leave.busy(f) => {
-                let n = crate::options::entries(state.tab).len().max(1);
+                let n = state.entries(state.tab).len().max(1);
                 let held: Vec<Hold> = holds.iter().filter(|h| tab_change.is_none_or(|t| h.from >= t)).copied().collect();
                 state.cursor[state.tab] = crate::options::cursor_on(&Input { list_holds: held, ..Input::default() }, 0, n, f);
                 state.change(way);
@@ -336,6 +336,7 @@ pub fn replay(initial: &State, input: &Input, from: i32, frame: i32) -> Replay {
 mod tests {
     use super::*;
     use crate::graphics::Settings;
+    use barrel_render::settings::RenderSettings;
 
     #[test]
     fn b_with_nothing_changed_leaves_at_once() {
@@ -385,7 +386,7 @@ mod tests {
 
     #[test]
     fn the_replay_changes_the_row_under_the_cursor_and_sends_directions_to_the_box() {
-        let s = State::new(Settings::default());
+        let s = State::new(Settings::default(), RenderSettings::DESKTOP);
         let input = Input {
             changes: vec![(100, 1)],
             backs: vec![110],
@@ -393,9 +394,9 @@ mod tests {
             confirm: Some(210),
             ..Input::default()
         };
-        // Before the first B: Vibration (row 0 of the first tab) changed.
+        // Before the first B: the hold at 20 moved the cursor to the second row of the Game tab (Difficulty), and the change at 100 is its.
         let r = replay(&s, &input, 0, 105);
-        assert!(r.state.changed && r.state.option("vibration") == Some(1 - s.option("vibration").unwrap()));
+        assert!(r.state.changed && r.state.option("difficulty") != s.option("difficulty") && r.state.option("vibration") == s.option("vibration"));
         // The hold at 150 came while the dialog was up: it is the box's, and A on Yes saves.
         let r = replay(&s, &input, 0, 205);
         assert!(r.leave.asking() && r.holds.len() == 1);

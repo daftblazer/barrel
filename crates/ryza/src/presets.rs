@@ -165,7 +165,8 @@ impl Graphics {
             taa,
             motion: taa || temporal,
             jitter: taa || temporal,
-            anisotropy: if self.anisotropic { 16 } else { 1 },
+            // The game's Anisotropic is 16x; a count Barrel's page chose (config `anisotropy`) stands.
+            anisotropy: if !self.anisotropic { 1 } else if base.anisotropy > 1 { base.anisotropy } else { 16 },
             ..base
         }
     }
@@ -254,6 +255,18 @@ mod tests {
         assert_eq!((drawn.anisotropy, drawn.rlr), (1, low.rlr));
         // Barrel's TAA follows the game's `Taa` only
         assert!(Graphics::HIGH.apply(RenderSettings::DESKTOP).taa);
+    }
+
+    #[test]
+    fn the_games_anisotropic_keeps_the_count_barrels_page_chose() {
+        let mut base = RenderSettings::DESKTOP;
+        base.anisotropy = 4;
+        assert_eq!(Graphics::HIGH.apply(base).anisotropy, 4);
+        // Nothing chosen (1): the game's own 16x; Linear is 1 whatever the count.
+        base.anisotropy = 1;
+        assert_eq!(Graphics::HIGH.apply(base).anisotropy, 16);
+        base.anisotropy = 4;
+        assert_eq!(Graphics::read("Low", &tables).unwrap().apply(base).anisotropy, 1);
     }
 
     #[test]

@@ -2,12 +2,21 @@
 //! the cursor and the tabs, how the values go to and come from Barrel's own config, and the
 //! path from the menu's button to the screen.
 //!
+//! The Graphics tab also carries Barrel's own engine rows (render scale, upscaler, sharpening) and
+//! extends the game's anti-aliasing and texture filtering with the choices Barrel adds (MSAA, FSR
+//! native AA, 2x to 8x filtering), woven in next to the game's rows; a choice that would conflict
+//! with another is closed and the description panel names why (`barrel_render::graphics_options`,
+//! as Escha's page). `--settings-as-game` leaves them out (the captures' tab).
+//!
 //! The pages are the game's: Camera, Game, Audio and Graphics (Keyboard and Controller, the
 //! key assignments, are not built: `docs/ryza/open.md`, "Settings screen"). The words come from
 //! the string tables; the order of the rows on the Game tab is the capture's, the others' the
 //! string tables'.
 
 use std::collections::HashMap;
+
+use barrel_render::graphics_options::{self as g, Aa, Row as EngineRow, Up};
+use barrel_render::settings::{RenderSettings, Upscaler};
 
 use crate::graphics::{self, Item, Quality};
 use crate::options_view::{Ask, Kind, Page, Row, Screen};
@@ -100,6 +109,42 @@ pub enum Word {
     Text(&'static str),
 }
 
+/// A row Barrel adds to the game's page, or a game row it extends: how its choices are made of
+/// the render settings (`State::engine_choice`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine {
+    Scale,
+    Upscaler,
+    Sharpen,
+    /// The game's Off / FXAA / TAA, then MSAA 2x, 4x, 8x and FSR native AA.
+    AntiAliasing,
+    /// The game's Linear, then anisotropic 2x, 4x, 8x and 16x (the game's Anisotropic).
+    Filtering,
+}
+
+impl Engine {
+    /// The choices that can be made (a row may show a value that is not one of them: "By the upscaler").
+    fn choices(self) -> usize {
+        match self {
+            Engine::Scale => g::SCALES.len(),
+            Engine::Upscaler => g::UP_CHOICES.len(),
+            Engine::Sharpen => 2,
+            Engine::AntiAliasing => 7,
+            Engine::Filtering => g::FILTERING.len(),
+        }
+    }
+
+    /// The row's description in Barrel's words (the rows the game lacks), by `graphics_options`.
+    fn description(self) -> Option<&'static str> {
+        match self {
+            Engine::Scale => Some(g::description(EngineRow::Scale)),
+            Engine::Upscaler => Some(g::description(EngineRow::Upscaling)),
+            Engine::Sharpen => Some(g::description(EngineRow::Sharpening)),
+            Engine::AntiAliasing | Engine::Filtering => None,
+        }
+    }
+}
+
 /// A row: its words, how it is set, the default and where Barrel keeps it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
@@ -110,6 +155,9 @@ pub struct Entry {
     /// The config key (`option_` and this) for a game option; a graphics row names its item.
     pub key: &'static str,
     pub graphics: Option<Option<Item>>,
+    /// A row of Barrel's own is named in Barrel's words, not the game's (`name` is 0).
+    pub title: &'static str,
+    pub engine: Option<Engine>,
 }
 
 /// The string numbers the screen reads (the rest of the table is left out).
@@ -129,15 +177,15 @@ pub fn read_strings(table: &[u8]) -> Result<HashMap<u32, String>, String> {
 const ON_OFF: [Word; 2] = [Word::Id(4_522_011), Word::Id(4_522_012)];
 
 fn onoff(name: u32, text: u32, key: &'static str, default: i32) -> Entry {
-    Entry { name, text, control: Control::Words(ON_OFF.to_vec()), default, key, graphics: None }
+    Entry { name, text, control: Control::Words(ON_OFF.to_vec()), default, key, graphics: None, title: "", engine: None }
 }
 
 fn words(name: u32, text: u32, key: &'static str, list: &[Word], default: i32) -> Entry {
-    Entry { name, text, control: Control::Words(list.to_vec()), default, key, graphics: None }
+    Entry { name, text, control: Control::Words(list.to_vec()), default, key, graphics: None, title: "", engine: None }
 }
 
 fn number(name: u32, text: u32, key: &'static str, min: i32, max: i32, default: i32) -> Entry {
-    Entry { name, text, control: Control::Number(min, max), default, key, graphics: None }
+    Entry { name, text, control: Control::Number(min, max), default, key, graphics: None, title: "", engine: None }
 }
 
 /// The tabs' words: Camera, Game, Audio, Graphics, Keyboard, Controller.
@@ -175,8 +223,22 @@ fn item_words(item: Item) -> Vec<Word> {
     }
 }
 
-/// The rows of tab `tab`.
-pub fn entries(tab: usize) -> Vec<Entry> {
+/// Barrel's own words for the choices the game has none for.
+const SCALE_WORDS: [&str; 8] = ["50%", "67%", "75%", "85%", "100%", "125%", "150%", "200%"];
+const UPSCALER_WORDS: [&str; 5] = ["Off", "FSR 1", "GSR 1", "GSR 2", "FSR 3.1"];
+const FILTER_WORDS: [&str; 4] = ["2x", "4x", "8x", "16x"];
+/// The anti-aliasing the game does not have, and the value of a temporal upscaler's own.
+const MSAA_WORDS: [&str; 3] = ["MSAA 2x", "MSAA 4x", "MSAA 8x"];
+const NATIVE_WORD: &str = "FSR Native AA";
+const BY_UPSCALER_WORD: &str = "By the upscaler";
+
+/// A row of Barrel's own: named in its words, its choices the render settings'.
+fn own(title: &'static str, which: Engine, words: &[&'static str], text: u32) -> Entry {
+    Entry { name: 0, text, control: Control::Words(words.iter().map(|&w| Word::Text(w)).collect()), default: 0, key: "", graphics: None, title, engine: Some(which) }
+}
+
+/// The rows of tab `tab`; `extended` has the Graphics tab carry Barrel's rows and choices.
+pub fn entries(tab: usize, extended: bool) -> Vec<Entry> {
     let normal_inverted = [Word::Id(4_522_008), Word::Id(4_522_009)];
     match tab {
         0 => vec![
@@ -210,13 +272,33 @@ pub fn entries(tab: usize) -> Vec<Entry> {
             number(4_522_150, 4_522_122, "volume_movie", 0, 10, 5),
         ],
         3 => {
-            let item = |name: u32, i: Item| Entry { name, text: name + 65_536, control: Control::Words(item_words(i)), default: 0, key: "", graphics: Some(Some(i)) };
-            let quality = Entry { name: 720_911, text: 720_911 + 65_536, control: Control::Words(["Low", "Middle", "High", "Custom"].map(level_word).to_vec()), default: 2, key: "", graphics: Some(None) };
+            let item = |name: u32, i: Item| Entry { name, text: name + 65_536, control: Control::Words(item_words(i)), default: 0, key: "", graphics: Some(Some(i)), title: "", engine: None };
+            let quality = Entry { name: 720_911, text: 720_911 + 65_536, control: Control::Words(["Low", "Middle", "High", "Custom"].map(level_word).to_vec()), default: 2, key: "", graphics: Some(None), title: "", engine: None };
+            // The game's anti-aliasing and filtering with Barrel's choices after theirs.
+            let anti_aliasing = match extended {
+                true => Entry { control: Control::Words(item_words(Item::AntiAliasing).into_iter().chain(MSAA_WORDS.map(Word::Text)).chain([Word::Text(NATIVE_WORD), Word::Text(BY_UPSCALER_WORD)]).collect()), engine: Some(Engine::AntiAliasing), ..item(720_916, Item::AntiAliasing) },
+                false => item(720_916, Item::AntiAliasing),
+            };
+            let filtering = match extended {
+                true => Entry { control: Control::Words(item_words(Item::Filtering).into_iter().take(1).chain(FILTER_WORDS.map(Word::Text)).collect()), engine: Some(Engine::Filtering), ..item(721_318, Item::Filtering) },
+                false => item(721_318, Item::Filtering),
+            };
+            let engine_rows = [
+                own("Render Scale", Engine::Scale, &SCALE_WORDS, 0),
+                own("Upscaler", Engine::Upscaler, &UPSCALER_WORDS, 0),
+                own("Sharpening", Engine::Sharpen, &["Off", "On"], 0),
+            ];
             // The four display rows are stored settings (the next start reads the ones it has).
             let resolutions = [655_380, 655_379, 655_378, 655_377, 655_376, 655_375, 655_382, 655_383].map(Word::Id);
-            vec![
+            let [scale, upscaler, sharpen] = engine_rows;
+            let mut rows = vec![
                 words(720_909, 786_445, "resolution", &resolutions, RESOLUTION_DEFAULT),
                 words(720_910, 786_446, "window_mode", &[Word::Id(655_385), Word::Id(655_386), Word::Id(655_387)], 0),
+            ];
+            if extended {
+                rows.extend([scale, upscaler, sharpen]);
+            }
+            rows.extend([
                 words(721_315, 786_851, "frame_rate", &[655_646, 655_645, 655_644, 655_643, 655_647].map(Word::Id), 1),
                 onoff(721_314, 786_850, "vsync", 0),
                 quality,
@@ -224,7 +306,7 @@ pub fn entries(tab: usize) -> Vec<Entry> {
                 item(720_913, Item::Shadow),
                 item(720_914, Item::Reflections),
                 item(720_915, Item::Effects),
-                item(720_916, Item::AntiAliasing),
+                anti_aliasing,
                 item(720_917, Item::DepthOfField),
                 item(720_918, Item::Occlusion),
                 item(720_919, Item::Bloom),
@@ -233,16 +315,17 @@ pub fn entries(tab: usize) -> Vec<Entry> {
                 item(720_922, Item::PointLights),
                 item(720_923, Item::GrassRange),
                 item(720_924, Item::GrassDensity),
-                item(721_318, Item::Filtering),
+                filtering,
                 item(721_316, Item::ShadowDistance),
                 item(721_319, Item::Water),
                 item(721_317, Item::LodDistance),
-            ]
+            ]);
+            rows
         }
         // The key assignments' commands (Field, Combat, Synthesis); the pad's tab is a diagram without rows.
-        4 => (655_914..=655_923).map(|name| Entry { name, text: 0, control: Control::Assign, default: 0, key: "", graphics: None }).collect(),
+        4 => (655_914..=655_923).map(|name| Entry { name, text: 0, control: Control::Assign, default: 0, key: "", graphics: None, title: "", engine: None }).collect(),
         // The controller's sixteen buttons, the left side then the right (they have no words on the list).
-        5 => (0..16).map(|_| Entry { name: 0, text: 0, control: Control::Assign, default: 0, key: "", graphics: None }).collect(),
+        5 => (0..16).map(|_| Entry { name: 0, text: 0, control: Control::Assign, default: 0, key: "", graphics: None, title: "", engine: None }).collect(),
         _ => Vec::new(),
     }
 }
@@ -261,22 +344,94 @@ pub struct State {
     /// The game options' values by their keys.
     values: HashMap<&'static str, i32>,
     pub graphics: graphics::Settings,
+    /// The render settings the run starts from (the config's, before the game's presets draw
+    /// their passes over them): what Barrel's own rows show and change.
+    pub render: RenderSettings,
+    /// The Graphics tab carries Barrel's rows and choices (not under `--settings-as-game`).
+    pub extended: bool,
+    /// One of Barrel's render choices was changed (only then are its keys written to the config).
+    pub render_changed: bool,
     /// Something was changed since the screen opened.
     pub changed: bool,
 }
 
 impl State {
-    pub fn new(graphics: graphics::Settings) -> State {
+    pub fn new(graphics: graphics::Settings, render: RenderSettings) -> State {
         let mut values = HashMap::new();
         for tab in 0..TABS.len() {
-            for e in entries(tab).iter().filter(|e| !e.key.is_empty()) {
+            for e in entries(tab, false).iter().filter(|e| !e.key.is_empty()) {
                 values.insert(e.key, e.default);
             }
         }
-        State { tab: FIRST_TAB, cursor: [0; TABS.len()], first: [0; TABS.len()], values, graphics, changed: false }
+        State { tab: FIRST_TAB, cursor: [0; TABS.len()], first: [0; TABS.len()], values, graphics, render, extended: true, render_changed: false, changed: false }
+    }
+
+    /// The tab's rows as this screen has them.
+    pub fn entries(&self, tab: usize) -> Vec<Entry> {
+        entries(tab, self.extended)
+    }
+
+    /// Choice `k` of the row `which`: the game's items and the render settings it leaves, or why it is closed.
+    fn engine_choice(&self, which: Engine, k: usize) -> Result<(graphics::Settings, RenderSettings), &'static str> {
+        let (mut game, mut r) = (self.graphics, self.render);
+        match which {
+            Engine::Scale => g::set_scale(&mut r, g::SCALES[k]),
+            Engine::Upscaler => {
+                g::up_open(&r, g::UP_CHOICES[k])?;
+                g::set_upscaler(&mut r, g::UP_CHOICES[k]);
+            }
+            Engine::Sharpen => {
+                g::sharpen_open(&r)?;
+                g::set_sharpen(&mut r, k == 1);
+            }
+            Engine::AntiAliasing => {
+                // The game's Off, FXAA and TAA are its item (its preset draws them); MSAA and native AA are Barrel's, with the item Off.
+                let barrel = [Aa::Off, Aa::Off, Aa::Taa, Aa::Msaa(2), Aa::Msaa(4), Aa::Msaa(8), Aa::Native][k];
+                g::aa_open(&r, barrel)?;
+                game.set(Item::AntiAliasing, if k < 3 { k } else { 0 });
+                game.quality = Quality::Custom;
+                g::set_aa(&mut r, if k < 3 { Aa::Off } else { barrel });
+            }
+            Engine::Filtering => {
+                // Anisotropic is the game's item; the count is Barrel's.
+                let n = g::FILTERING[k];
+                game.set(Item::Filtering, usize::from(n > 1));
+                game.quality = Quality::Custom;
+                r.anisotropy = n;
+            }
+        }
+        Ok((game, r))
+    }
+
+    /// The choice of the row `which` the settings stand on (past the choices for a value that is not one).
+    fn engine_value(&self, which: Engine) -> usize {
+        let r = &self.render;
+        match which {
+            Engine::Scale => g::SCALES.iter().position(|&k| (k - r.scale).abs() < 0.005).unwrap_or_else(|| g::SCALES.iter().rposition(|&k| k <= r.scale).unwrap_or(0)),
+            Engine::Upscaler => g::UP_CHOICES.iter().position(|&u| u == g::upscaler(r)).unwrap_or(0),
+            Engine::Sharpen => usize::from(r.sharpen),
+            Engine::AntiAliasing => match g::aa(r) {
+                Aa::Native => 6,
+                Aa::Msaa(n) => 2 + (n.max(2).ilog2() as usize),
+                Aa::ByUpscaler => 7,
+                // Barrel's own TAA (a config's, no game settings given) shows as the game's.
+                Aa::Taa if !self.graphics.given => 2,
+                _ => self.graphics.level(Item::AntiAliasing),
+            },
+            Engine::Filtering if self.graphics.level(Item::Filtering) == 0 => 0,
+            Engine::Filtering => g::FILTERING.iter().position(|&n| n == r.anisotropy.max(2)).unwrap_or(g::FILTERING.len() - 1),
+        }
+    }
+
+    /// The choices of `which` closed now with their reasons.
+    fn closed(&self, which: Engine) -> Vec<(usize, &'static str)> {
+        (0..which.choices()).filter_map(|k| self.engine_choice(which, k).err().map(|why| (k, why))).collect()
     }
 
     fn value(&self, e: &Entry) -> i32 {
+        if let Some(which) = e.engine {
+            return self.engine_value(which) as i32;
+        }
         match e.graphics {
             Some(None) => self.graphics.quality as i32,
             Some(Some(i)) => self.graphics.level(i) as i32,
@@ -291,7 +446,7 @@ impl State {
 
     /// Moves the cursor by `way` rows (wrapping).
     pub fn step(&mut self, way: i32) {
-        let n = entries(self.tab).len().max(1) as i32;
+        let n = self.entries(self.tab).len().max(1) as i32;
         self.cursor[self.tab] = (self.cursor[self.tab] as i32 + way).rem_euclid(n) as usize;
     }
 
@@ -309,9 +464,22 @@ impl State {
 
     /// Changes the row under the cursor by `way` (a choice wraps, a number stops at its ends).
     pub fn change(&mut self, way: i32) {
-        let rows = entries(self.tab);
+        let rows = self.entries(self.tab);
         let Some(e) = rows.get(self.cursor[self.tab]) else { return };
         let now = self.value(e);
+        if let Some(which) = e.engine {
+            // To the next choice open the way `way` goes (the closed ones are skipped, as Escha's page).
+            let n = which.choices() as i32;
+            let at = if (0..n).contains(&now) { now } else if way > 0 { -1 } else { n };
+            let next = (1..=n).map(|k| (at + way * k).rem_euclid(n)).find(|&k| k != now && self.engine_choice(which, k as usize).is_ok());
+            if let Some(k) = next {
+                let (game, render) = self.engine_choice(which, k as usize).expect("an open choice");
+                (self.graphics, self.render) = (game, render);
+                self.render_changed = true;
+                self.changed = true;
+            }
+            return;
+        }
         let next = match &e.control {
             Control::Words(w) => (now + way).rem_euclid(w.len() as i32),
             Control::Number(lo, hi) => (now + way).clamp(*lo, *hi),
@@ -325,6 +493,11 @@ impl State {
             Some(None) => {
                 self.graphics.quality = [Quality::Low, Quality::Middle, Quality::High, Quality::Custom][next as usize];
                 self.graphics.given = true;
+                // A quality preset sets the game's anti-aliasing: Barrel's goes.
+                if self.graphics.quality != Quality::Custom && matches!(g::aa(&self.render), Aa::Msaa(_) | Aa::Native | Aa::Taa) {
+                    g::set_aa(&mut self.render, Aa::Off);
+                    self.render_changed = true;
+                }
             }
             Some(Some(i)) => {
                 // Changing an item sets the quality to Custom, as the game's.
@@ -345,21 +518,22 @@ impl State {
             Word::Id(n) => word(*n),
             Word::Text(t) => (*t).to_string(),
         };
-        let rows_in = entries(self.tab);
+        let rows_in = self.entries(self.tab);
+        let name = |e: &Entry| if e.title.is_empty() { word(e.name) } else { e.title.to_string() };
         let rows: Vec<Row> = rows_in
             .iter()
             .map(|e| {
                 let v = self.value(e);
                 match &e.control {
-                    Control::Words(w) => Row { name: word(e.name), value: say(&w[v as usize % w.len()]), kind: Kind::Select },
-                    Control::Number(lo, hi) => Row { name: word(e.name), value: PLACEHOLDER_VALUE.to_string(), kind: Kind::Gauge((v - lo) as f32 / (hi - lo).max(1) as f32, v.to_string()) },
-                    Control::Assign => Row { name: word(e.name), value: String::new(), kind: Kind::Select },
+                    Control::Words(w) => Row { name: name(e), value: say(&w[v as usize % w.len()]), kind: Kind::Select },
+                    Control::Number(lo, hi) => Row { name: name(e), value: PLACEHOLDER_VALUE.to_string(), kind: Kind::Gauge((v - lo) as f32 / (hi - lo).max(1) as f32, v.to_string()) },
+                    Control::Assign => Row { name: name(e), value: String::new(), kind: Kind::Select },
                 }
             })
             .collect();
         let on = self.cursor[self.tab].min(rows_in.len().saturating_sub(1));
         // The Keyboard tab's panel stays empty (its commands have no description).
-        let (title, text) = rows_in.get(on).filter(|_| self.tab != KEYS_TAB).map_or((String::new(), String::new()), |e| (word(e.name), word(e.text)));
+        let (title, text) = rows_in.get(on).filter(|_| self.tab != KEYS_TAB).map_or((String::new(), String::new()), |e| (name(e), self.description(e, &word, &say)));
         Screen {
             caption: word(720_903),
             tabs: TABS.iter().map(|&t| word(t)).collect(),
@@ -395,6 +569,30 @@ impl State {
         }
     }
 
+    /// The row's description: the game's words, or Barrel's for its own rows, and under it in red
+    /// the choices closed now with the reasons (a row closed whole for one reason: the reason alone).
+    fn description(&self, e: &Entry, word: &dyn Fn(u32) -> String, say: &dyn Fn(&Word) -> String) -> String {
+        let Some(which) = e.engine else { return word(e.text) };
+        let first = which.description().map_or_else(|| word(e.text), str::to_string);
+        let closed = self.closed(which);
+        if closed.is_empty() {
+            return first;
+        }
+        let Control::Words(words) = &e.control else { return first };
+        let mut groups: Vec<(Vec<String>, &str)> = Vec::new();
+        for (k, why) in &closed {
+            match groups.iter_mut().find(|(_, w)| w == why) {
+                Some((labels, _)) => labels.push(say(&words[*k])),
+                None => groups.push((vec![say(&words[*k])], why)),
+            }
+        }
+        let lines: Vec<String> = match closed.len() == which.choices() && groups.len() == 1 {
+            true => vec![groups[0].1.to_string()],
+            false => groups.iter().map(|(labels, why)| format!("{}: {why}", labels.join(", "))).collect(),
+        };
+        format!("{first}^00<CLRE>{}<CLNR>", lines.join("^00"))
+    }
+
     /// The game options and graphics items as `key value` lines for Barrel's config.
     pub fn config_lines(&self) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = Vec::new();
@@ -405,6 +603,24 @@ impl State {
                 out.push((i.config_key().to_string(), i.levels()[self.graphics.level(i)].to_string()));
             }
         }
+        // Barrel's own render settings (the keys `RenderSettings::from_config_over` reads).
+        let (r, on) = (&self.render, |b: bool| if b { "on" } else { "off" }.to_string());
+        let upscaler = match r.upscaler {
+            Upscaler::Bilinear => "bilinear",
+            Upscaler::Fsr1 => "fsr1",
+            Upscaler::Gsr1 => "gsr1",
+        };
+        // (only once one of them was changed: the config otherwise keeps what a preset or a launcher put there)
+        out.extend(self.render_changed.then_some([
+            ("scale".to_string(), r.scale.to_string()),
+            ("upscaler".to_string(), upscaler.to_string()),
+            ("msaa".to_string(), r.msaa.to_string()),
+            ("taa".to_string(), on(r.taa)),
+            ("fsr3".to_string(), on(r.fsr3)),
+            ("gsr2".to_string(), on(r.gsr2)),
+            ("sharpen".to_string(), on(r.sharpen)),
+            ("anisotropy".to_string(), r.anisotropy.to_string()),
+        ]).into_iter().flatten());
         // The display rows go to the keys the window reads at its next start, once either was moved off its default.
         let (resolution, mode) = (self.values["resolution"], self.values["window_mode"]);
         if (resolution, mode) != (RESOLUTION_DEFAULT, 0) {
@@ -441,8 +657,11 @@ impl State {
         out.join("\n") + "\n"
     }
 
-    /// Takes the game options of `config` (`option_` keys; the graphics keys are `graphics::Settings`'s).
+    /// Takes the game options of `config` (`option_` keys; the graphics keys are `graphics::Settings`'s)
+    /// and Barrel's render settings (its scale, upscaler, anti-aliasing, sharpening and filtering keys).
     pub fn load(&mut self, config: &str) {
+        let r = RenderSettings::from_config_over(self.render, config);
+        self.render = RenderSettings { scale: r.scale, upscaler: r.upscaler, msaa: r.msaa, taa: r.taa, fsr3: r.fsr3, gsr2: r.gsr2, sharpen: r.sharpen, anisotropy: r.anisotropy, ..self.render };
         for line in config.lines() {
             let Some((key, value)) = line.trim().split_once(' ') else { continue };
             let Some(name) = key.strip_prefix("option_") else { continue };
@@ -510,7 +729,7 @@ mod tests {
 
     #[test]
     fn a_change_goes_to_the_config_and_back() {
-        let mut s = State::new(graphics::Settings::default());
+        let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP);
         // Game tab: Vibration On -> Off, Difficulty Normal -> Hard, Cursor Speed 5 -> 6.
         s.change(1);
         s.step(1);
@@ -533,7 +752,7 @@ mod tests {
         assert!(text.contains("quality Custom"));
         // The line that was there is replaced, not repeated.
         assert_eq!(text.matches("\nao ").count() + usize::from(text.starts_with("ao ")), 1);
-        let mut back = State::new(graphics::Settings::default());
+        let mut back = State::new(graphics::Settings::default(), RenderSettings::DESKTOP);
         back.load(&text);
         back.graphics.apply_config(&text);
         assert_eq!(back.option("difficulty"), Some(3));
@@ -544,7 +763,7 @@ mod tests {
 
     #[test]
     fn the_display_rows_go_to_the_windows_keys_once_moved() {
-        let mut s = State::new(graphics::Settings::default());
+        let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP);
         assert!(!s.store("").contains("\nwindow ") && !s.store("").starts_with("window "));
         // Graphics tab: Screen Resolution one step down (1600x900), Window Settings one on (Borderless).
         s.tab = 3;
@@ -558,13 +777,137 @@ mod tests {
 
     #[test]
     fn the_list_scrolls_when_the_cursor_leaves_its_window() {
-        let mut s = State::new(graphics::Settings::default());
+        let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP);
         s.tab = 3;
         for (on, first) in [(11, 0), (12, 1), (21, 10), (15, 10), (9, 9), (0, 0)] {
             s.cursor[3] = on;
             s.follow();
             assert_eq!(s.first[3], first, "cursor {on}");
         }
+    }
+
+    /// A screen on the Graphics tab with the cursor on the row of this engine kind (or the game's item).
+    fn on_row(s: &mut State, f: impl Fn(&Entry) -> bool) {
+        s.tab = 3;
+        s.cursor[3] = s.entries(3).iter().position(f).expect("the row");
+    }
+
+    #[test]
+    fn the_graphics_tab_weaves_barrels_rows_in_unless_it_is_the_games() {
+        let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        let rows = s.entries(3);
+        let at = |which| rows.iter().position(|e| e.engine == Some(which)).unwrap();
+        // Screen Resolution, Window Settings, then the three rows, then Frame Rate Limit.
+        assert_eq!((at(Engine::Scale), at(Engine::Upscaler), at(Engine::Sharpen)), (2, 3, 4));
+        assert_eq!(rows.len(), 25);
+        assert!(rows[at(Engine::AntiAliasing)].graphics == Some(Some(Item::AntiAliasing)) && rows[at(Engine::Filtering)].graphics == Some(Some(Item::Filtering)));
+        s.extended = false;
+        let game = s.entries(3);
+        assert_eq!(game.len(), 22);
+        assert!(game.iter().all(|e| e.engine.is_none()));
+        // The game's own rows with the game's own choices (Off, FXAA, TAA; Linear, Anisotropic).
+        let words = |item| game.iter().find(|e| e.graphics == Some(Some(item))).map(|e| match &e.control { Control::Words(w) => w.len(), _ => 0 }).unwrap();
+        assert_eq!((words(Item::AntiAliasing), words(Item::Filtering)), (3, 2));
+    }
+
+    #[test]
+    fn stepping_skips_the_closed_choices() {
+        // Scale 75%, bilinear: native AA needs 100%, so from MSAA 8x on a step goes round to Off.
+        let mut render = RenderSettings::DESKTOP.resolved();
+        g::set_scale(&mut render, 0.75);
+        g::set_aa(&mut render, Aa::Msaa(8));
+        let mut s = State::new(graphics::Settings::default(), render);
+        on_row(&mut s, |e| e.engine == Some(Engine::AntiAliasing));
+        assert_eq!(s.engine_value(Engine::AntiAliasing), 5);
+        assert_eq!(s.closed(Engine::AntiAliasing), vec![(6, "Native AA needs a render scale of 100% or more.")]);
+        s.change(1);
+        assert_eq!((s.engine_value(Engine::AntiAliasing), s.render.msaa, s.graphics.level(Item::AntiAliasing)), (0, 1, 0));
+        // ... and back the other way from Off lands on MSAA 8x, past the closed one.
+        s.change(-1);
+        assert_eq!((s.engine_value(Engine::AntiAliasing), s.render.msaa), (5, 8));
+        // A row with nothing else open stays: under GSR 2 every anti-aliasing is closed and shows "By the upscaler".
+        g::set_upscaler(&mut s.render, Up::Gsr2);
+        assert_eq!(s.engine_value(Engine::AntiAliasing), 7);
+        let before = s.clone();
+        s.change(1);
+        assert_eq!(s, before);
+        // The upscalers need a scale under 100%: at 100% only Off is open and Right does nothing.
+        let mut full = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        on_row(&mut full, |e| e.engine == Some(Engine::Upscaler));
+        let before = full.clone();
+        full.change(1);
+        assert_eq!(full, before);
+        assert!(!full.changed);
+    }
+
+    #[test]
+    fn the_descriptions_name_the_closed_choices_in_red() {
+        let strings: HashMap<u32, String> = HashMap::from([(721_318 + 65_536, "Keeps textures sharp.".to_string())]);
+        let mut render = RenderSettings::DESKTOP.resolved();
+        g::set_scale(&mut render, 0.75);
+        let mut s = State::new(graphics::Settings::default(), render);
+        on_row(&mut s, |e| e.engine == Some(Engine::AntiAliasing));
+        let text = s.screen(&strings).text;
+        assert!(text.contains("<CLRE>FSR Native AA: Native AA needs a render scale of 100% or more.<CLNR>"), "{text}");
+        // Barrel's own row: its own words, and a whole row closed for one reason names that reason alone.
+        let mut full = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        on_row(&mut full, |e| e.engine == Some(Engine::Upscaler));
+        let screen = full.screen(&strings);
+        assert_eq!(screen.title, "Upscaler");
+        assert!(screen.text.starts_with("How a scene drawn below full size is scaled up.^00<CLRE>FSR 1, GSR 1, GSR 2, FSR 3.1: Upscalers need a render scale under 100%.<CLNR>"), "{}", screen.text);
+        // The game's filtering row is the game's words with nothing closed.
+        on_row(&mut full, |e| e.engine == Some(Engine::Filtering));
+        assert_eq!(full.screen(&strings).text, "Keeps textures sharp.");
+    }
+
+    #[test]
+    fn anti_aliasing_and_filtering_go_to_the_config_and_back() {
+        let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        on_row(&mut s, |e| e.engine == Some(Engine::AntiAliasing));
+        // The game's own FXAA (the default), then TAA, MSAA 2x and 4x.
+        assert_eq!(s.engine_value(Engine::AntiAliasing), 1);
+        for _ in 0..3 {
+            s.change(1);
+        }
+        assert_eq!((s.engine_value(Engine::AntiAliasing), s.render.msaa), (4, 4));
+        assert_eq!((s.graphics.level(Item::AntiAliasing), s.graphics.quality), (0, Quality::Custom));
+        let text = s.store("");
+        let mut back = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        back.load(&text);
+        back.graphics.apply_config(&text);
+        assert_eq!((back.engine_value(Engine::AntiAliasing), back.render.msaa), (4, 4));
+        // Choosing a game level clears Barrel's choice: TAA is the game's item, the render keys have none.
+        s.change(-1);
+        assert_eq!((s.engine_value(Engine::AntiAliasing), s.render.msaa), (3, 2));
+        s.change(-1);
+        assert_eq!((s.engine_value(Engine::AntiAliasing), s.render.msaa, s.graphics.level(Item::AntiAliasing)), (2, 1, 2));
+        s.change(-1);
+        assert_eq!((s.graphics.level(Item::AntiAliasing), s.render.msaa), (1, 1));
+        // Native AA at full size is FSR 3 without the upscaler row's choice.
+        for _ in 0..5 {
+            s.change(1);
+        }
+        assert_eq!((s.engine_value(Engine::AntiAliasing), s.render.fsr3, s.graphics.level(Item::AntiAliasing)), (6, true, 0));
+        assert!(s.store("").contains("fsr3 on"));
+        // A quality preset takes the game's anti-aliasing and Barrel's goes (Custom after the items, then round to Low).
+        on_row(&mut s, |e| e.graphics == Some(None));
+        s.change(1);
+        assert_eq!(s.graphics.quality, Quality::Low);
+        assert!(!s.render.fsr3 && s.render.msaa == 1);
+        // Texture filtering: Linear, then 2x to 16x with the game's item Anisotropic from 2x.
+        on_row(&mut s, |e| e.engine == Some(Engine::Filtering));
+        assert_eq!(s.engine_value(Engine::Filtering), 4);
+        s.change(1);
+        assert_eq!((s.engine_value(Engine::Filtering), s.graphics.level(Item::Filtering), s.render.anisotropy), (0, 0, 1));
+        s.change(1);
+        s.change(1);
+        assert_eq!((s.engine_value(Engine::Filtering), s.graphics.level(Item::Filtering), s.render.anisotropy), (2, 1, 4));
+        let text = s.store("");
+        assert!(text.contains("anisotropy 4"));
+        let mut back = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        back.load(&text);
+        back.graphics.apply_config(&text);
+        assert_eq!((back.engine_value(Engine::Filtering), back.render.anisotropy), (2, 4));
     }
 
     #[test]

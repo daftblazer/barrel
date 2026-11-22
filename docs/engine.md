@@ -692,12 +692,21 @@ mistake for a day). `u46` in the events does not play its movie yet.
   B10G11R11 where the game keeps 16-bit floats, so a handheld's tiler holds 8 bytes a pixel less
   (fewer bins). At the Rasenboden gate 1.2% of the pixels move, all but 5 by at most 4 levels
   (the most 7); every check scores the same.
-- **The Ryza Settings screen's leave and its values** (`crates/ryza/src/options.rs`): leaving
-  (Escape in a window) returns to the title menu at once, with no leave transition (not
-  captured), and writes the changed rows to Barrel's graphics config (`option_<key> N` lines and,
-  once a graphics row was changed, the game's graphics keys); the graphics apply on the next
-  start, not live. Game, Camera and Audio values are kept and read by nothing yet. The tabs
-  turn with Q and E in a window; Keyboard and Controller are empty.
+- **The Ryza Settings screen's leave and its values** (`crates/ryza/src/options.rs`, `leave.rs`):
+  Escape or B in a window asks "Do you want to apply the changes?" when something changed
+  (as the game's, read off its captures), then writes the changed rows to Barrel's graphics config
+  (`option_<key> N` lines and, once a graphics row was changed, the game's graphics keys) on Yes and drops
+  them on No; the graphics apply on the next start, not live. Game, Camera and Audio values are kept and
+  read by nothing yet. The tabs turn with Q and E in a window; Keyboard and Controller assign nothing.
+- **Barrel's own rows on the Ryza Settings screen's Graphics tab** (the PC release sets such options in
+  a launcher, which Barrel does not have; the user chose them woven into the game's page,
+  `docs/ryza/open.md`, "Barrel's own rows"): Render Scale, Upscaler and Sharpening between Window
+  Settings and Frame Rate Limit, and the game's Anti-Aliasing and Texture Filtering rows extended
+  with MSAA 2x, 4x, 8x and FSR native AA, and anisotropic 2x, 4x, 8x and 16x. A choice that conflicts
+  with another is closed, as on Escha's page (`barrel_render::graphics_options`), and the description
+  panel names it with the reason in red. They are not in the game, so lockstep and parity runs of the
+  Graphics tab pass `--settings-as-game`, which lists the game's 22 rows and its own choices only. The
+  game's Anisotropic filtering keeps the count the config's `anisotropy` holds (the game's is 16x).
 
 - **Ryza's menu stick.** The left stick steps menus (title, load list, Settings) once it leans
   past 0.4 and stops being a direction under 0.2257 (the field walk's dead zone), so a stick

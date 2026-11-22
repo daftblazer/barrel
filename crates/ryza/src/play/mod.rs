@@ -216,8 +216,10 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--saves" => a.saves = Some(value()?),
             "--title-keys" => {
                 // F:down:N / F:up:N hold a direction on the menu for N frames; F:choose the button
-                // on the menu's item; F:ldown:N / F:lup:N a direction on the load list; F:ok the
-                // button on a save; F:lb / F:rb a tab button on Settings (title frames).
+                // on the menu's item; F:ldown:N / F:lup:N a direction on the load list, the Settings
+                // list or its dialog's box; F:ok the button on a save, or A on the dialog; F:lb /
+                // F:rb a tab button on Settings; F:left / F:right change the row under its cursor;
+                // F:back is B (title frames).
                 use barrel_ryza::title_menu::Hold;
                 for key in value()?.split(',') {
                     let parts = key.split(':').collect::<Vec<_>>();
@@ -892,6 +894,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         })
     };
     eprintln!("graphics: {game_settings:?} {presets:?}");
+    // (the Settings screen's own rows show these, before the presets draw their passes over them)
+    let render_before_presets = graphics.resolved();
     let graphics = if game_settings.given { presets.apply(graphics) } else { graphics }.resolved();
     // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
     // them, the handheld setting's in the same share.
@@ -1717,7 +1721,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         true => Some(load_layer(&install, &gpu, &renderer)?),
         false => None,
     };
-    let mut options_state = barrel_ryza::options::State::new(game_settings.clone());
+    let mut options_state = barrel_ryza::options::State::new(game_settings.clone(), render_before_presets);
+    options_state.extended = !a.settings_as_game;
     // The title frame of the last tab change on Settings (the cursor's blink starts again).
     let mut tab_changed_at: Option<i32> = None;
     if let Some(c) = &config {
@@ -2311,7 +2316,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 barrel_ryza::options::Stage::Screen { age } => {
                     if let Some((layer, view, strings)) = options_screen.as_mut() {
                         let tab = options_state.tab;
-                        let n = barrel_ryza::options::entries(tab).len().max(1);
+                        let n = options_state.entries(tab).len().max(1);
                         // The cursor's blink starts again a frame before a tab change (ryza-recomp settings-tabs:
                         // 0.067 of its opacity 55 frames after each RB; from the change itself 0.086).
                         let tab_change = if pump.is_some() { tab_changed_at } else { title_input.tabs.iter().map(|&(f, _)| f).filter(|&f| f <= frame).max() };

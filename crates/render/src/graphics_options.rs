@@ -60,6 +60,21 @@ pub enum Up {
 
 pub const UP_CHOICES: [Up; 5] = [Up::Bilinear, Up::Fsr1, Up::Gsr1, Up::Gsr2, Up::Fsr3];
 
+/// What a row sets, for the help line when nothing on it is closed (Barrel's own words).
+pub fn description(row: Row) -> &'static str {
+    match row {
+        Row::Mode => "Play in a window or borderless fullscreen.",
+        Row::WindowSize => "The window's size.",
+        Row::Scale => "The scene is drawn at this share of the screen's size, then scaled to it.",
+        Row::AntiAliasing => "Smooths jagged edges.",
+        Row::Upscaling => "How a scene drawn below full size is scaled up.",
+        Row::Sharpening => "Sharpens the picture.",
+        Row::Shadows => "The shadow maps' detail.",
+        Row::Filtering => "Keeps textures sharp at a slant.",
+        Row::Occlusion => "Darkens creases and corners the light does not reach.",
+    }
+}
+
 impl Aa {
     pub fn label(self) -> String {
         match self {

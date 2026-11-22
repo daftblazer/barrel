@@ -328,7 +328,8 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     Vibration, Dash and Autosave.
 - **Working.** Up and Down move the cursor (the title's holds, as the load list), Left and Right
   change the row (a choice wraps, a number stops at its ends), Q and E change the tab, Escape
-  leaves for the title menu and writes the changes to Barrel's own config (the graphics config
+  leaves for the title menu (after the "apply the changes?" dialog when something changed) and
+  writes the changes to Barrel's own config (the graphics config
   file: `option_<key> N` lines, and the game's graphics keys once a graphics row was changed).
   The screen holds Camera, Game, Audio and Graphics rows; the graphics rows are
   `graphics::Settings` (changing an item makes the quality Custom, as the game's). **The
@@ -346,7 +347,7 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     string tables', not captured (the capture shows the Game tab only); Difficulty offers five
     levels of the seven strings (Charismatic and Legendary left out, unverified); the volumes'
     range 0-10 and defaults are guesses.
-  - Leaving: the title menu returns at once (the game's own leave transition was not captured).
+  - Leaving: see "Leaving the screen" below (built).
   - Unexplained, fitted (named constants in `options_view.rs`): the names Vibration, Dash and
     Autosave sit 3.0 px (Autosave 3.7) lower than the others in the rows and in the description's
     heading (`NAME_DROPS`); the rows' pitch (`ROW_PITCH` 34.27 layout px) and the plain list's
@@ -356,6 +357,71 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   - The title menu's chosen-item fade is now 0.878 of the pulse's opacity at the button times
     1 - frames / 13 (it was 196/255 flat): the Settings capture starts at 188 where the pulse
     stood lower; Load Game's three rows still match.
+
+### Leaving the screen (2026-11-22)
+
+B after a value changed since the screen opened opens the dialog "Do you want to apply the
+changes?" (`barrel_ryza::leave`; layout `uil_quick_menu_notification.xml`, its `top` dialog: the
+panel is 633 x 267, not the 695 x 382 of the `option` dialog; string 655372) with a Yes / No
+box beside it (the balloon select: `uil_mt_balloon_select.xml`, window `gen_a21_window01_sub4`, its
+cursor with the two cursor animations). The cursor starts on No; Up and Down flip it; B slides the dialog
+out and stays on the list; A on No drops the changes and leaves; A on Yes writes them (`save_options`),
+slides the dialog out, covers the screen in black over 30 frames (`options_view` draws the list under it),
+shows the "Saving..." notice (the load screen's book and hopping word: `Boot::saving_notice`, drawn in
+the load layer over the Settings layer) and leaves. B with nothing changed leaves at once. All of it
+is read off ryza-recomp `settings-leave`, `settings-leave-gfx` and `settings-leave-no`; every time is
+a title frame from the key (`leave.rs`):
+
+- The dialog's panel and words fade in and rise by `anm_common_slide_in_bottom` (30 frames, an out-cubic
+  of alpha and of a 30-pixel rise; the first frame is 1/30), the box fades in over 15 frames, and
+  closing plays the same backwards (the box fades out over 15). The cursor's colour is
+  `anm_common_cursor_base` from the dialog's opening (its glow `anm_common_cursor_add_75` is added
+  over it) and goes plain white once the dialog starts to leave.
+- The list's cursor holds its opacity while the dialog is up and goes on from there when it is gone.
+  The help bar: the list's fades out from 4 frames after the key and the dialog's (Select, Back,
+  Confirm) fades in from 33 after it; closing, the dialog's bar loses its words, shrinks and fades
+  (from 3 and 5 frames after the key) and the list's comes back 33 frames after it. These delays
+  are fitted to the capture's alphas (`LIST_HELP_OUT`, `LIST_HELP_BACK`, `DIALOG_HELP_IN`,
+  `DIALOG_HELP_OUT`); the original's help bar keeps its own timer, and one reopening came a
+  frame earlier than the other two.
+- After A on Yes the black rises 1/30 a frame from 29 frames after the key, the notice fades in from
+  31 and out from 137 (the common fade), and the list shows again until the screen is left 163
+  frames after the key (`SAVED_AT`, the capture's). Its hopping word loops (the control's period is its
+  last letter's delay plus the hop's second). After A on No the dialog slides out for 30 frames and
+  the screen is left at once.
+- The title comes back from black at 1/18 a frame, its cursor coming in (alpha 1 frame later) and
+  turning on from the clock it had at the button on Settings plus 20 frames (`RETURN_SPIN`: both captures'
+  icons fit it); the chosen item's pulse restarts.
+- The keys offscreen: `--title-keys` takes `F:right`, `F:left` (change the row), `F:back` (B) and
+  `F:ok` (A, also the load list's) beside the tab and direction keys; the screen's state is a function of
+  the frame (`leave::replay` runs the keys again from the screen's first frame, the directions pressed while
+  the dialog is up going to its box).
+- **Parity**: `settings-leave*` (17 rows), `settings-leavegfx*` (6) and `settings-leaveno*` (4) at 0
+  mismatches, but `settings-leave1800` (3): the hopping "Saving..." word's first two letters sit
+  at exactly 45 and 135 degrees there, where the captured quad's corners tie and the capture's float noise
+  picks one (the parity tool settles such ties as Barrel's trace writes them only with
+  `PARITY_TURNED_TIES=left`, which the boot rows set and these rows do not); with it set the row is 0 (the
+  other three notice rows, 1840, 1880 and 1910, are 0 either way). Add it to that row's command (or `checks.env`).
+
+### Barrel's own rows on the Graphics tab (2026-11-22)
+
+Barrel's engine options sit in the game's page, among the rows they belong with (the user's choice:
+integrated, not a launcher): Render Scale, Upscaler (Off, FSR 1, GSR 1, GSR 2, FSR 3.1) and Sharpening
+after Window Settings, and the game's Anti-Aliasing and Texture Filtering rows extended with Barrel's
+choices (MSAA 2x, 4x, 8x and FSR native AA after the game's Off, FXAA and TAA; 2x, 4x, 8x and 16x after
+Linear). The rules are `barrel_render::graphics_options`' (Escha's page): a choice that would conflict
+with another is closed (Left and Right skip it) and the description panel names the closed choices with
+their reasons in red after the row's description (the game's own words for the game's rows, Barrel's
+`graphics_options::description` for its own; Escha reads the same text). The mapping to the game's items
+and the config: Off, FXAA and TAA are the game's item (its preset draws TAA from it); MSAA and native AA
+set the item to Off and the render keys (`msaa`, `fsr3`); choosing a game level or an Overall Quality preset
+clears Barrel's (msaa 1, no native AA). The filtering is the game's Anisotropic from 2x on, the count in
+`anisotropy` (`presets::Graphics::apply` keeps it; it forced 16). `scale`, `upscaler`, `msaa`, `taa`,
+`fsr3`, `gsr2`, `sharpen` and `anisotropy` go to the config once one of Barrel's choices was changed,
+and the screen reads them back (the run's render settings before the presets). Like the game's rows they
+apply on the next start. `--settings-as-game` (parity only) lists the game's 22 rows with the game's own
+choices, as the captures have them. Unit tests: `options::tests` (the rows, skip-closed stepping, the
+descriptions, the AA and filtering mapping), `presets::tests`.
 
 ## Controller (Ryza)
 
@@ -393,7 +459,7 @@ changes, and `settings: left` on leaving.
 | Settings | D-pad, left stick, arrows | move (a press wraps; held 30 frames, then every 10, stops at the end) | yes |
 | Settings | left, right, arrows | change the row's value (a press only; a held repeat is not read) | yes |
 | Settings | LB / RB, Q / E | previous / next tab (stops at the ends) | yes |
-| Settings | B, Backspace, Escape | leave, writing Barrel's config | yes |
+| Settings | B, Backspace, Escape | leave: asks "apply the changes?" first if something changed (B closes the dialog, A answers, up and down move its cursor; Yes writes Barrel's config) | yes |
 | Settings | X, Y | not tried in the game | no |
 | Field | left stick, right stick, buttons | as before (`take_input`, `sticks`) | unchanged |
 

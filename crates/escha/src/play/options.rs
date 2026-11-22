@@ -139,19 +139,9 @@ fn stepped(row: Row, now: &Graphics, step: i32) -> Option<Graphics> {
     (1..=n).map(|k| (at + step * k).rem_euclid(n)).find_map(|k| all[k as usize].1.ok().filter(|t| value(row, t) != shown))
 }
 
-/// What a row sets, for the header bar when nothing on it is closed.
+/// What a row sets, for the header bar when nothing on it is closed (Barrel's own words, shared with Ryza's page).
 fn description(row: Row) -> &'static str {
-    match row {
-        Row::Mode => "Play in a window or borderless fullscreen.",
-        Row::WindowSize => "The window's size.",
-        Row::Scale => "The scene is drawn at this share of the screen's size, then scaled to it.",
-        Row::AntiAliasing => "Smooths jagged edges.",
-        Row::Upscaling => "How a scene drawn below full size is scaled up.",
-        Row::Sharpening => "Sharpens the picture.",
-        Row::Shadows => "The shadow maps' detail.",
-        Row::Filtering => "Keeps textures sharp at a slant.",
-        Row::Occlusion => "Darkens creases and corners the light does not reach.",
-    }
+    g::description(row)
 }
 
 /// Whether the row has a choice open other than its value.
