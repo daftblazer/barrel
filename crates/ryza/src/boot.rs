@@ -551,7 +551,17 @@ impl Boot {
     pub fn saving_notice(&self, t: f32, alpha: f32, screen: (u32, u32)) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
-        self.notice_at(&self.saving.0, self.saving.1, t, alpha, k, left)
+        let (letters, speed) = &self.saving;
+        // The word's hops loop: the control runs until its last letter's hop is over and starts
+        // again on the first tick after (the remainder is dropped).
+        let period = letters.iter().map(|l| l.delay).fold(0.0, f32::max) + self.hop[0].duration();
+        let hops = loop_time((t * FPS).round(), period, *speed);
+        let mut out = self.notice_at(letters, *speed, t, alpha, k, left);
+        // The letters sit right after the icon in the quads: redone at the looped time.
+        let mut word = Vec::new();
+        self.word(letters, *speed, hops, [1.0, 1.0, 1.0, alpha], k, left, &mut word);
+        out.splice(1..1 + letters.len(), word);
+        out
     }
 
     /// The loading variant of the notice (the load screen shows it while the saves are read and

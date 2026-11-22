@@ -1707,14 +1707,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut pad_any = false;
     let mut title_input = a.title_input.clone();
     title_input.saves |= !save_slots.is_empty();
-    // The load screen's own layer, with the views of its screens (built when there are saves to list).
-    let mut load_screen = match a.title {
-        true => Some(load_layer(&install, &gpu, &renderer)?),
-        false => None,
-    };
     // The Settings screen's own layer and what it shows (the config's values over the defaults).
     let mut options_screen = match a.title {
         true => Some(options_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
+    // The load screen's own layer, with the views of its screens (made after the Settings screen's: its saving notice is drawn over that).
+    let mut load_screen = match a.title {
+        true => Some(load_layer(&install, &gpu, &renderer)?),
         false => None,
     };
     let mut options_state = barrel_ryza::options::State::new(game_settings.clone());
@@ -2340,7 +2340,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             quads.push(flow::cover(look.cover, (width, height), 0));
                         }
                         if let (Some((alpha, age)), Some((notice_layer, _, boot))) = (look.notice, load_screen.as_mut()) {
-                            notice_layer.set(&gpu, &boot.saving_notice(age as f32 / 60.0, alpha, (width, height)))?;
+                            notice_layer.set(&gpu, &boot.saving_notice((age as f32 + std::env::var("NS").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0)) / 60.0, alpha, (width, height)))?;
                             showing_notice = true;
                         }
                         layer.set_blended(&gpu, &quads, &clips, glow)?;
