@@ -299,6 +299,8 @@ pub struct Boot {
     icon: Style,
     icon_flick: f32,
     letters: Vec<Letter>,
+    /// "Saving..." (the Settings screen's leave): the letters and the hop's speed.
+    saving: (Vec<Letter>, f32),
     loading: LoadingNotice,
     pen_style: [f32; 4],
     pen_speed: f32,
@@ -391,6 +393,9 @@ impl Boot {
         let ctrl = line.children.iter().find(|c| c.name == "anim_ctrl").ok_or("text_anime_creating has no animation")?;
         let hop_speed = ctrl.attr("speed").and_then(|s| s.trim().parse().ok()).unwrap_or(1.0);
         let letters = read_letters(line, ctrl, icon_at, line_at, &styles)?;
+        let (saving_line, saving_at) = find(icon, "text_anime_saving", [0.0; 2]).ok_or("no text_anime_saving")?;
+        let saving_ctrl = saving_line.children.iter().find(|c| c.name == "anim_ctrl").ok_or("text_anime_saving has no animation")?;
+        let saving = (read_letters(saving_line, saving_ctrl, icon_at, saving_at, &styles)?, saving_ctrl.attr("speed").and_then(|v| v.trim().parse().ok()).unwrap_or(1.0));
         // The loading variant (shown on the load screen): its own icon and word, no pen.
         let (load_icon, load_at) = find(&progress, "icon_loading", [0.0; 2]).ok_or("no icon_loading")?;
         let word = |name: &str| -> Result<(Vec<Letter>, f32), String> {
@@ -449,6 +454,7 @@ impl Boot {
             icon: icon_style,
             icon_flick: icon.attr("flick_time").and_then(|f| f.trim().parse().ok()).ok_or("icon_saving has no flick_time")?,
             letters,
+            saving,
             loading,
             pen_style: style(&styles, pen.attr("style").ok_or("prompt_icon has no style")?)?.pictures[0],
             pen_speed,
@@ -538,7 +544,14 @@ impl Boot {
     /// hopping letters and the writing pen, fading out at the end.
     fn notice(&self, t: f32, k: f32, left: f32) -> Vec<Quad> {
         let alpha = if t < NOTICE_FADE_OUT_AT { 1.0 } else { self.fade_out.at(t - NOTICE_FADE_OUT_AT)[3] / 255.0 };
-        self.notice_at(t, alpha, k, left)
+        self.notice_at(&self.letters, self.hop_speed, t, alpha, k, left)
+    }
+
+    /// "Saving...": the icon with the pen and the hopping word, `t` seconds into its animations at opacity `alpha`.
+    pub fn saving_notice(&self, t: f32, alpha: f32, screen: (u32, u32)) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
+        self.notice_at(&self.saving.0, self.saving.1, t, alpha, k, left)
     }
 
     /// The loading variant of the notice (the load screen shows it while the saves are read and
@@ -592,7 +605,7 @@ impl Boot {
         }
     }
 
-    fn notice_at(&self, t: f32, alpha: f32, k: f32, left: f32) -> Vec<Quad> {
+    fn notice_at(&self, letters: &[Letter], hop_speed: f32, t: f32, alpha: f32, k: f32, left: f32) -> Vec<Quad> {
         let color = [1.0, 1.0, 1.0, alpha];
         let px = |p: [f32; 2]| [left + p[0] * k, p[1] * k];
         let mut out = Vec::new();
@@ -601,7 +614,7 @@ impl Boot {
         let [x, y] = px(self.icon_at);
         let (w, h) = (pic[2] / ATLAS_PER_LAYOUT, pic[3] / ATLAS_PER_LAYOUT);
         out.push(self.quad(1, SAVELOAD_PICTURES, pic, [x, y, x + w * k, y + h * k], color, None));
-        self.word(&self.letters, self.hop_speed, t, color, k, left, &mut out);
+        self.word(letters, hop_speed, t, color, k, left, &mut out);
         // The pen hangs from the icon's bottom right corner, turned about its top left.
         // A looping animation restarts on the first 60 Hz tick after its period (the game steps in
         // whole frames and drops the remainder), so the second pass runs a part of a frame behind.

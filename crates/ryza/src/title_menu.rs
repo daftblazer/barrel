@@ -124,6 +124,13 @@ pub struct Input {
     pub confirm: Option<i32>,
     /// On Settings: the frames of the tab buttons (LB -1, RB 1), for scripted runs.
     pub tabs: Vec<(i32, i32)>,
+    /// On Settings: the frames of a change of the row under the cursor (left -1, right 1) and of
+    /// B (the confirm's frame is A), for scripted runs.
+    pub changes: Vec<(i32, i32)>,
+    pub backs: Vec<i32>,
+    /// The screen the chosen item opened was left after this frame: the menu is shown again, the
+    /// cursor still on the item, from the next.
+    pub returned: Option<i32>,
 }
 
 /// The frames the chosen item takes to fade out once chosen, and the share of its pulse's opacity
@@ -383,8 +390,12 @@ impl Menu {
         let n = shown.len();
         let first = shown.iter().position(|&i| i == LOAD_GAME).unwrap_or(0);
         let since = e - self.settled(n);
+        // Back from the screen an item opened: the items are all in place and the cursor comes in
+        // again, counting from the frame after the screen's last.
+        let back = input.returned.filter(|&r| frame > r);
+        let cursor_age = back.map_or(since, |r| frame - r);
         // Once an item is chosen the cursor and the pulse stand where they were.
-        let live = input.choose.map_or(frame, |c| frame.min(c));
+        let live = if back.is_some() { frame } else { input.choose.map_or(frame, |c| frame.min(c)) };
         let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, live) } else { Vec::new() };
         let on = moves.last().map_or(first, |m| m.1);
         let mut out = Vec::new();
@@ -397,15 +408,15 @@ impl Menu {
                 (line, goal, start) = (at(line, goal, start, f), middle(to), f);
             }
             let y = self.top + at(line, goal, start, frame);
-            let t = since as f32 * FRAME;
+            let t = cursor_age as f32 * FRAME;
             let alpha = self.in_color.at(t)[3] / 255.0;
             let x = self.selector + self.in_pos.at(t)[0];
             // The turn about the upright line through the cursor's node as it comes in, and the
             // pictures' own turning.
             let swing = self.in_turn.at(t * self.in_turn_speed)[1].rem_euclid(360.0).to_radians();
             // STAND-IN: From the button on an item the cursor's turn runs one frame ahead (the capture's icons sit 1.5 degrees on from the loop's from that frame on); the real thing is the cursor's own leave.
-            let ahead = i32::from(input.choose.is_some_and(|c| frame >= c));
-            let spin = self.rotate.at(loop_shown(since + ahead, self.rotate.duration()))[2];
+            let ahead = i32::from(back.is_none() && input.choose.is_some_and(|c| frame >= c));
+            let spin = self.rotate.at(loop_shown(cursor_age + ahead, self.rotate.duration()))[2];
             let (aw, ah) = self.atlas[1];
             for icon in &self.icons {
                 let turned = (spin * icon.turns).rem_euclid(360.0).to_radians();
@@ -442,14 +453,17 @@ impl Menu {
             let alpha = match selected {
                 // The selected item's pulse: down to half and back, from when it was selected.
                 true => {
-                    let ticks = moves.last().map_or(since + 1 - (frame - live), |m| live - m.0 + 1);
+                    let ticks = match back {
+                        Some(r) => frame - r,
+                        None => moves.last().map_or(since + 1 - (frame - live), |m| live - m.0 + 1),
+                    };
                     let d = self.blink.duration();
                     let phase = loop_time(ticks as f32, 2.0 * d, 1.0);
                     self.blink.at(if phase < d { phase } else { 2.0 * d - phase })[3] / 255.0
                 }
                 false => self.slide_color.at(t)[3] / 255.0,
             };
-            let alpha = match input.choose.filter(|&c| selected && frame >= c) {
+            let alpha = match input.choose.filter(|&c| selected && frame >= c && back.is_none()) {
                 Some(c) => alpha * CHOSEN_START * (1.0 - (frame - c) as f32 / CHOSEN_FADE as f32).max(0.0),
                 None => alpha,
             };

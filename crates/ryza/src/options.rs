@@ -10,13 +10,13 @@
 use std::collections::HashMap;
 
 use crate::graphics::{self, Item, Quality};
-use crate::options_view::{Kind, Page, Row, Screen};
+use crate::options_view::{Ask, Kind, Page, Row, Screen};
 use crate::title_menu::{Hold, Input, Repeat};
 
 /// The black cover rises as the load screen's (`load::COVER_RISE`, 20 frames to full) and the
 /// screen fades in from the frame after it is full (capture: bg alpha 11/15 on the 30th frame
 /// after the button).
-const COVER_FULL: i32 = 20;
+pub const COVER_FULL: i32 = 20;
 const COVER_RISE: f32 = 18.0;
 const SCREEN_AGE_AT: i32 = COVER_FULL - 1;
 
@@ -384,6 +384,14 @@ impl State {
                 _ => Page::List,
             },
             shoulders: ['\u{4e3}', '\u{4e7}'],
+            ask: Ask {
+                text: word(655_372),
+                yes: word(4_194_375),
+                no: word(4_194_376),
+                // Select, Back and Confirm.
+                help: [('\u{4e1}', word(4_521_991)), ('\u{4d8}', word(4_521_989)), ('\u{4da}', word(4_521_988))].to_vec(),
+            },
+            leave: Default::default(),
         }
     }
 

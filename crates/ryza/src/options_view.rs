@@ -34,7 +34,9 @@ pub const CAPTION: usize = 9;
 pub const NO_IMAGE: usize = 10;
 pub const MIX: usize = 11;
 pub const PAD: usize = 12;
-pub const TEXTURES: usize = 13;
+pub const WINDOW: usize = 13;
+pub const MEMORYMAP: usize = 14;
+pub const TEXTURES: usize = 15;
 
 // STAND-IN: the Keyboard page's places (layout pixels) are the layout's nodes summed (the template's window at its menu's node, the scroll bar and the commands' rows inside it: `uil_quick_menu_key_assignment.xml`) and then read off the capture's quads (settings-tabs 1675, whose rows sit 50.4 pixels, 33.6 layout, apart).
 const KEYS_WINDOW_AT: [f32; 2] = [200.0 / 1.5, 148.0];
@@ -86,6 +88,25 @@ const LINE_SPACE: f32 = 10.0 / 1.5;
 // STAND-IN: a description line is at most this wide (layout pixels, the advances with the space after its last word), fitted to the captures' wraps: "...the louder the " (325.33) stays on its line, "...setting it to " (326.22) breaks (ryza-recomp settings-tabs, title-options); the layout's `line_char_length` (20 full-width) is not the game's rule.
 const LINE_WIDTH: f32 = 325.75;
 
+/// The leave dialog's places in the layout's pixels. The panel is the notification layout's `top` dialog (633 x 267; the capture draws it one pixel left of the nodes' sum and one wider).
+// STAND-IN: the panel's fit and the box's place and size are the capture's (settings-leave 1600): the balloon select's window is placed by the game's own balloon code from the dialog's `balloon_pos` (not read), and its width comes out 200 where the template says 215.
+const ASK_PANEL_FIT: [f32; 3] = [-1.0, 0.0, 1.0];
+/// The panel's own margins (370 and 430 style pixels) add to its height: the capture draws no middle strip.
+const ASK_PANEL_HEIGHT: f32 = 800.0 / 3.0;
+const ASK_BOX_AT: [f32; 2] = [930.0, 380.0];
+const ASK_BOX_SIZE: [f32; 2] = [200.0, 121.0];
+/// The items' origin in the window (the template's `__uimenu_body`), the cursor's place in it and its margin and height, and the rows' pitch.
+const ASK_BODY: [f32; 2] = [23.0, 30.0];
+const ASK_CURSOR: [f32; 2] = [2.0, -8.0];
+const ASK_CURSOR_MARGIN: f32 = 54.0;
+const ASK_CURSOR_HEIGHT: f32 = 116.0 / 3.0;
+const ASK_ROW_PITCH: f32 = 34.0;
+// STAND-IN: the dialog's text fits (line width, spacing, offsets) are read off the capture's glyphs; the real thing is the game's text box.
+const ASK_LINE_CHARS: f32 = 23.0;
+const ASK_LINE_SPACE: f32 = 10.0;
+const ASK_TEXT_FIT: [f32; 2] = [-5.0, -5.05];
+const ASK_ITEM_FIT: f32 = 0.0;
+
 /// The text colour of the template `TEXTCOLOR_BROWN` (26, 0, 0), the tags `<CLGR>` (green) and `<CLRE>` (red).
 const BROWN: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
 const GREEN: [f32; 3] = [0.0, 140.0 / 255.0, 0.0];
@@ -106,6 +127,12 @@ pub struct Sources<'a> {
     pub mix_styles: &'a [u8],
     pub pad_styles: &'a [u8],
     pub anims: &'a [u8],
+    /// The leave dialog: `uil_quick_menu_notification`, the Yes / No box (`uil_mt_balloon_select`, `uil_lf_balloon_select`) and the styles of its pictures.
+    pub notification: &'a [u8],
+    pub balloon: &'a [u8],
+    pub balloon_line: &'a [u8],
+    pub window_styles: &'a [u8],
+    pub memorymap_styles: &'a [u8],
     pub glyphs: [HashMap<char, Glyph>; 2],
     /// The atlases in style pixels, by texture number (`OPTION` ... `CAPTION`, `MIX`, `PAD`; the others are 0).
     pub atlases: [(u32, u32); TEXTURES],
@@ -157,6 +184,19 @@ pub struct Screen {
     /// The two shoulder keys' glyphs at the tabs' ends.
     pub shoulders: [char; 2],
     pub page: Page,
+    /// The words of the leave dialog, and how the leaving looks on this frame.
+    pub ask: Ask,
+    pub leave: crate::leave::Look,
+}
+
+/// The words of the dialog that asks whether to keep the changes on leaving.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Ask {
+    pub text: String,
+    pub yes: String,
+    pub no: String,
+    /// The bar under it: the button's glyph and its words.
+    pub help: Vec<(char, String)>,
 }
 
 /// Where a frame of the screen is.
@@ -262,6 +302,19 @@ pub struct View {
     help_at: [f32; 2],
     help_text: Label,
     help_left: f32,
+    ask_panel: Style,
+    ask_panel_at: [f32; 2],
+    ask_panel_size: [f32; 2],
+    ask_text: Label,
+    ask_text_at: [f32; 2],
+    ask_box: Style,
+    ask_cursor: Style,
+    ask_item: Label,
+    ask_item_at: [f32; 2],
+    ask_slide_color: Curve,
+    ask_slide_pos: Curve,
+    ask_cursor_base: Curve,
+    ask_cursor_add: Curve,
 }
 
 fn first(s: &Style) -> Result<[f32; 4], String> {
@@ -285,6 +338,9 @@ impl View {
         let tab = parse(src.tab, "uil_quick_menu_tab")?;
         let saveload = parse(src.saveload, "uil_a21_saveload")?;
         let help_layout = parse(src.help, "uil_a21_shade")?;
+        let notification = parse(src.notification, "uil_quick_menu_notification")?;
+        let balloon = parse(src.balloon, "uil_mt_balloon_select")?;
+        let balloon_line = parse(src.balloon_line, "uil_lf_balloon_select")?;
         let styles = [
             parse(src.option_styles, "uis_gen_a21_option")?,
             parse(src.v2_common_styles, "uis_gen_a21v2_common")?,
@@ -293,6 +349,8 @@ impl View {
             parse(src.caption_styles, "uis_gen_a21_caption")?,
             parse(src.mix_styles, "uis_gen_a21_mix")?,
             parse(src.pad_styles, "uis_gen_a24_option_steam")?,
+            parse(src.window_styles, "uis_gen_a21_window")?,
+            parse(src.memorymap_styles, "uis_gen_a21_memorymap")?,
         ];
         let styles: Vec<&Element> = styles.iter().collect();
         let st = |e: &Element| style_of(&styles, e);
@@ -381,6 +439,15 @@ impl View {
             let (name, _) = inside(line, "name", [0.0; 2]).ok_or("keys: no name")?;
             inside(name, "name_text_off", [0.0; 2]).ok_or("keys: no name_text_off")?
         };
+        // The leave dialog: the notification layout's `top` dialog (the panel and its text), the
+        // balloon select's window and cursor, its line's text.
+        let (top, top_at) = node(&notification, "top")?;
+        let (dialog, dialog_at) = inside(top, "dialog", top_at).ok_or("notification: no top/dialog")?;
+        let (ask_bg, ask_bg_at) = inside(dialog, "bg", dialog_at).ok_or("dialog: no bg")?;
+        let (ask_words, ask_words_at) = inside(dialog, "text", dialog_at).ok_or("dialog: no text")?;
+        let (balloon_window, _) = node(&balloon, "__uimenu_window")?;
+        let (balloon_cursor, _) = node(&balloon, "base")?;
+        let (balloon_text, balloon_text_at) = node(&balloon_line, "text")?;
         let gauge_style = st(gauge_n)?;
         let blink = curve(src.anims, "anm_common_blink", "color")?;
         // Row 0's node inside the list: the template's item list and its first row's place.
@@ -467,6 +534,19 @@ impl View {
             help_at,
             help_text: help_label,
             help_left: left_side[0],
+            ask_panel: st(ask_bg)?,
+            ask_panel_at: ask_bg_at,
+            ask_panel_size: size_of(ask_bg),
+            ask_text: text_label(ask_words),
+            ask_text_at: ask_words_at,
+            ask_box: st(balloon_window)?,
+            ask_cursor: st(balloon_cursor)?,
+            ask_item: text_label(balloon_text),
+            ask_item_at: balloon_text_at,
+            ask_slide_color: curve(src.anims, "anm_common_slide_in_bottom", "color")?,
+            ask_slide_pos: curve(src.anims, "anm_common_slide_in_bottom", "pos")?,
+            ask_cursor_base: curve(src.anims, "anm_common_cursor_base", "color")?,
+            ask_cursor_add: curve(src.anims, "anm_common_cursor_add_75", "color")?,
         })
     }
 }
@@ -642,7 +722,7 @@ fn is_icon(c: char) -> bool {
 
 /// Splits `text` into the description's lines: `^00` breaks a line, a line wraps at a space
 /// past `LINE_WIDTH`, `<CLGR>`, `<CLRE>` and `<CLNR>` set the colour from the next glyph (the buttons' pictures stay white).
-fn description(text: &str, advance: impl Fn(char) -> f32) -> Vec<Vec<(char, [f32; 3])>> {
+fn description(text: &str, width: f32, advance: &dyn Fn(char) -> f32) -> Vec<Vec<(char, [f32; 3])>> {
     let mut lines: Vec<Vec<(char, [f32; 3])>> = vec![Vec::new()];
     let mut color = BROWN;
     let mut word: Vec<(char, [f32; 3])> = Vec::new();
@@ -650,7 +730,7 @@ fn description(text: &str, advance: impl Fn(char) -> f32) -> Vec<Vec<(char, [f32
     let flush = |lines: &mut Vec<Vec<(char, [f32; 3])>>, word: &mut Vec<(char, [f32; 3])>| {
         let count = |l: &Vec<(char, [f32; 3])>| l.iter().map(|&(c, _)| advance(c)).sum::<f32>();
         let last = lines.last_mut().unwrap();
-        if !last.is_empty() && count(last) + count(word) > LINE_WIDTH {
+        if !last.is_empty() && count(last) + count(word) > width {
             lines.push(std::mem::take(word));
         } else {
             last.append(word);
@@ -684,6 +764,11 @@ fn description(text: &str, advance: impl Fn(char) -> f32) -> Vec<Vec<(char, [f32
     }
     flush(&mut lines, &mut word);
     lines
+}
+
+/// An opacity as the byte the game keeps it in.
+fn byte(alpha: f32) -> f32 {
+    (alpha.clamp(0.0, 1.0) * 255.0).round() / 255.0
 }
 
 /// How far a name sits below its centred place in the capture (`NAME_DROPS`).
@@ -760,8 +845,16 @@ impl View {
             Page::Pad => self.pad(&mut pen, s, moment),
         }
 
-        // The help bar.
-        self.help_bar(&mut pen, &s.help, moment);
+        // The leave dialog over the page, then the help bar (the list's, or the dialog's own as the dialog comes and goes).
+        self.ask(&mut pen, s);
+        let by_age = (((moment.age as f32 - HELP_AT) / FADE_FRAMES).clamp(0.0, 1.0), ((moment.age as f32 - HELP_AT) / PLATE_FRAMES).clamp(0.0, 1.0));
+        let list = s.leave.list_help.unwrap_or(by_age);
+        if list.0 > 0.0 {
+            self.help_bar(&mut pen, &s.help, list, true);
+        } else if let Some(plate) = s.leave.dialog_help {
+            // The dialog's bar loses its words as its plate starts to shrink.
+            self.help_bar(&mut pen, &s.ask.help, plate, plate.1 >= 1.0);
+        }
         (pen.out, pen.clips, pen.glow)
     }
 
@@ -776,7 +869,7 @@ impl View {
         let body = look(&self.body_text, None);
         let font = &self.glyphs[usize::from(!body.small)];
         let advance = |c: char| font.get(&c).map_or(0.0, |g| g.advance as f32 * body.size / ATLAS_SIZE);
-        for (n, line) in description(&s.text, advance).iter().enumerate() {
+        for (n, line) in description(&s.text, LINE_WIDTH, &advance).iter().enumerate() {
             let at = moved([self.body_text_at[0], self.body_text_at[1] + n as f32 * (self.body_text.size + LINE_SPACE)]);
             let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, 1.0))).collect();
             pen.runs(&body, at, &chars, None);
@@ -899,12 +992,54 @@ impl View {
         }
     }
 
-    fn help_bar(&self, pen: &mut Pen, entries: &[(char, String)], moment: Moment) {
-        let alpha = ((moment.age as f32 - HELP_AT) / FADE_FRAMES).clamp(0.0, 1.0);
+    /// The dialog that asks whether to keep the changes: its panel and words slide in from below
+    /// (the common slide, its alpha and its rise), the box of choices fades in beside it.
+    fn ask(&self, pen: &mut Pen, s: &Screen) {
+        let Some(d) = s.leave.dialog else { return };
+        let t = d.slide * self.ask_slide_color.duration();
+        let alpha = byte(self.ask_slide_color.at(t)[3] / 255.0);
+        let rise = self.ask_slide_pos.at(t)[1];
+        let look = |l: &Label, centred: Option<f32>| Look { size: l.size, small: l.small, align: l.align, centred };
+        let moved = |p: [f32; 2]| [p[0] + ASK_PANEL_FIT[0], p[1] + rise];
+        pen.wrap(MEMORYMAP, &self.ask_panel, moved(self.ask_panel_at), [self.ask_panel_size[0] + ASK_PANEL_FIT[2], self.ask_panel_size[1].min(ASK_PANEL_HEIGHT)], [1.0, 1.0, 1.0, alpha]);
+        // The words, centred on the node, each line over the next.
+        let words = look(&self.ask_text, None);
+        let font = &self.glyphs[usize::from(!words.small)];
+        let advance = |c: char| font.get(&c).map_or(0.0, |g| g.advance as f32 * words.size / ATLAS_SIZE);
+        let lines = description(&s.ask.text, ASK_LINE_CHARS * words.size, &advance);
+        let pitch = words.size + ASK_LINE_SPACE;
+        let first = self.ask_text_at[1] + rise - (lines.len() as f32 * pitch - ASK_LINE_SPACE) / 2.0;
+        for (n, line) in lines.iter().enumerate() {
+            let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, alpha))).collect();
+            pen.runs(&words, [self.ask_text_at[0] + ASK_TEXT_FIT[0], first + n as f32 * pitch + ASK_TEXT_FIT[1]], &chars, None);
+        }
+        // The box: its window, the cursor on its row and the two words.
+        let at = ASK_BOX_AT;
+        let box_alpha = byte(d.box_alpha);
+        pen.wrap(WINDOW, &self.ask_box, at, ASK_BOX_SIZE, [1.0, 1.0, 1.0, box_alpha]);
+        let row = |n: usize| ASK_ROW_PITCH * n as f32;
+        let cursor_at = [at[0] + ASK_BODY[0] + ASK_CURSOR[0], at[1] + ASK_BODY[1] + ASK_CURSOR[1] + row(d.on as usize)];
+        let tint = if d.white { [1.0; 3] } else { let c = self.ask_cursor_base.at((d.clock % 120.0) / 60.0); [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0] };
+        let cursor_size = [ASK_BOX_SIZE[0] - ASK_CURSOR_MARGIN, ASK_CURSOR_HEIGHT];
+        pen.wrap(COMMON_2, &self.ask_cursor, cursor_at, cursor_size, Self::rgba(tint, box_alpha));
+        if !d.white {
+            // The cursor's glow, added over it (its opacity runs with the box's).
+            let glow = self.ask_cursor_add.at((d.clock % 120.0) / 60.0);
+            let from = pen.out.len();
+            pen.wrap(COMMON_2, &self.ask_cursor, cursor_at, cursor_size, [glow[0] / 255.0, glow[1] / 255.0, glow[2] / 255.0, byte(glow[3] / 255.0 * box_alpha)]);
+            pen.glow = from..pen.out.len();
+        }
+        for (n, word) in [&s.ask.yes, &s.ask.no].into_iter().enumerate() {
+            let place = [at[0] + ASK_BODY[0] + self.ask_item_at[0], at[1] + ASK_BODY[1] + self.ask_item_at[1] + row(n) + ASK_ITEM_FIT];
+            pen.text(&look(&self.ask_item, None), place, word, Self::rgba(BROWN, box_alpha), None);
+        }
+    }
+
+    /// A help bar at `alpha`, its plate grown `grow` of the way from its shortest to its full width.
+    fn help_bar(&self, pen: &mut Pen, entries: &[(char, String)], (alpha, grow): (f32, f32), words_too: bool) {
         if alpha <= 0.0 {
             return;
         }
-        let grow = ((moment.age as f32 - HELP_AT) / PLATE_FRAMES).clamp(0.0, 1.0);
         let guide = entries.iter().map(|(g, w)| format!("{g}{w}")).collect::<Vec<_>>().join(" ");
         let look = Look { size: self.help_text.size, small: self.help_text.small, align: self.help_text.align, centred: None };
         let words = pen.width(&look, &guide) / pen.k;
@@ -916,7 +1051,9 @@ impl View {
         let width = PLATE_MIN + (full - PLATE_MIN) * grow;
         let at = [right - width, self.help_at[1]];
         pen.wrap(HELP, &self.help, at, [width, first(&self.help).map_or(0.0, |p| p[3] / ATLAS_PER_LAYOUT)], [1.0, 1.0, 1.0, alpha]);
-        pen.text(&look, [1280.0 + self.help_text.at[0], 720.0 + self.help_text.at[1]], &guide, [1.0, 1.0, 1.0, alpha], None);
+        if words_too {
+            pen.text(&look, [1280.0 + self.help_text.at[0], 720.0 + self.help_text.at[1]], &guide, [1.0, 1.0, 1.0, alpha], None);
+        }
     }
 }
 
