@@ -2327,7 +2327,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                         // (the dialog holds the cursor's blink still while it is up)
                         let still_age = age - leave.stood(frame);
-                        let blink_age = tab_change.map_or(still_age, |f| (frame - f + (1)).min(still_age));
+                        let blink_age = tab_change.map_or(still_age, |f| (frame - f + 1 - leave.stood(frame)).max(0).min(still_age));
                         let blink = if pump.is_some() { (blink_age * barrel_ryza::options::blink_speed(tab)) as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
                         let clips;
                         let glow;

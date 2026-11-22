@@ -1013,9 +1013,12 @@ impl View {
             let chars: Vec<(char, [f32; 4])> = line.iter().map(|&(c, col)| (c, Self::rgba(col, alpha))).collect();
             pen.runs(&words, [self.ask_text_at[0] + ASK_TEXT_FIT[0], first + n as f32 * pitch + ASK_TEXT_FIT[1]], &chars, None);
         }
-        // The box: its window, the cursor on its row and the two words.
+        // The box: its window, the cursor on its row and the two words (nothing once it is faded out).
         let at = ASK_BOX_AT;
         let box_alpha = byte(d.box_alpha);
+        if box_alpha <= 0.0 {
+            return;
+        }
         pen.wrap(WINDOW, &self.ask_box, at, ASK_BOX_SIZE, [1.0, 1.0, 1.0, box_alpha]);
         let row = |n: usize| ASK_ROW_PITCH * n as f32;
         let cursor_at = [at[0] + ASK_BODY[0] + ASK_CURSOR[0], at[1] + ASK_BODY[1] + ASK_CURSOR[1] + row(d.on as usize)];

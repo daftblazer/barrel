@@ -62,11 +62,11 @@ enum Phase {
     /// The dialog came on `at` (the frame of the B), the cursor on `on`.
     Asking { at: i32, on: Choice },
     /// The dialog (`opened` at) slides out from `at` and the list stays.
-    Closing { opened: i32, at: i32 },
+    Closing { opened: i32, at: i32, on: Choice },
     /// No: the dialog slides out from `at`, then the screen is left.
-    Discarding { at: i32 },
+    Discarding { opened: i32, at: i32 },
     /// Yes: the changes are written at `at`, then the black, the notice, and the screen is left.
-    Saving { at: i32 },
+    Saving { opened: i32, at: i32 },
     /// Left with nothing to ask.
     Left { at: i32 },
 }
@@ -77,11 +77,13 @@ pub struct Leave {
     phase: Phase,
     /// Frames the dialog held the list still in earlier asks (the cursor's blink stands while it is up).
     stood: i32,
+    /// The key that closed the dialog last (the list's help bar comes back after it).
+    closed: Option<i32>,
 }
 
 impl Default for Leave {
     fn default() -> Leave {
-        Leave { phase: Phase::Idle, stood: 0 }
+        Leave { phase: Phase::Idle, stood: 0, closed: None }
     }
 }
 
@@ -131,8 +133,9 @@ pub struct Look {
 impl Leave {
     fn settle(&mut self, frame: i32) {
         match self.phase {
-            Phase::Closing { opened, at } if frame >= at + SLIDE => {
+            Phase::Closing { opened, at, .. } if frame >= at + SLIDE => {
                 self.stood += at + SLIDE - opened;
+                self.closed = Some(at);
                 self.phase = Phase::Idle;
             }
             _ => {}
@@ -147,7 +150,8 @@ impl Leave {
         me.settle(frame);
         match me.phase {
             Phase::Asking { at, .. } => me.stood + (frame - at).max(0),
-            Phase::Closing { opened, at } => me.stood + (frame.min(at + SLIDE) - opened).max(0),
+            Phase::Closing { opened, at, .. } => me.stood + (frame.min(at + SLIDE) - opened).max(0),
+            Phase::Discarding { opened, .. } | Phase::Saving { opened, .. } => me.stood + (frame - opened).max(0),
             _ => me.stood,
         }
     }
@@ -159,14 +163,14 @@ impl Leave {
             (Phase::Idle, Key::Back) => {
                 self.phase = if changed { Phase::Asking { at: frame, on: Choice::No } } else { Phase::Left { at: frame } };
             }
-            (Phase::Asking { at, .. }, Key::Back) => self.phase = Phase::Closing { opened: at, at: frame },
+            (Phase::Asking { at, on }, Key::Back) => self.phase = Phase::Closing { opened: at, at: frame, on },
             (Phase::Asking { at, on }, Key::Toggle) => self.phase = Phase::Asking { at, on: if on == Choice::Yes { Choice::No } else { Choice::Yes } },
-            (Phase::Asking { on: Choice::Yes, .. }, Key::Confirm) => {
-                self.phase = Phase::Saving { at: frame };
+            (Phase::Asking { at: opened, on: Choice::Yes }, Key::Confirm) => {
+                self.phase = Phase::Saving { opened, at: frame };
                 return Outcome::Save;
             }
-            (Phase::Asking { on: Choice::No, .. }, Key::Confirm) => {
-                self.phase = Phase::Discarding { at: frame };
+            (Phase::Asking { at: opened, on: Choice::No }, Key::Confirm) => {
+                self.phase = Phase::Discarding { opened, at: frame };
                 return Outcome::Discard;
             }
             _ => {}
@@ -190,8 +194,8 @@ impl Leave {
     pub fn left_at(&self) -> Option<i32> {
         match self.phase {
             Phase::Left { at } => Some(at),
-            Phase::Discarding { at } => Some(at + SLIDE),
-            Phase::Saving { at } => Some(at + SAVED_AT),
+            Phase::Discarding { at, .. } => Some(at + SLIDE),
+            Phase::Saving { at, .. } => Some(at + SAVED_AT),
             _ => None,
         }
     }
@@ -210,7 +214,11 @@ impl Leave {
         };
         let shown = |p: Plate| (p.0 > 0.0).then_some(p);
         match me.phase {
-            Phase::Idle | Phase::Left { .. } => {}
+            Phase::Idle | Phase::Left { .. } => {
+                if let Some(c) = me.closed {
+                    look.list_help = Some(plate(frame - (c + LIST_HELP_BACK)));
+                }
+            }
             Phase::Asking { at, on } => {
                 look.dialog = Some(Dialog { slide: ((frame - at + 1) as f32 / SLIDE as f32).clamp(0.0, 1.0), box_alpha: ((frame - at + 1) as f32 / FADE as f32).clamp(0.0, 1.0), on, clock: (frame - at + 1) as f32, white: false });
                 // (the list's bar fades with its plate at full width)
@@ -221,18 +229,18 @@ impl Leave {
         }
         // The closing phases (B, and A on No / Yes) all slide the dialog out from `at`.
         let closing = match me.phase {
-            Phase::Closing { opened, at } => Some((opened, at, false)),
-            Phase::Discarding { at } => Some((at, at, false)),
-            Phase::Saving { at } => Some((at, at, true)),
+            Phase::Closing { opened, at, on } => Some((opened, at, on)),
+            Phase::Discarding { opened, at } => Some((opened, at, Choice::No)),
+            Phase::Saving { opened, at } => Some((opened, at, Choice::Yes)),
             _ => None,
         };
-        if let Some((opened, at, _)) = closing {
+        if let Some((opened, at, on)) = closing {
             let age = frame - at + 1;
             // A dialog closed before it was all the way in goes out from where it was.
             let came = (at - opened).min(SLIDE - 1) + 1;
             let slide = ((came - age).max(0) as f32 / SLIDE as f32).min(1.0);
             if age <= SLIDE {
-                look.dialog = Some(Dialog { slide, box_alpha: (1.0 - age as f32 / FADE as f32).max(0.0), on: Choice::No, clock: 0.0, white: true });
+                look.dialog = Some(Dialog { slide, box_alpha: (1.0 - age as f32 / FADE as f32).max(0.0), on, clock: 0.0, white: true });
             }
             look.dialog_help = shown(out(at, DIALOG_HELP_OUT));
             let back = frame - (at + LIST_HELP_BACK);
@@ -243,7 +251,7 @@ impl Leave {
                 look.list_help = Some((0.0, 0.0));
             }
         }
-        if let Phase::Saving { at } = me.phase {
+        if let Phase::Saving { at, .. } = me.phase {
             look.cover = ((frame - at - COVER_FROM) as f32 / COVER_FRAMES).clamp(0.0, 1.0);
             let age_in = frame - (at + NOTICE_AT);
             let alpha = if frame < at + NOTICE_OUT + 1 { (age_in as f32 / FADE as f32).clamp(0.0, 1.0) } else { (1.0 - (frame - at - NOTICE_OUT) as f32 / FADE as f32).clamp(0.0, 1.0) };
