@@ -500,7 +500,9 @@ frames after the apply (`display: inner, fullscreen, swapchain, present mode, me
 KDE Wayland): resolution 1600x900 -> inner and swapchain 1600x900; Borderless -> fullscreen, 3440x1440 (the
 screen); back to Window -> 1280x720 windowed; vsync off with the limit Unlimited -> MAILBOX, 2.6 ms a frame; limit
 30 (vsync off) -> 33.1 ms a frame. Note: with vsync on this desktop's FIFO swapchain ran the title at about 50 ms a
-frame (the compositor's frame callbacks; refresh unknown on Wayland, so no MAILBOX), as before this change.
+frame (the compositor's frame callbacks; refresh unknown on Wayland, so no MAILBOX), as before this change. The runs
+were made with the session locked (`loginctl` LockedHint=yes), where the compositor throttles a window's frame
+callbacks; the pace on an unlocked screen is not measured yet.
 
 ## Controller (Ryza)
 
