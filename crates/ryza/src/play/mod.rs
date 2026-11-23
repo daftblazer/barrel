@@ -233,7 +233,10 @@ fn args(args: Vec<String>) -> Result<Args> {
                         Some("ldown") => a.title_input.list_holds.push(Hold { from, until: Some(held()?), way: 1 }),
                         Some("lup") => a.title_input.list_holds.push(Hold { from, until: Some(held()?), way: -1 }),
                         Some("choose") => a.title_input.choose = Some(from),
-                        Some("ok") => a.title_input.confirm = Some(from),
+                        Some("ok") => {
+                            a.title_input.confirm = Some(from);
+                            a.title_input.answers.push(from);
+                        }
                         Some("right") => a.title_input.changes.push((from, 1)),
                         Some("left") => a.title_input.changes.push((from, -1)),
                         Some("back") => a.title_input.backs.push(from),
@@ -1854,6 +1857,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut display_probe: Option<(std::time::Instant, u32)> = None;
     let reapply_at = std::env::var("BARREL_REAPPLY_AT").ok().and_then(|v| v.parse::<u32>().ok());
     let mut scripted_saved = false;
+    let mut scripted_tab_change: Option<i32> = None;
+    let mut scripted_blink: Option<i32> = None;
+    let mut blinks = barrel_ryza::leave::Blinks::new(0);
     let mut was_in_settings = false;
     let mut scripted_holds: Vec<barrel_ryza::title_menu::Hold> = Vec::new();
     // The cursor's row when the holds were last cleared (a tab change clears them).
@@ -2317,7 +2323,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 options_state = r.state;
                 leave = r.leave;
                 scripted_holds = r.holds;
+                scripted_tab_change = r.tab_change;
+                scripted_blink = r.blink;
                 title_input.returned = leave.left_at();
+                title_input.returned_lead = leave.lead();
                 title_input.returned_spin = menu.return_spin(&title_input, c);
                 // The replayed A on Yes writes the changes where a player's would (once), and the
                 // settings they come to are applied.
@@ -2377,18 +2386,21 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     }
                 }
                 if in_settings && !was_in_settings {
+                    options_state.changed = false;
                     options_initial = options_state.clone();
+                    blinks = barrel_ryza::leave::Blinks::new(settings_at(&title_input).unwrap_or(frame) + barrel_ryza::options::COVER_FULL);
                     leave = barrel_ryza::leave::Leave::default();
                     discard = false;
                 }
                 was_in_settings = in_settings;
+                let cue = |s: &mut Option<barrel_ryza::sound::Sound>, name: &'static str, id: u32| {
+                    if let Some(s) = s.as_mut() {
+                        s.request(name, barrel_ryza::sound::Cue::effect(i64::from(frame), id));
+                    }
+                };
+                let mut turn_tab: Option<(i32, i32, i32)> = None;
                 if in_settings {
                     use barrel_ryza::leave::{Key, Outcome};
-                    let cue = |s: &mut Option<barrel_ryza::sound::Sound>, name: &'static str, id: u32| {
-                        if let Some(s) = s.as_mut() {
-                            s.request(name, barrel_ryza::sound::Cue::effect(i64::from(frame), id));
-                        }
-                    };
                     if leave.asking() {
                         // The dialog's box: up and down move its cursor, A answers, B closes it.
                         if pressed(Act::Up) || pressed(Act::Down) {
@@ -2404,8 +2416,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                                 Outcome::Save => {
                                     save_options(&options_state);
                                     apply_settings = true;
+                                    options_state.changed = false;
+                                    options_initial = options_state.clone();
                                 }
-                                Outcome::Discard => discard = true,
+                                Outcome::Discard => discard = leave.leaving(),
                                 Outcome::Nothing => {}
                             }
                         }
@@ -2419,11 +2433,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                         for (act, way) in [(Act::TabPrev, -1), (Act::TabNext, 1)] {
                             if pressed(act) || title_input.tabs.contains(&(frame, way)) {
-                                options_state.tab_by(way);
-                                tab_changed_at = Some(frame);
-                                cue(&mut sound, "page", barrel_ryza::sound::PAGE);
-                                title_input.list_holds.clear();
-                                options_base = options_state.cursor[options_state.tab];
+                                // With something changed the dialog asks first; the tab turns once it is answered.
+                                if leave.tab(way, options_state.changed, frame) == barrel_ryza::leave::Tab::Now {
+                                    turn_tab = Some((frame, way, leave.stood(frame)));
+                                    leave.new_tab();
+                                } else {
+                                    cue(&mut sound, "cancel", barrel_ryza::sound::CANCEL);
+                                }
                             }
                         }
                         if pressed(Act::Back) {
@@ -2432,6 +2448,21 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             cue(&mut sound, "cancel", barrel_ryza::sound::CANCEL);
                         }
                     }
+                }
+                if let Some(due) = leave.take_due(frame) {
+                    if due.discard {
+                        options_state.discard_changes(&options_initial);
+                    }
+                    turn_tab = Some((due.at, due.way, due.stood));
+                }
+                if let Some((at, way, stood)) = turn_tab {
+                    let was = options_state.tab;
+                    options_state.tab_by(way);
+                    blinks.turn(was, options_state.tab, at, stood);
+                    tab_changed_at = Some(at);
+                    cue(&mut sound, "page", barrel_ryza::sound::PAGE);
+                    title_input.list_holds.clear();
+                    options_base = options_state.cursor[options_state.tab];
                 }
                 // The screen is left once its leaving is over: the changes the player did not keep are dropped and the title's menu is back.
                 if let Some(l) = leave.look(frame).left {
@@ -2445,6 +2476,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     title_input.returned_spin = title_input.choose.map_or(0, |c| menu.return_spin(&title_input, c));
                     title_input.choose = None;
                     title_input.returned = Some(l);
+                    title_input.returned_lead = leave.lead();
                     options_base = 0;
                     was_in_settings = false;
                     leave = barrel_ryza::leave::Leave::default();
@@ -2548,7 +2580,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 barrel_ryza::options::Stage::Title => {
                     // Back from the screen: the title comes up out of black.
                     if let Some(r) = title_input.returned.filter(|&r| frame > r) {
-                        let alpha = ((r as f32 + barrel_ryza::leave::RETURN_FADE - frame as f32) / barrel_ryza::leave::RETURN_FADE).clamp(0.0, 1.0);
+                        let alpha = (((r - title_input.returned_lead) as f32 + barrel_ryza::leave::RETURN_FADE - frame as f32) / barrel_ryza::leave::RETURN_FADE).clamp(0.0, 1.0);
                         if alpha > 0.0 {
                             quads.push(flow::cover(alpha, (width, height), cover_texture));
                         }
@@ -2561,7 +2593,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         let n = options_state.entries(tab).len().max(1);
                         // The cursor's blink starts again a frame before a tab change (ryza-recomp settings-tabs:
                         // 0.067 of its opacity 55 frames after each RB; from the change itself 0.086).
-                        let tab_change = if pump.is_some() { tab_changed_at } else { title_input.tabs.iter().map(|&(f, _)| f).filter(|&f| f <= frame).max() };
+                        let tab_change = if pump.is_some() { tab_changed_at } else { scripted_tab_change };
                         // The directions held before a scripted tab change belonged to the tab it left.
                         let mut held = title_input.clone();
                         if scripted {
@@ -2576,7 +2608,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                         // (the dialog holds the cursor's blink still while it is up)
                         let still_age = age - leave.stood(frame);
-                        let blink_age = tab_change.map_or(still_age, |f| (frame - f + 1 - leave.stood(frame)).max(0).min(still_age));
+                        let turned = if pump.is_some() { blinks.age(frame, leave.stood(frame)) } else { scripted_blink };
+                        let blink_age = turned.unwrap_or(still_age);
                         let blink = if pump.is_some() { (blink_age * barrel_ryza::options::blink_speed(tab)) as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
                         let clips;
                         let glow;

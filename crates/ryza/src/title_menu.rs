@@ -122,6 +122,8 @@ pub struct Input {
     /// On the load screen: the directions and the frame of the button on a save.
     pub list_holds: Vec<Hold>,
     pub confirm: Option<i32>,
+    /// On Settings: the frames of every A (the answers to the dialog), for scripted runs.
+    pub answers: Vec<i32>,
     /// On Settings: the frames of the tab buttons (LB -1, RB 1), for scripted runs.
     pub tabs: Vec<(i32, i32)>,
     /// On Settings: the frames of a change of the row under the cursor (left -1, right 1) and of
@@ -131,6 +133,8 @@ pub struct Input {
     /// The screen the chosen item opened was left after this frame: the menu is shown again, the
     /// cursor still on the item, from the next.
     pub returned: Option<i32>,
+    /// Frames the title's own clock (its fade, cursor and spin) runs ahead of the screen's last frame.
+    pub returned_lead: i32,
     /// The cursor's turn clock on that frame.
     pub returned_spin: i32,
 }
@@ -413,7 +417,7 @@ impl Menu {
         // again, counting from the frame after the screen's last.
         let back = input.returned.filter(|&r| frame > r);
         // (the cursor's fade, slide and swing start one frame after the return: settings-leave-no 1620, settings-leave 1930)
-        let cursor_age = back.map_or(since, |r| frame - r - 1);
+        let cursor_age = back.map_or(since, |r| frame - r - 1 + input.returned_lead);
         // Once an item is chosen the cursor and the pulse stand where they were.
         let live = if back.is_some() { frame } else { input.choose.map_or(frame, |c| frame.min(c)) };
         let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, live) } else { Vec::new() };
@@ -436,7 +440,7 @@ impl Menu {
             let swing = self.in_turn.at(t * self.in_turn_speed)[1].rem_euclid(360.0).to_radians();
             // STAND-IN: From the button on an item the cursor's turn runs one frame ahead (the capture's icons sit 1.5 degrees on from the loop's from that frame on); the real thing is the cursor's own leave.
             let ahead = i32::from(back.is_none() && input.choose.is_some_and(|c| frame >= c));
-            let spin_age = back.map_or(cursor_age + ahead, |r| input.returned_spin + (frame - r));
+            let spin_age = back.map_or(cursor_age + ahead, |r| input.returned_spin + (frame - r) + input.returned_lead);
             let spin = self.rotate.at(loop_shown(spin_age, self.rotate.duration()))[2];
             let (aw, ah) = self.atlas[1];
             for icon in &self.icons {
@@ -475,7 +479,7 @@ impl Menu {
                 // The selected item's pulse: down to half and back, from when it was selected.
                 true => {
                     let ticks = match back {
-                        Some(r) => frame - r,
+                        Some(r) => frame - r + input.returned_lead,
                         None => moves.last().map_or(since + 1 - (frame - live), |m| live - m.0 + 1),
                     };
                     let d = self.blink.duration();

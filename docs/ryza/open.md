@@ -440,6 +440,36 @@ a title frame from the key (`leave.rs`):
   `PARITY_TURNED_TIES=left`, which the boot rows set and these rows do not); with it set the row is 0 (the
   other three notice rows, 1840, 1880 and 1910, are 0 either way). Add it to that row's command (or `checks.env`).
 
+### The tab change asks too (2026-11-23)
+
+LB or RB with a value changed since the screen opened opens the same dialog first (`Leave::tab`,
+`Then::Tab`; the cursor starts on No); nothing changed turns the tab at once as before. Read off ryza-recomp
+`settings-tabask` (`--title-keys` as in the `settings-tabask*` rows):
+
+- **No** (A on No): the dialog slides out as in the leave, the changes are dropped at the turn and the tab
+  turns 31 frames after the key (`TAB_AFTER_NO`: the frame after the dialog's last, as the title follows a
+  leave). The changed row is back at its first value when the old tab is shown again.
+- **Yes**: written and applied as the leave's Yes does (`apply_settings`), then the black, the notice and the
+  list again as in the leave, and the tab turns 164 frames after the key (`TAB_AFTER_SAVE`, the frame after the
+  leave's last). What was pressed while the dialog or the save was up (a tab button, a change) is dropped.
+  The saved values are the screen's new first values: a later B asks nothing until something changes again.
+- The turned-to tab's help bar fades in from 2 frames after the turn (`TAB_HELP_IN`, one alpha); a plain
+  tab change leaves the bar's fade where it was.
+- Each tab's cursor blinks on its own clock (`leave::Blinks`): it runs while the tab is shown and the dialog is
+  not up, starts with the tab's first visit and goes on from where it was when the tab comes back (Game tab
+  left at 1530 and shown again at 1700: clock 82). This replaces the earlier "restart at every tab change"
+  (the old rows still fit it: they only visit each tab once).
+- B in the tab dialog: not captured; Barrel closes the dialog and stays on the tab, as the leave's does.
+- A B with nothing changed runs the title's fade, cursor and spin one frame ahead of the screen's last frame
+  (`Leave::lead`, from the capture's 2130 to 2160; the dialogs' leaves are fitted without it); the list's help
+  plate of the screen also goes on fading over the title for 15 frames there (not drawn: `settings-tabask2130`
+  has those three quads).
+- Also fixed: a screen opened again after a session that changed something began with "changed" still set.
+- **Parity**: `settings-tabask*` (25 rows, 1520 to 2200) at 0 mismatches. Not rows: the key frames themselves
+  (1500, 1530, 1700, 1760, 1790, 2060, 2120: the original changes a few quads a frame after the key), 1570
+  (the dialog's own help bar one frame behind the leave's fit, as the leave's one reopening), 1930, 1960 and 2030
+  (one quad of the notice's hopping letters, probably the tie of `settings-leave1800` above: unchecked) and 2130.
+
 ### Barrel's own rows on the Graphics tab (2026-11-22)
 
 Barrel's engine options sit in the game's page, among the rows they belong with (the user's choice:

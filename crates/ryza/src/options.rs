@@ -461,6 +461,15 @@ impl State {
         self.first[tab] = self.first[tab].clamp(on.saturating_sub(11), on);
     }
 
+    /// Drops the changes made since `then` (the values as the screen opened them), keeping the tab and the cursors.
+    pub fn discard_changes(&mut self, then: &State) {
+        self.values.clone_from(&then.values);
+        self.graphics = then.graphics.clone();
+        self.render = then.render.clone();
+        self.render_changed = then.render_changed;
+        self.changed = false;
+    }
+
     /// Moves to another tab, by `way` tabs (stopping at the ends).
     pub fn tab_by(&mut self, way: i32) {
         // The game wraps (RB on Controller opens Camera: ryza-recomp scenarios/settings-tabs.sh).
