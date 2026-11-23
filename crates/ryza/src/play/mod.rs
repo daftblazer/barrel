@@ -99,6 +99,10 @@ struct Args {
     save_hour: Option<u32>,
     /// The frame of the game's capture the HUD's pulse starts at (`--hud-at`), to line a frame up with it.
     hud_at: f32,
+    /// The capture frame the field's arrival falls on (`--hud-arrival`, 0 in a run of its own): the area name's banner and the help bar run from it.
+    hud_arrival: f32,
+    /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
+    hud_stick: Vec<(f32, f32)>,
     /// The camera's yaw in the game's terms, when a run is given it (`--camera-yaw`), instead of behind her.
     camera_yaw: Option<f32>,
     /// `--no-skyline`: objects behind the ground are drawn too.
@@ -177,7 +181,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -260,6 +264,13 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--save" => a.save = Some(value()?),
             "--hud" => a.hud = true,
             "--hud-at" => a.hud_at = value()?.parse()?,
+            "--hud-arrival" => a.hud_arrival = value()?.parse()?,
+            "--hud-stick" => {
+                for span in value()?.split(',') {
+                    let (from, to) = span.split_once('-').ok_or("--hud-stick FROM-TO,...")?;
+                    a.hud_stick.push((from.parse()?, to.parse()?));
+                }
+            }
             "--camera-yaw" => a.camera_yaw = Some(value()?.parse()?),
             "--no-skyline" => a.no_skyline = true,
             "--no-occluders" => a.no_occluders = true,
@@ -399,6 +410,24 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     Ok((text::Layer::new(gpu, renderer.pool, renderer.post_pass, &all)?, title, menu(barrel_ryza::boot::TEXTURES)?, Some(boot)))
 }
 
+/// Frames between a pad script's frame and the game frame its stick reaches the field's idle
+/// count (`hud-walk`: the stick at script frame 1900 starts the help bar's fade-out at 1902, 2780
+/// at 2782, and the last stick frame 3299 leaves it its 121 frames of rest before 3422).
+const PAD_LAG: f32 = 2.0;
+
+/// The help bar at capture frame `tick` for a field whose arrival fell on `arrival`, the move
+/// stick out of its dead zone at the script frames of `spans` (`--hud-stick`): stepped from the
+/// arrival frame by frame.
+fn replay_help(arrival: f32, tick: f32, spans: &[(f32, f32)]) -> barrel_ryza::field_hud::HelpBar {
+    let mut bar = barrel_ryza::field_hud::HelpBar::arriving();
+    let mut f = arrival;
+    while f <= tick {
+        bar.step(spans.iter().any(|&(from, to)| f >= from + PAD_LAG && f < to + PAD_LAG), 1.0);
+        f += 1.0;
+    }
+    bar
+}
+
 /// The field HUD's layer (the textures of `barrel_ryza::field_hud`) and its view.
 fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::field_hud::Hud)> {
     use barrel_ryza::field_hud as fh;
@@ -414,12 +443,17 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         ("\\data\\x64\\res_cmn\\ui\\a21_icon.g1t", 0),
         ("\\data\\x64\\res_cmn\\ui\\a21v2_various.g1t", 0),
         ("\\data\\x64\\res_en\\ui\\a21_field.g1t", 1),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
     ];
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
     let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
     let size = |i: usize| (tex[i].width, tex[i].height);
     let hud = fh::Hud::read(fh::Sources {
+        places: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_fm01.xml")?,
+        anims: &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        help: &install.read("\\saves\\ui_en\\a21_button_help\\uil_a21_shade.xml")?,
+        guide_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
         minimap: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_fm_minimap.xml")?,
         time: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_time_display.xml")?,
         collect: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_collect_item.xml")?,
@@ -429,7 +463,7 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         various_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
         strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
-        sizes: [size(2), size(3), size(4), size(5), size(6), size(7)],
+        sizes: [size(2), size(3), size(4), size(5), size(6), size(7), size(8)],
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fh::TEXTURES])?;
     Ok((layer, hud))
@@ -1824,6 +1858,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut prev_drawn_vp: Option<Mat4> = None;
     let mut last = std::time::Instant::now();
     let started = last;
+    let mut help_bar = barrel_ryza::field_hud::HelpBar::arriving();
     let (mut stale, mut frame_no) = (false, 0u32);
     // The keys pressed this frame, for the title's menu, and what the player has done there.
     let mut title_keys: Vec<winit::keyboard::KeyCode> = Vec::new();
@@ -1981,6 +2016,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         };
         if let Some((dt, mut sticks, zoom)) = drive {
             let length = (sticks.left[0] * sticks.left[0] + sticks.left[1] * sticks.left[1]).sqrt();
+            help_bar.step(length > barrel_ryza::walk::MOVE_DEAD_ZONE, dt * 60.0);
             let full = if pump.as_ref().is_some_and(|p| p.held(winit::keyboard::KeyCode::ShiftLeft) || p.held(winit::keyboard::KeyCode::ShiftRight)) { SHIFT_LEAN } else { 1.0 };
             if length > full {
                 sticks.left = sticks.left.map(|v| v / length * full);
@@ -2651,6 +2687,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
         }
         if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
+            let tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
             let state = barrel_ryza::field_hud::State {
                 at: r.player.at.into(),
                 turn: r.player.turn.to_degrees(),
@@ -2659,7 +2696,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 tool: 0,
                 map: a.field == barrel_ryza::field_hud::MAP_FIELD,
                 camera_yaw: play.map_rotation.then_some(180.0 - yaw),
-                tick: a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 },
+                tick,
+                age: tick - a.hud_arrival,
+                place: barrel_ryza::field_hud::place_names(&a.field),
+                help: if pump.is_none() && a.walk_from.is_none() {
+                    // A still: the bar only where the arrival frame is given (`--hud-arrival`).
+                    if a.hud_arrival > 0.0 { replay_help(a.hud_arrival, tick, &a.hud_stick) } else { barrel_ryza::field_hud::HelpBar::arriving() }
+                } else {
+                    help_bar
+                },
             };
             let (quads, clips, glows) = view.quads(&state, &hud_markers, (width, height));
             layer.set_blended(&gpu, &quads, &clips, glows)?;

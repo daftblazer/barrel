@@ -5,9 +5,10 @@
 //! `uis_gen_a21_icon.xml`, `uis_gen_a21v2_common.xml` and `uis_gen_a21v2_various.xml`.
 //!
 //! Positions are in the 1280 x 720 layout and scale by `screen height / 720`, the layout
-//! centred across the width, as the title's are. Left out (docs/ryza/open.md, "Field HUD"):
-//! the minimap's markers (townsfolk, gimmicks, the destination), the area name's and the
-//! messages' popups.
+//! centred across the width, as the title's are. The two popups of the field are here too: the
+//! area name's banner on arrival (`uil_a21_fm01.xml`, `current_place`) and the button help bar
+//! along the bottom (`uil_a21_shade.xml`, as the load screen's). Left out (docs/ryza/open.md,
+//! "Field HUD"): the messages' popups.
 
 use std::collections::HashMap;
 
@@ -15,8 +16,8 @@ use barrel_formats::table::{self, Element};
 use barrel_render::text::{Clip, Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
-use crate::load_view::TEXT_TOP;
-use crate::title::{find, numbers, pair, LAYOUT_HEIGHT};
+use crate::load_view::{inside, style, Style, TEXT_TOP};
+use crate::title::{curve, find, numbers, pair, Curve, LAYOUT_HEIGHT};
 
 /// The textures of the HUD's layer, in this order.
 pub const FONT01: usize = 0;
@@ -28,13 +29,125 @@ pub const ICON: usize = 5;
 pub const VARIOUS: usize = 6;
 /// The glows of the minimap's markers (`a21_field.g1t#1`).
 pub const GLOW: usize = 7;
+/// The help bar's plate (`a21_common.g1t#3`).
+pub const GUIDE: usize = 8;
 /// How many textures the layer has.
-pub const TEXTURES: usize = 8;
+pub const TEXTURES: usize = 9;
 
 /// The styles' pixels count three to a layout pixel (`load_view::ATLAS_PER_LAYOUT`).
 const PER_LAYOUT: f32 = 3.0;
 /// The first of the string table's UI strings (`STR_UI_0000`, as `load_view`).
 const STR_UI_BASE: u32 = 6_619_137;
+/// The string table's area names ("Kurken Island", ...) and map names ("Rasen District", ...),
+/// each a list from its first number.
+const AREA_NAMES: u32 = 2_228_225;
+const MAP_NAMES: u32 = 917_505;
+/// How many strings of each list are kept.
+const NAMES: u32 = 64;
+/// The menu words' strings (`str_menu_define`) the help bar reads, from the first to this many on.
+const MENU_WORDS: u32 = 4_194_304;
+const MENU_WORDS_SPAN: u32 = 512;
+
+// STAND-IN: The help bar's button glyphs and the "Photo Mode" string are the capture's (the game picks the pictures for the pad's assignment; three strings of the table read "Photo Mode", which one the game takes is not checked); the other words are the table's own.
+/// The help bar's entries in the order the game lists them: the button glyph (a private-use
+/// character of `mainfont01`) and the words' string number.
+const HELP_ENTRIES: [(char, u32); 7] = [
+    ('\u{4f0}', 4_194_353),
+    ('\u{4f1}', 4_194_351),
+    ('\u{4e7}', 4_194_338),
+    ('\u{4f4}', 720_900),
+    ('\u{4eb}', 4_194_451),
+    ('\u{4dc}', 4_194_341),
+    ('\u{4de}', 4_194_559),
+];
+
+/// The frames the area name takes to fade in and out come from the layout's animation
+/// (`anm_common_juvenile_fade_in`, 60 frames); it holds this many frames from the arrival before
+/// it fades out (`hud-walk`: in from 1728, out from 1879, the map name's plate 30 frames
+/// behind: the layout's `delay` of 0.5 s).
+const AREA_OUT_AT: f32 = 151.0;
+
+/// The frames the stick must have been at rest before the help bar comes up (`hud-walk`: the
+/// fade-in's first step falls 121 frames after the stick's last frame, three times over).
+const HELP_IDLE: f32 = 120.0;
+/// Frames the help bar takes to fade in or out (`anm_common_fade_in`, as the load screen's).
+const HELP_FADE: f32 = 15.0;
+// STAND-IN: The idle count at the arrival is the capture's (the bar's first step falls 6 frames after the area name's); the real thing is the game's own count from the load.
+/// Frames of rest the count has at the arrival.
+const HELP_IDLE_AT_ARRIVAL: f32 = 114.0;
+// STAND-IN: The first appearance's plate grow is fitted to the three frames the capture has of it (1740: the shortest plate, 1750: 0.375 of the way, 1760: full); the real thing is the layout's own size tween.
+/// The frames from the bar's first showing the plate starts to grow after, and takes.
+const HELP_GROW_FROM: f32 = 11.0;
+const HELP_GROW_FRAMES: f32 = 16.0;
+// STAND-IN: The short line's switch to the full one falls with the plate's grow start; the capture has it at 1740 (short, 7 frames in) and 1750 (full, 17 frames in).
+/// The entries (of `HELP_ENTRIES`) the bar shows when it first comes up, before the full line.
+const HELP_FIRST: [usize; 2] = [2, 5];
+/// The plate's shortest width in layout pixels (376.5 px of the capture at 1.5 px a layout pixel).
+const HELP_PLATE_MIN: f32 = 376.5 / 1.5;
+
+/// The strings of the area name and the map name a field announces on arrival: their numbers in
+/// the string table.
+// STAND-IN: Only Rasenboden's is read (its area is the first of the list, its map the sixth, off `hud-walk`). The game takes them from a record per field (the info object at 0x141a940f0: records of 72 bytes, the area's index at +0 and the map name's string number at +0x38, the areas a list of 8-byte records with the name's number at +0), built at run time from a file not found in the archives' tables.
+pub fn place_names(field: &str) -> Option<[u32; 2]> {
+    (field == MAP_FIELD).then_some([AREA_NAMES, MAP_NAMES + 5])
+}
+
+/// How opaque a banner plate is `age` frames after the arrival: it fades in by the layout's
+/// animation, holds, and fades out the same animation backwards, in whole 1/255 steps as the
+/// game's colour bytes. `delay` frames late for the map's plate.
+fn banner_alpha(fade: &Curve, age: f32, delay: f32) -> f32 {
+    let t = age - delay;
+    let along = if t < 0.0 {
+        return 0.0;
+    } else if t < AREA_OUT_AT {
+        t / 60.0
+    } else {
+        fade.duration() - (t - AREA_OUT_AT) / 60.0
+    };
+    fade.at(along.max(0.0))[3].round() / 255.0
+}
+
+/// The help bar's state, stepped every frame: it comes up after the move stick has rested for
+/// `HELP_IDLE` frames and goes at the stick's first frame, fading `HELP_FADE` frames each way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HelpBar {
+    idle: f32,
+    alpha: f32,
+    /// Frames since the bar first showed (its plate grows on the first appearance only).
+    shown: f32,
+}
+
+impl HelpBar {
+    /// The bar at a field's arrival.
+    pub fn arriving() -> HelpBar {
+        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0 }
+    }
+
+    /// Moves on `frames` frames (60 a second), the move stick out of its dead zone or not.
+    pub fn step(&mut self, stick: bool, frames: f32) {
+        self.idle = if stick { 0.0 } else { self.idle + frames };
+        let toward = if self.idle > HELP_IDLE { frames } else { -frames } / HELP_FADE;
+        self.alpha = (self.alpha + toward).clamp(0.0, 1.0);
+        if self.alpha > 0.0 {
+            self.shown += frames;
+        }
+    }
+
+    /// How opaque the bar is.
+    pub fn alpha(&self) -> f32 {
+        self.alpha
+    }
+
+    /// Whether the bar still shows its first, short line (the first frames of its first showing).
+    fn first_line(&self) -> bool {
+        self.shown < HELP_GROW_FROM
+    }
+
+    /// How far the plate has grown from its shortest to its full width, 0 to 1.
+    fn grow(&self) -> f32 {
+        ((self.shown - HELP_GROW_FROM) / HELP_GROW_FRAMES).clamp(0.0, 1.0)
+    }
+}
 
 /// A text node's layout settings.
 #[derive(Clone, Copy, Debug)]
@@ -43,6 +156,7 @@ struct Label {
     size: f32,
     small: bool,
     center: bool,
+    right: bool,
     /// The node's colour, if it sets one.
     color: Option<[f32; 4]>,
 }
@@ -73,6 +187,12 @@ pub struct State {
     pub camera_yaw: Option<f32>,
     /// The frames the HUD has been up (60 a second), which the destination's glow pulses by.
     pub tick: f32,
+    /// The frames since the field's arrival, which the area name's banner runs by.
+    pub age: f32,
+    /// The area name's and the map name's string numbers (`place_names`), if the field has them.
+    pub place: Option<[u32; 2]>,
+    /// The help bar.
+    pub help: HelpBar,
 }
 
 /// What the minimap marks, as places in the field (game units, x then z).
@@ -95,6 +215,12 @@ pub struct Sources<'a> {
     pub common_styles: &'a [u8],
     pub various_styles: &'a [u8],
     pub strings: &'a [u8],
+    /// `uil_a21_fm01.xml` (the area name's banner), `uia_common.xml`, the help bar's
+    /// `uil_a21_shade.xml` and `uis_gen_a21_common.xml` (its plate).
+    pub places: &'a [u8],
+    pub anims: &'a [u8],
+    pub help: &'a [u8],
+    pub guide_styles: &'a [u8],
     pub glyphs: [HashMap<char, Glyph>; 2],
     /// Each texture's size in pixels, in the layer's order after the two fonts.
     pub sizes: [(u32, u32); TEXTURES - 2],
@@ -138,6 +264,16 @@ pub struct Hud {
     pm: Label,
     time: Label,
     time_origin: [f32; 2],
+    // The area name's banner: the plates and their texts, the fade and the second plate's delay.
+    area: ([f32; 4], [f32; 2], Label),
+    map: ([f32; 4], [f32; 2], Label),
+    fade: Curve,
+    map_delay: f32,
+    // The help bar.
+    help: Style,
+    help_at: [f32; 2],
+    help_text: Label,
+    help_left: f32,
 }
 
 fn node<'a>(layout: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -165,6 +301,7 @@ fn label(e: &Element, at: [f32; 2]) -> Label {
         size: e.attr("font_size").and_then(|v| v.trim().parse().ok()).unwrap_or(17.0),
         small: e.attr("font") == Some("MainFont01"),
         center: e.attr("align") == Some("center"),
+        right: e.attr("align") == Some("right"),
         color: (rgba.len() == 4).then(|| [rgba[0] / 255.0, rgba[1] / 255.0, rgba[2] / 255.0, rgba[3] / 255.0]),
     }
 }
@@ -183,8 +320,17 @@ impl Hud {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (STR_UI_BASE..STR_UI_BASE + 1000).contains(n))
+            .filter(|(n, _)| {
+                (STR_UI_BASE..STR_UI_BASE + 1000).contains(n)
+                    || (AREA_NAMES..AREA_NAMES + NAMES).contains(n)
+                    || (MAP_NAMES..MAP_NAMES + NAMES).contains(n)
+                    || (MENU_WORDS..MENU_WORDS + MENU_WORDS_SPAN).contains(n)
+                    || HELP_ENTRIES.iter().any(|(_, w)| w == n)
+            })
             .collect();
+        let places = table::parse(src.places).map_err(|e| format!("uil_a21_fm01: {e}"))?;
+        let help_layout = table::parse(src.help).map_err(|e| format!("uil_a21_shade: {e}"))?;
+        let guide = table::parse(src.guide_styles).map_err(|e| format!("uis_gen_a21_common: {e}"))?;
         let scale_of = |e: &Element| pair(e, "scale", [1.0; 2])[0];
         let style_of = |e: &Element| e.attr("style").map(str::to_string).ok_or_else(|| "a picture without a style".to_string());
 
@@ -226,6 +372,28 @@ impl Hud {
         let (pm_e, pm_at) = node(&time, "pm")?;
         let (time_e, time_at) = node(&time, "time")?;
         let disc_at = [selector_at[0] + offset_at[0], selector_at[1] + offset_at[1]];
+        // The area name's banner: a plate and a centred text for the area, the same for the map
+        // behind them; the map's fade starts after the layout's `delay`.
+        let banner = |plate: &str, text: &str| -> Result<([f32; 4], [f32; 2], Label), String> {
+            let (p, at) = node(&places, plate)?;
+            let (t, text_at) = node(&places, text)?;
+            let mut l = label(t, text_at);
+            let rgba = numbers(t, "font_color");
+            l.color = (rgba.len() == 4).then(|| [rgba[0] / 255.0, rgba[1] / 255.0, rgba[2] / 255.0, rgba[3] / 255.0]);
+            Ok((picture(&field, &style_of(p)?)?, at, l))
+        };
+        let (fade_in, _) = node(&places, "fade_in_with_area")?;
+        let map_delay = fade_in
+            .children
+            .iter()
+            .find(|b| b.attr("node") == Some("map_name"))
+            .and_then(|b| b.attr("delay")?.trim().parse::<f32>().ok())
+            .ok_or("uil_a21_fm01: fade_in_with_area has no map_name delay")?;
+        // The help bar: the load screen's own layout (`uil_a21_shade.xml`).
+        let (help_bg, help_at) = find(&help_layout, "base", [0.0; 2]).ok_or("uil_a21_shade: no base")?;
+        let (_, left_side) = inside(help_bg, "left_side", [0.0; 2]).ok_or("uil_a21_shade: no left_side")?;
+        let (help_bg_node, _) = node(&help_layout, "bg")?;
+        let (help_text, help_text_at) = inside(help_bg_node, "text", [0.0; 2]).ok_or("uil_a21_shade: no bg/text")?;
         Ok(Hud {
             glyphs: src.glyphs,
             atlases: src.sizes.map(|(w, h)| (w as f32 * 2.0, h as f32 * 2.0)),
@@ -259,12 +427,29 @@ impl Hud {
             pm: label(pm_e, pm_at),
             time: label(time_e, time_at),
             time_origin: [0.0; 2],
+            area: banner("area_neme_bg", "area_name_text")?,
+            map: banner("map_name_bg", "map_name_text")?,
+            fade: curve(src.anims, "anm_common_juvenile_fade_in", "color")?,
+            map_delay: map_delay * 60.0,
+            help: style(&guide, help_bg.attr("style").ok_or("uil_a21_shade: base has no style")?)?,
+            help_at,
+            help_text: label(help_text, help_text_at),
+            help_left: left_side[0],
         })
     }
 
     /// The texts of `STR_UI_nnnn`.
     fn string(&self, n: u32) -> &str {
         self.strings.get(&(STR_UI_BASE + n)).map_or("", String::as_str)
+    }
+
+    /// A string of the table by its own number.
+    fn word(&self, n: u32) -> &str {
+        self.strings.get(&n).map_or("", String::as_str)
+    }
+
+    fn banner_alpha(&self, age: f32, delay: f32) -> f32 {
+        banner_alpha(&self.fade, age, delay)
     }
 
     /// The HUD's quads for `state` on a `screen` of pixels, in the order the game draws them, and
@@ -277,6 +462,18 @@ impl Hud {
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { hud: self, k, left, out: Vec::new() };
         let white = [1.0; 4];
+
+        // The area name's banner on arrival: the area's plate and name, then the map's.
+        if let Some(names) = state.place {
+            for ((plate, at, text), (name, delay)) in [(&self.area, (names[0], 0.0)), (&self.map, (names[1], self.map_delay))] {
+                let alpha = self.banner_alpha(state.age, delay);
+                if alpha > 0.0 {
+                    pen.picture(FIELD, *plate, *at, 1.0, [1.0, 1.0, 1.0, alpha]);
+                    let ink = text.color.unwrap_or([0.0, 0.0, 0.0, 1.0]);
+                    pen.shadowed(text, self.word(name), [ink[0], ink[1], ink[2], alpha]);
+                }
+            }
+        }
 
         // The minimap.
         pen.picture(FIELD, self.grid.0, self.grid.1, 1.0, white);
@@ -321,8 +518,11 @@ impl Hud {
             let (alpha, scale) = glow_pulse(state.tick);
             let tint = |a: f32| [GLOW_TINT[0], GLOW_TINT[1], GLOW_TINT[2], a];
             pen.centered(FIELD, self.destination_icon, at, 1.0, white);
-            pen.centered(GLOW, self.glows[0], at, scale, tint(alpha));
-            pen.centered(GLOW, self.glows[1], at, 1.0, tint(alpha));
+            // The game draws no glow while the pulse is at 0 (`hud-walk` 1800: loop frame 3).
+            if alpha > 0.0 {
+                pen.centered(GLOW, self.glows[0], at, scale, tint(alpha));
+                pen.centered(GLOW, self.glows[1], at, 1.0, tint(alpha));
+            }
         }
         let glow = glow..pen.out.len();
 
@@ -364,7 +564,29 @@ impl Hud {
             h => h,
         };
         pen.text(&self.time, self.time_origin, &shown.to_string(), white);
+        if state.help.alpha() > 0.0 {
+            self.help_bar(&mut pen, &state.help);
+        }
         (pen.out, clips, glow)
+    }
+
+    /// The button help bar at the screen's lower right (the load screen's look): a plate as wide
+    /// as its words, tiled, and the line of each key's glyph and words.
+    fn help_bar(&self, pen: &mut Pen, bar: &HelpBar) {
+        let entry = |&(glyph, n): &(char, u32)| format!("{glyph}{}", self.word(n));
+        let line = if bar.first_line() {
+            HELP_FIRST.iter().map(|&i| entry(&HELP_ENTRIES[i])).collect::<Vec<_>>().join(" ")
+        } else {
+            HELP_ENTRIES.iter().map(entry).collect::<Vec<_>>().join(" ")
+        };
+        let s = self.help_text.size * pen.k / ATLAS_SIZE;
+        let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
+        // STAND-IN: The plate is one atlas pixel of the text (size / ATLAS_SIZE layout pixels) wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`); the real thing is the game's own text-width measure.
+        let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let width = (HELP_PLATE_MIN + (full - HELP_PLATE_MIN) * bar.grow()).max(HELP_PLATE_MIN);
+        let alpha = [1.0, 1.0, 1.0, bar.alpha()];
+        pen.tiled(GUIDE, &self.help, [1280.0 - width, self.help_at[1]], width, alpha);
+        pen.text(&self.help_text, [1280.0, 720.0], &line, alpha);
     }
 
     /// Where her arrow is: the middle of the minimap's window, which the terrain is moved under.
@@ -546,13 +768,55 @@ impl Pen<'_> {
         self.glyphs(l, origin, [0.0, 0.0], text, color);
     }
 
+    /// A banner's text: nine copies of its colour at half the alpha one layout pixel round it, the
+    /// text over them (`hud-walk` 1830: the game's `bold_size` 1 with the font's own colour).
+    fn shadowed(&mut self, l: &Label, text: &str, color: [f32; 4]) {
+        for dx in [-1.0, 0.0, 1.0] {
+            for dy in [-1.0, 0.0, 1.0] {
+                self.glyphs(l, [0.0; 2], [dx, dy], text, [color[0], color[1], color[2], color[3] / 2.0]);
+            }
+        }
+        self.glyphs(l, [0.0; 2], [0.0; 2], text, color);
+    }
+
+    /// A tiled ("wrap") plate `width` layout pixels wide at `at`: the left margin, the middle's
+    /// tiles (the last cut short) and the right margin (as `load_view`'s plates).
+    fn tiled(&mut self, texture: usize, s: &Style, at: [f32; 2], width: f32, color: [f32; 4]) {
+        let [x, y, w, h] = s.pictures[0];
+        let [ml, mr] = s.margins.unwrap_or([0.0; 2]);
+        let (cap_l, cap_r) = (ml / PER_LAYOUT, mr / PER_LAYOUT);
+        let tile = (w - ml - mr) / PER_LAYOUT;
+        let height = h / PER_LAYOUT;
+        let put = |pen: &mut Pen, src: [f32; 4], x: f32, wide: f32| {
+            let [l, t] = pen.at([x, at[1]]);
+            let rect = [l, t, l + wide * pen.k, t + height * pen.k];
+            pen.quad(texture, pen.uv(texture, src), rect, color);
+        };
+        put(self, [x, y, ml, h], at[0], cap_l);
+        let mut at_x = at[0] + cap_l;
+        let mut left = width - cap_l - cap_r;
+        while left > 0.001 {
+            let part = left.min(tile);
+            put(self, [x + ml, y, (w - ml - mr) * part / tile, h], at_x, part);
+            at_x += part;
+            left -= part;
+        }
+        put(self, [x + w - mr, y, mr, h], at_x, cap_r);
+    }
+
     fn glyphs(&mut self, l: &Label, origin: [f32; 2], shift: [f32; 2], text: &str, color: [f32; 4]) {
         let font = usize::from(!l.small);
         let glyphs = &self.hud.glyphs[font];
         let s = l.size * self.k / ATLAS_SIZE;
         let width: f32 = text.chars().filter_map(|c| glyphs.get(&c)).map(|g| g.advance as f32 * s).sum();
         let x = self.left + (origin[0] + l.at[0] + shift[0]) * self.k;
-        let mut pen = if l.center { x - width / 2.0 } else { x };
+        let mut pen = if l.center {
+            x - width / 2.0
+        } else if l.right {
+            x - width
+        } else {
+            x
+        };
         let top = (origin[1] + l.at[1] + shift[1] + TEXT_TOP) * self.k;
         let (aw, ah) = (4096.0, 2048.0);
         for g in text.chars().filter_map(|c| glyphs.get(&c)) {
@@ -570,6 +834,70 @@ mod tests {
 
     fn close(a: [f32; 2], b: [f32; 2]) {
         assert!((a[0] - b[0]).abs() < 1e-3 && (a[1] - b[1]).abs() < 1e-3, "{a:?} vs {b:?}");
+    }
+
+    /// `anm_common_juvenile_fade_in`: the colour's alpha from 0 to 255 over 60 frames, in cubic.
+    fn fade() -> Curve {
+        let xml = br#"<root><anim name="anm_common_juvenile_fade_in"><curve attr="color" interpolate="easing_incubic"><key value="255, 255, 255, 0"/><key frame60="60" value="255, 255, 255, 255"/></curve></anim></root>"#;
+        curve(xml, "anm_common_juvenile_fade_in", "color").unwrap()
+    }
+
+    #[test]
+    fn the_banner_fades_in_holds_and_fades_out_as_the_capture_has_it() {
+        let f = fade();
+        // hud-walk, the area plate (arrival at 1728): the capture's alphas in 1/255.
+        for (frame, byte) in [(1740.0, 2.0), (1750.0, 13.0), (1760.0, 39.0), (1770.0, 87.0), (1780.0, 166.0), (1790.0, 255.0), (1870.0, 255.0)] {
+            assert_eq!(banner_alpha(&f, frame - 1728.0, 0.0) * 255.0, byte, "frame {frame}");
+        }
+        // The fade out is the same curve run backwards from 151 frames in.
+        for (frame, byte) in [(1880.0, 242.0), (1890.0, 139.0), (1900.0, 70.0), (1910.0, 29.0), (1920.0, 8.0), (1930.0, 1.0)] {
+            assert_eq!(banner_alpha(&f, frame - 1728.0, 0.0) * 255.0, byte, "frame {frame}");
+        }
+        assert_eq!(banner_alpha(&f, 1940.0 - 1728.0, 0.0), 0.0);
+        // The map's plate follows 30 frames behind, both ways.
+        assert_eq!(banner_alpha(&f, 1770.0 - 1728.0, 30.0) * 255.0, 2.0);
+        assert_eq!(banner_alpha(&f, 1910.0 - 1728.0, 30.0) * 255.0, 242.0);
+        assert_eq!(banner_alpha(&f, 5.0, 30.0), 0.0);
+    }
+
+    /// The help bar at each frame from the arrival at 1728, the move stick out of its dead zone
+    /// at the `hud-walk` pad script's spans (the pad's frames reach the game 2 later).
+    fn help_at(frame: f32) -> HelpBar {
+        let spans = [(1900.0, 2020.0), (2040.0, 2130.0), (2150.0, 2210.0), (2230.0, 2320.0), (2420.0, 2540.0), (2560.0, 2620.0), (2780.0, 3080.0), (3100.0, 3300.0)];
+        let mut bar = HelpBar::arriving();
+        let mut f = 1728.0;
+        while f <= frame {
+            bar.step(spans.iter().any(|&(a, b)| f >= a + 2.0 && f < b + 2.0), 1.0);
+            f += 1.0;
+        }
+        bar
+    }
+
+    #[test]
+    fn the_help_bar_comes_up_after_121_frames_of_rest_and_goes_with_the_stick() {
+        // The capture's alphas (the plate quads' colour, 1/15 a frame).
+        for (frame, steps) in [(1740.0, 7.0), (1750.0, 15.0), (1910.0, 6.0), (2750.0, 9.0), (2790.0, 6.0), (3430.0, 9.0), (3440.0, 15.0)] {
+            assert!((help_at(frame).alpha() * 15.0 - steps).abs() < 1e-3, "frame {frame}");
+        }
+        // Down while the stick is out and at the shorter rests between the walks.
+        for frame in [1930.0, 2330.0, 2400.0, 2700.0, 2740.0, 3000.0, 3400.0, 3421.0] {
+            assert_eq!(help_at(frame).alpha(), 0.0, "frame {frame}");
+        }
+    }
+
+    #[test]
+    fn the_help_bar_shows_a_short_line_and_a_short_plate_on_its_first_showing_only() {
+        let (first, later) = (help_at(1740.0), help_at(3430.0));
+        assert!(first.first_line() && first.grow() == 0.0);
+        let (mid, full) = (help_at(1750.0), help_at(1760.0));
+        assert!(!mid.first_line() && (mid.grow() - 0.375).abs() < 1e-3 && full.grow() == 1.0);
+        assert!(!later.first_line() && later.grow() == 1.0);
+    }
+
+    #[test]
+    fn only_rasenboden_has_its_names_read() {
+        assert_eq!(place_names(MAP_FIELD), Some([2_228_225, 917_510]));
+        assert_eq!(place_names("s01_i_attic"), None);
     }
 
     #[test]
