@@ -334,8 +334,7 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   The screen holds Camera, Game, Audio and Graphics rows; the graphics rows are
   `graphics::Settings` (changing an item makes the quality Custom, as the game's). **The
   render settings apply at once on Yes** (2026-11-23; below, "Live apply"): the renderer is rebuilt in the same process.
-  What is not live yet: the plants' density, the textures' mip bias (both baked when the field loads: next start), the
-  display rows (resolution, window mode, frame rate limit, vsync: stored only).
+  The plants' density and the textures' mip bias are live too. Not live: the display rows (resolution, window mode, frame rate limit, vsync: stored only).
   Unit test: `options::tests::a_change_goes_to_the_config_and_back`.
 - **Left over (each kept and stored, not honoured, or not built):**
   - Keyboard and Controller tabs show the game's pages but assign nothing (A on a command, the
@@ -442,7 +441,19 @@ again they started over and the picture differed from a run that never changed. 
 settings applied again mid-run, Render Scale 75%, MSAA 4x and FSR 1 at 75% draw exactly the cold start's picture;
 the temporal ones (FSR native AA, TAA, FSR 3.1: history restarts) 43-47 dB. The title's event draws its waits and
 actions from the clock as the game does, so the check fixes them (`BARREL_EVENT_DRAWS`); without that about one run
-in five differs whatever the settings. Quality Low's plants and textures still need the next start.
+in five differs whatever the settings.
+The plants' density: the cards are the scene's last vertices and indices (`PlantField`), laid again for the new
+density by the function the load uses (`plant_cards`) and put in place by `SceneGpu::replace_geometry_tail` (new
+buffers: the earlier geometry copied on the device, the tail uploaded); their draws replace the old ones at the same place
+in the list and the cells' boxes follow. The mip bias: the whole textures are kept as views of the packs' bytes
+(nothing is copied on a cold start), uploaded again at the new bias (`SceneGpu::replace_textures`, same count and
+order) and the sets written again. Grass density and texture quality one step lower draw exactly what a cold start
+does (AE 0), and so do two steps. One more thing a live change must reproduce: the static shadow layer is drawn once, in
+the frame it is first asked for, with the casters the view and levels of detail of that frame show (`shown`); on a
+change of the presets it is drawn again from that frame's view (`far_view`, `Frame::far_shown`; the title's boot has the scene
+off in that frame). What is left of Quality Low (a level of detail change) is a few pixels in the trees' shadows
+(about 4000 of 518,400 pixels differ by a few levels): the layer drawn again has the models in the poses of now,
+not those of that frame.
 
 ## Controller (Ryza)
 

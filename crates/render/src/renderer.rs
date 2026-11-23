@@ -275,6 +275,9 @@ pub struct Frame<'a> {
     pub hidden: &'a [bool],
     /// Whether the game shows a draw this frame (besides `hidden` and the field).
     pub shown: &'a dyn Fn(&Draw) -> bool,
+    /// `shown` for the casters of the static shadow layer, when the game has another view for
+    /// them (the one the layer was first drawn from).
+    pub far_shown: Option<&'a dyn Fn(&Draw) -> bool>,
     /// Whether a shown draw is in sight by a test of the game's own, past the view's planes
     /// (something stands in front of it): asked for the scene, not for the shadows it casts.
     pub in_sight: &'a dyn Fn(&Draw) -> bool,
@@ -1042,7 +1045,7 @@ impl Renderer {
         let frozen_ready = self.targets.frozen_ready;
         self.targets.frozen_ready = true;
         let d = &gpu.device;
-        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, shadow_sides, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion, sun_flare } = *frame;
+        let Frame { image, width, height, scene, instance_set, draws, instances, sets, white, outline_tex, current_field, hidden, shown, far_shown, in_sight, material, draw_vp, view_planes: view_planes_now, shadow_vp, shadow_cascades, shadow_bias, shadow_sub, shadow_sides, alpha_cutoff, sway_cutoff, glow, meter, saturation, tone_white, tone_gamma, tone_scale, tone_vivid, filter: filter_strength, ref camera, freeze_now, frozen_weight, overlay, layers, readback, sky_plane, clouds: cloud_frame, water_pieces, occlusion, sun_flare } = *frame;
         let upto = self.upto.get();
         let Renderer { forward_pipeline, ref timer, ref targets, ref shadow_target, shadow_pipeline, shadow_cascade_pipeline, pipeline_layout, render_pass, pipeline, sky_pipeline, sky_plane_pipeline, ref terrain_gpu, outline_pipeline, ref glow_pipelines, ref taa_pipelines, ref fsr3_pipelines, ref gsr2_pipelines, ref upscale_pipelines, post_pass, post_pipeline, post_layout, show_motion, offscreen, extent, .. } = *self;
         let (vbuf, ibuf) = (scene.vbuf, scene.ibuf);
@@ -1149,7 +1152,7 @@ impl Renderer {
                 let big = |d: &Draw| least == 0.0 || d.bounds.is_none_or(|b| b.extent(&instances[d.instance as usize].model) >= least);
                 // The characters' map takes its own casters and the cascades leave them out.
                 let own = |d: &Draw| (layer == shadow::SUB_LAYER) == (d.sub_bias.is_some() && shadow_sub.is_some());
-                let casts = |d: &Draw| own(d) && big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && shown(d);
+                let casts = |d: &Draw| own(d) && big(d) && d.bounds.is_none_or(|b| b.seen(&instances[d.instance as usize].model, &shadow_planes)) && d.casts && !d.sky && !hidden[d.instance as usize] && d.field.is_none_or(|f| f == current_field) && (if layer == shadow::STATIC_LAYER { far_shown.unwrap_or(shown) } else { shown })(d);
                 // The casters with opaque textures first, depth alone (an alpha reference over 1
                 // would reject even those: then they are tested as the rest), then the others.
                 let reference = |d: &Draw| match (d.sub_bias, shadow_sub) {

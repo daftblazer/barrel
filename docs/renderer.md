@@ -1202,6 +1202,10 @@ uploads and sets stay valid; the sampler is new (and the shadow map, when its se
 calls `SceneGpu::rebind` with `renderer.shared`. With the shadows' settings unchanged `Stable` also carries the shadow
 map, the static far layer's state and the sun's share (`flare::Sun::rebind` points it at the new sampler), so the
 picture goes on as if nothing was rebuilt. Escha does not use it (it restarts).
+`SceneGpu::replace_geometry_tail` (the scene's last part laid again, the earlier geometry kept) and
+`SceneGpu::replace_textures` (the textures uploaded again, same count and order) change what a scene uploaded without
+building it again (Ryza's plant density and texture mip bias). `Frame::far_shown` is `shown` for the casters of the static layer
+when a game draws it again from the view it was first drawn from (None: `shown`).
 
 ## Graphics settings
 

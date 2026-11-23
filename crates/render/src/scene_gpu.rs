@@ -126,6 +126,10 @@ pub struct SceneGpu {
     /// Each field's light texture and specular cube map as its sets name them (the white
     /// texture, the black cube map for a field without), kept to write the sets again.
     pattern_views: Vec<vk::ImageView>,
+    /// The fields without a light texture of their own: their sets name the white texture.
+    pattern_white: Vec<bool>,
+    /// White's place in the textures.
+    white: usize,
     cube_views: Vec<vk::ImageView>,
     cubes: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     ground_pool: Option<vk::DescriptorPool>,
@@ -150,7 +154,7 @@ impl SceneGpu {
         let local = |b: &[u8], usage| -> Result<(vk::Buffer, vk::DeviceMemory)> {
             let (staging, staging_mem) = gpu.buffer(b.len() as u64, vk::BufferUsageFlags::TRANSFER_SRC, true)?;
             gpu.upload(staging_mem, b)?;
-            let (buf, mem) = gpu.buffer(b.len() as u64, usage | vk::BufferUsageFlags::TRANSFER_DST, false)?;
+            let (buf, mem) = gpu.buffer(b.len() as u64, usage | vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::TRANSFER_SRC, false)?;
             gpu.submit(shared.pool, |cb| unsafe { d.cmd_copy_buffer(cb, staging, buf, &[vk::BufferCopy::default().size(b.len() as u64)]) })?;
             unsafe {
                 d.destroy_buffer(staging, None);
@@ -201,6 +205,7 @@ impl SceneGpu {
         let shadow_info = image(shared.shadow_sampler, shared.shadow_view);
         let white_view = textures[data.white].2;
         let pattern_views: Vec<vk::ImageView> = (0..fields).map(|k| data.patterns.get(k).and_then(|p| p.as_ref()).map_or(white_view, |p| p.2)).collect();
+        let pattern_white: Vec<bool> = (0..fields).map(|k| data.patterns.get(k).is_none_or(|p| p.is_none())).collect();
         let cube_views: Vec<vk::ImageView> = (0..fields).map(|k| data.specular_cubes.get(k).and_then(|p| p.as_ref()).map_or(shared.black_cube, |p| p.2)).collect();
         let pattern_infos: Vec<_> = pattern_views.iter().map(|&v| image(shared.sampler, v)).collect();
         let cube_infos: Vec<_> = cube_views.iter().map(|&v| image(shared.sampler, v)).collect();
@@ -265,6 +270,8 @@ impl SceneGpu {
             fields,
             patterns,
             pattern_views,
+            pattern_white,
+            white: data.white,
             cube_views,
             cubes,
             sets,
@@ -291,6 +298,38 @@ impl SceneGpu {
         for g in &self.grounds {
             write_ground_set(d, g.set, shared.sampler, &g.textures);
         }
+    }
+
+    /// The geometry from `keep_vertices` bytes of vertices and `keep_indices` bytes of indices
+    /// on is replaced by the tails given (what the scene's last part, the field's plants, comes
+    /// to for a new setting); what comes before is kept. The device is idle first.
+    pub fn replace_geometry_tail(&mut self, gpu: &Gpu, pool: vk::CommandPool, keep_vertices: u64, vertex_tail: &[u8], keep_indices: u64, index_tail: &[u8]) -> Result<()> {
+        unsafe { gpu.device.device_wait_idle()? };
+        (self.vbuf, self.vmem) = resize_tail(gpu, pool, (self.vbuf, self.vmem), keep_vertices, vertex_tail, vk::BufferUsageFlags::VERTEX_BUFFER)?;
+        (self.ibuf, self.imem) = resize_tail(gpu, pool, (self.ibuf, self.imem), keep_indices, index_tail, vk::BufferUsageFlags::INDEX_BUFFER)?;
+        Ok(())
+    }
+
+    /// The textures uploaded again (same count and order: a new mip bias), their sets written to
+    /// name them. The device is idle first.
+    pub fn replace_textures(&mut self, gpu: &Gpu, shared: &Shared, textures: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>, opaque: Vec<bool>) -> Result<()> {
+        assert_eq!(textures.len(), self.textures.len());
+        let d = &gpu.device;
+        unsafe { d.device_wait_idle()? };
+        for (image, mem, view) in std::mem::replace(&mut self.textures, textures) {
+            unsafe {
+                d.destroy_image_view(view, None);
+                d.destroy_image(image, None);
+                d.free_memory(mem, None);
+            }
+        }
+        self.opaque = opaque;
+        let white = self.textures[self.white].2;
+        for (view, _) in self.pattern_views.iter_mut().zip(&self.pattern_white).filter(|(_, w)| **w) {
+            *view = white;
+        }
+        self.rebind(gpu, shared);
+        Ok(())
     }
 
     /// Set 1 for field `field` (the first's for a scene without fields) in the slot of the
@@ -378,4 +417,34 @@ fn write_ground_set(d: &ash::Device, set: vk::DescriptorSet, sampler: vk::Sample
         vk::WriteDescriptorSet::default().dst_set(set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&normal_infos),
     ];
     unsafe { d.update_descriptor_sets(&writes, &[]) };
+}
+
+/// A buffer in the device's memory with its first `keep` bytes kept and `tail` after them.
+fn resize_tail(gpu: &Gpu, pool: vk::CommandPool, old: (vk::Buffer, vk::DeviceMemory), keep: u64, tail: &[u8], usage: vk::BufferUsageFlags) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+    let d = &gpu.device;
+    let (buf, mem) = gpu.buffer((keep + tail.len() as u64).max(16), usage | vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::TRANSFER_SRC, false)?;
+    let staging = if tail.is_empty() {
+        None
+    } else {
+        let (s, sm) = gpu.buffer(tail.len() as u64, vk::BufferUsageFlags::TRANSFER_SRC, true)?;
+        gpu.upload(sm, tail)?;
+        Some((s, sm))
+    };
+    gpu.submit(pool, |cb| unsafe {
+        if keep > 0 {
+            d.cmd_copy_buffer(cb, old.0, buf, &[vk::BufferCopy::default().size(keep)]);
+        }
+        if let Some((s, _)) = staging {
+            d.cmd_copy_buffer(cb, s, buf, &[vk::BufferCopy::default().dst_offset(keep).size(tail.len() as u64)]);
+        }
+    })?;
+    unsafe {
+        if let Some((s, sm)) = staging {
+            d.destroy_buffer(s, None);
+            d.free_memory(sm, None);
+        }
+        d.destroy_buffer(old.0, None);
+        d.free_memory(old.1, None);
+    }
+    Ok((buf, mem))
 }

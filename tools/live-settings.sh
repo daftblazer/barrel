@@ -5,7 +5,9 @@
 # ENV_FILE is docs/ryza/checks.env's shape: it sets $G (the game's folder), $LSAVES (a saves
 # folder for the title's list) and $OUT (scratch space, big files). Cases (default: all) are
 # same (the settings applied again, unchanged, mid-run: BARREL_REAPPLY_AT), scale75, msaa4,
-# low, fsr1, nativeaa (fsr3 and taa, the temporal ones, are named too).
+# low, grass (the grass density row lower: the plants made again), textures (the texture quality
+# row lower: the textures uploaded again at the new mip bias), fsr1, nativeaa (fsr3 and taa, the
+# temporal ones, are named too).
 #
 # Run A starts from an empty config on the title's 3D backdrop, opens Settings, goes to the
 # Graphics tab, changes the rows, leaves with B, answers Yes and writes a picture some frames
@@ -31,11 +33,14 @@ field=s19_l_highway_03
 tab=${TAB_PRESSES:-2}   # RB presses from the first tab to the Graphics tab
 
 # Case table: name | changes ("row:direction:count" separated by spaces) | temporal (0/1).
-# Rows of the Graphics tab: 2 Render Scale, 3 Upscaler, 7 Overall Quality, 12 Anti-Aliasing.
+# Rows of the Graphics tab: 2 Render Scale, 3 Upscaler, 7 Overall Quality, 8 Texture Quality,
+# 12 Anti-Aliasing, 20 Grass Density.
 declare -A changes=(
     [scale75]="2:-1:2"
     [msaa4]="12:1:%AA_MSAA4%"
     [low]="7:-1:2"
+    [grass]="20:-1:1"
+    [textures]="8:-1:1"
     [fsr1]="2:-1:2 3:1:1"
     [nativeaa]="12:1:%AA_NATIVE%"
     [taa]="12:1:%AA_TAA%"

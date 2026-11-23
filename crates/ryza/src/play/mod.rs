@@ -678,30 +678,72 @@ const PERSON_SPHERE: (f32, f32) = (90.0, 120.0);
 /// box the game tests against the view (`shown`): the square from the heightmap's lowest
 /// height to its highest plus the cell's tallest plant (the plants' update, `0x140a78dd0`,
 /// with the range the field sets from its heightmap).
-fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) -> std::collections::HashMap<u32, [(Vec3, Vec3); 2]> {
-    let mut boxes = std::collections::HashMap::new();
-    let Some(ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
+fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, atlas: usize, normals: Option<usize>, density: f32) -> Option<(PlantField, std::collections::HashMap<u32, [(Vec3, Vec3); 2]>)> {
+    let (vertex_base, index_base) = (scene.vertices.len() as u32, scene.indices.len() as u32);
+    let cards = plant_cards(g, main, area, density, vertex_base, index_base)?;
+    let instance = scene.instance(Mat4::IDENTITY);
+    scene.vertices.extend_from_slice(&cards.vertices);
+    scene.indices.extend_from_slice(&cards.indices);
+    scene.draws.extend(plant_draws(&cards, atlas, normals, instance));
+    Some((PlantField { atlas, normals, instance, vertex_base, index_base }, cards.boxes()))
+}
+
+/// What the scene keeps of its plants to build them again for another density
+/// (`presets.grass.density`): the cards are the scene's last vertices and indices, from these
+/// bases on.
+struct PlantField {
+    atlas: usize,
+    normals: Option<usize>,
+    instance: u32,
+    vertex_base: u32,
+    index_base: u32,
+}
+
+/// The plants' cards for one density: their vertices and indices (the first vertex and index
+/// being `vertex_base` and `index_base` in the scene) and each cell's range and boxes.
+struct PlantCards {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    count: usize,
+    cells: Vec<PlantCell>,
+}
+
+struct PlantCell {
+    first_index: u32,
+    index_count: u32,
+    /// The cell's square from the lowest foot to the highest top of its plants (for the draw
+    /// trace), and the box the game tests against the view (`shown`): the square from the
+    /// heightmap's lowest height to its highest plus the cell's tallest plant (the plants'
+    /// update, `0x140a78dd0`, with the range the field sets from its heightmap).
+    boxes: [(Vec3, Vec3); 2],
+}
+
+impl PlantCards {
+    /// Each cell's draw's first index with its two boxes.
+    fn boxes(&self) -> std::collections::HashMap<u32, [(Vec3, Vec3); 2]> {
+        self.cells.iter().map(|c| (c.first_index, c.boxes)).collect()
+    }
+}
+
+/// The plants for `density`, as `add_plants` lays them out; none when the field has no heightmap.
+fn plant_cards(g: &barrel_ryza::grass::Grass, main: &Elixir, area: &str, density: f32, vertex_base: u32, index_base: u32) -> Option<PlantCards> {
+    let ([low, high], ground) = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
         .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
         .and_then(|b| barrel_formats::khm::parse(b).ok())
-        .map(|h| (h.range, barrel_engine::walk::Ground::of_heightmap(h)))
-    else {
-        return boxes;
-    };
-    let ([low, high], ground) = ground;
+        .map(|h| (h.range, barrel_engine::walk::Ground::of_heightmap(h)))?;
     let [cx, cz] = g.cell();
     let plants = g.plants(PLANT_LIMIT, density, |x, z| ground.height(x, z, f32::MAX / 2.0, 0.0));
     let mut blocks: std::collections::BTreeMap<(u32, u32), Vec<&barrel_ryza::grass::Plant>> = Default::default();
     for p in &plants {
         blocks.entry((p.cell[0], p.cell[1])).or_default().push(p);
     }
-    let instance = scene.instance(Mat4::IDENTITY);
+    let mut cards = PlantCards { vertices: Vec::new(), indices: Vec::new(), count: plants.len(), cells: Vec::new() };
     for (&(i, j), list) in &blocks {
-        let first_index = scene.indices.len() as u32;
+        let first_index = index_base + cards.indices.len() as u32;
         let (foot, top) = list.iter().fold((f32::MAX, f32::MIN), |(f, t), p| (f.min(p.at[1]), t.max(p.at[1] + p.size[1])));
         let tallest = list.iter().fold(0.0f32, |t, p| t.max(p.size[1]));
         // (render space: game x mirrored)
         let square = |lo: f32, hi: f32| (Vec3::new(-((i + 1) as f32) * cx, lo, j as f32 * cz), Vec3::new(-(i as f32) * cx, hi, (j + 1) as f32 * cz));
-        boxes.insert(first_index, [square(foot, top), square(low, high + tallest)]);
         for p in list {
             let [u, v, cw, ch] = p.card;
             let [w, h] = p.size;
@@ -709,45 +751,50 @@ fn add_plants(scene: &mut Scene, g: &barrel_ryza::grass::Grass, main: &Elixir, a
             // As the game builds a card: every corner at the plant's foot, its offset half the
             // width to either side and the height up (the wind leans the top by that height).
             let foot = [-p.at[0], p.at[1], p.at[2]];
-            let base = scene.vertices.len() as u32;
+            let base = vertex_base + cards.vertices.len() as u32;
             for (dx, dy, uv) in [(-0.5, 0.0, [u, v + ch]), (0.5, 0.0, [u + cw, v + ch]), (0.5, 1.0, [u + cw, v]), (-0.5, 1.0, [u, v])] {
-                scene.vertices.push(Vertex { pos: foot, normal: PLANT_NORMAL, uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0], tangent: 0 });
+                cards.vertices.push(Vertex { pos: foot, normal: PLANT_NORMAL, uv, joints: [0; 4], weights: [0; 4], morph: [0; 2], color: [255; 4], corner: [dx * w, dy * h, 0.0], tangent: 0 });
             }
-            scene.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+            cards.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }
-        scene.draws.push(Draw {
-            first_index,
-            index_count: scene.indices.len() as u32 - first_index,
-            texture: atlas,
-            overlay: None,
-            instance,
-            mask: normals,
-            normal_map: normals,
-            emission: None,
-            specular: None,
-            eye: false,
-            sky: false,
-            scroll: 0.0,
-            outline: None,
-            field: Some(0),
-            casts: false,
-            sub_bias: None,
-            name: "plants".into(),
-            version: None,
-            lod: 0,
-            light: 0,
-            tint: 0,
-            bounds: None,
-            class: 0,
-            object: 0,
-            part: None,
-            bones: Vec::new(),
-            shader: String::new(),
-            two_sided: false,
-        });
+        cards.cells.push(PlantCell { first_index, index_count: index_base + cards.indices.len() as u32 - first_index, boxes: [square(foot, top), square(low, high + tallest)] });
     }
-    eprintln!("plants: {} in {} draws", plants.len(), blocks.len());
-    boxes
+    eprintln!("plants: {} in {} draws", cards.count, cards.cells.len());
+    Some(cards)
+}
+
+/// One draw a grid cell, as the game's, the atlas being texture `atlas`.
+fn plant_draws(cards: &PlantCards, atlas: usize, normals: Option<usize>, instance: u32) -> impl Iterator<Item = Draw> + '_ {
+    cards.cells.iter().map(move |c| Draw {
+        first_index: c.first_index,
+        index_count: c.index_count,
+        texture: atlas,
+        overlay: None,
+        instance,
+        mask: normals,
+        normal_map: normals,
+        emission: None,
+        specular: None,
+        eye: false,
+        sky: false,
+        scroll: 0.0,
+        outline: None,
+        field: Some(0),
+        casts: false,
+        sub_bias: None,
+        name: "plants".into(),
+        version: None,
+        lod: 0,
+        light: 0,
+        tint: 0,
+        bounds: None,
+        class: 0,
+        object: 0,
+        part: None,
+        bones: Vec::new(),
+        shader: String::new(),
+        two_sided: false,
+    })
 }
 
 /// The most ticks the title's event is run ahead for its people's placing (ten seconds: it
@@ -1178,7 +1225,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if let Some(r) = &ramp_pack {
             let ramp = textures.len();
             textures.extend(r.textures.first());
-            for actor in cast.iter_mut() {
+            // (Their packs' textures are added after the loop, so that the list does not keep
+            // the actors borrowed mutably: `extra` is what the loop's own adds would be.)
+            let (mut extra, mut placed) = (0, Vec::new());
+            for (k, actor) in cast.iter_mut().enumerate() {
                 let Some(play) = &title_play else { continue };
                 // a prop has no body on the stage: the event's `q5` places it for good
                 let body = play.stage.characters.get(&actor.slot);
@@ -1188,9 +1238,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 let joints = actor.joints(body, play.stage.time);
                 actor.instance = scene.instance(actor.model(body));
                 let name = format!("slot {}", actor.slot);
-                let drawn = actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, actor.instance, textures.len(), ramp, &name, &actor.swing, Some(&mut ramp_rows))?;
+                let drawn = actors::add_character(&mut scene, &actor.geometry, actor.pack.textures.len(), &joints, actor.instance, textures.len() + extra, ramp, &name, &actor.swing, Some(&mut ramp_rows))?;
                 eprintln!("{name}: {drawn} draws, {:?} at stage {:.3} s", body.map(|b| (b.position, b.facing.to_degrees(), &b.motion)), play.stage.time);
-                textures.extend(actor.pack.textures.iter());
+                extra += actor.pack.textures.len();
+                placed.push(k);
+            }
+            for k in placed {
+                textures.extend(cast[k].pack.textures.iter());
             }
         }
     }
@@ -1308,11 +1362,12 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         textures.extend(dp.textures.iter());
     }
     let mut plant_boxes = std::collections::HashMap::new();
+    let mut plant_field: Option<PlantField> = None;
     if let (Some(g), Some(gp)) = (&grass, &grass_pack) {
         if let Some(atlas) = gp.textures.first() {
             // The cards' normal maps (the pack's third texture), for `NORMAL_MAPPED`.
             let normals = gp.textures.get(2).map(|_| textures.len() + 1);
-            plant_boxes = add_plants(&mut scene, g, &main, &files.area, textures.len(), normals, plant_preset.density);
+            (plant_field, plant_boxes) = add_plants(&mut scene, g, &main, &files.area, textures.len(), normals, plant_preset.density).map_or((None, Default::default()), |(f, b)| (Some(f), b));
             textures.push(atlas);
             textures.extend(gp.textures.get(2));
         }
@@ -1476,7 +1531,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         .collect();
     // Without their largest mip levels on a lower preset (`presets.texture_bias`: the game's
     // texture mip bias, 1 on the handheld's Middle), saving memory and bandwidth.
-    let biased: Vec<barrel_formats::g1t::Texture> = textures.iter().copied().chain(composite_textures.iter()).map(|t| t.without_top_levels(presets.texture_bias)).collect();
+    // (The whole ones are kept to upload them again at another bias: views of the packs'
+    // bytes, which stay.)
+    let unbiased: Vec<&barrel_formats::g1t::Texture> = textures.iter().copied().chain(composite_textures.iter()).collect();
+    let biased: Vec<barrel_formats::g1t::Texture> = unbiased.iter().map(|t| t.without_top_levels(presets.texture_bias)).collect();
     let textures: Vec<&barrel_formats::g1t::Texture> = biased.iter().collect();
     eprintln!("textures: {} at {:.1} MB (mip bias {})", textures.len(), textures.iter().map(|t| t.levels.iter().map(|l| l.len()).sum::<usize>()).sum::<usize>() as f64 / 1e6, presets.texture_bias);
     // The game lights in linear light: the colour textures (a draw's own, and its emission
@@ -1520,7 +1578,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         cloth.update(mesh, &r.joints, cloth::model_matrix(r.chara.size, r.player.turn, r.player.at), wind, 0.0, &mut palette);
     }
     let data = scene_gpu::SceneData { vertices: vbytes, indices: ibytes, textures: uploaded, opaque, instances: &instances, palette: &palette, deltas: &deltas, weights: &morph_weights, grounds, patterns: vec![cloud_texture], specular_cubes: vec![specular_cube], white };
-    let scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
+    let mut scene = scene_gpu::SceneGpu::new(&gpu, data, &renderer.shared)?;
 
     // The camera: on the given point (or on Ryza in a window), framing the ground (render
     // space mirrors x: the terrain spans x -extent..0, z 0..extent), or everything when there
@@ -1592,6 +1650,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The presets as they stand now: a live change of the settings (below, where the frame
     // starts) replaces them, and the draw tests below read them each frame.
     let presets_now = std::cell::Cell::new(presets);
+    let plant_boxes = std::cell::RefCell::new(plant_boxes);
     let ranges = std::cell::Cell::new(ranges_for(&presets)?);
     // STAND-IN: The townsfolk and gimmicks have no draw range; the real thing is the field file's `chara` and `gimmick` ranges, which like the objects' count only when ranges are in use.
     // The plants have their own range (`shown`, below), not an object's.
@@ -1641,22 +1700,23 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let sides_now = std::cell::Cell::new([glam::Vec4::ZERO; 4]);
     // The boot sequence's screens come before the scene exists: it is left out until the title.
     let scene_on = std::cell::Cell::new(true);
-    let shown = |d: &Draw| {
-        scene_on.get()
+    // `shown`, for a view: whether the scene is on, its eye, forward axis and four sides.
+    let shown_from = |d: &Draw, on: bool, eye: Vec3, forward: Vec3, sides: [glam::Vec4; 4]| {
+        on
             && !a.hide.iter().any(|h| d.name.contains(h.as_str()))
             // A plant cell is drawn unless its test box (`add_plants`) is wholly outside one of
             // the view's four sides or past the grass range's end, as the game's plants' update
             // tests it against its six planes (`0x140a78dd0`; docs/renderer.md, "Ryza DX: which
             // plant cells are drawn").
-            && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&[_, (lo, hi)]| {
+            && plant_boxes.borrow().get(&d.first_index).filter(|_| d.name == "plants").copied().is_none_or(|[_, (lo, hi)]| {
                 let corners = (0..8).map(|k| Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
-                let depth = |c: Vec3| forward_now.get().dot(c - eye_now.get());
-                corners.clone().any(|c| depth(c) <= presets_now.get().grass.far[1]) && sides_now.get().iter().all(|p| corners.clone().any(|c| p.truncate().dot(c) + p.w >= 0.0))
+                let depth = |c: Vec3| forward.dot(c - eye);
+                corners.clone().any(|c| depth(c) <= presets_now.get().grass.far[1]) && sides.iter().all(|p| corners.clone().any(|c| p.truncate().dot(c) + p.w >= 0.0))
             })
             // A placed object wholly behind one of the field's occluder quads is left out.
-            && (d.object == 0 || occluded_boxes.get(&d.object).is_none_or(|b| !occluders.borrow().hides(b, eye_now.get(), forward_now.get())))
+            && (d.object == 0 || occluded_boxes.get(&d.object).is_none_or(|b| !occluders.borrow().hides(b, eye, forward)))
             && match (ranges.get(), boxes.get(&(d.first_index, d.instance))) {
-                (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
+                (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye, lo, hi),
                 _ => true,
             }
             // An object's level of detail by its distance from the eye (the game's LOD
@@ -1665,7 +1725,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // the full one.
             && (d.lod == 0
                 || boxes.get(&(d.first_index, d.instance)).filter(|_| presets_now.get().lods).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
-                    let far = ((lo + hi) * 0.5).distance(eye_now.get());
+                    let far = ((lo + hi) * 0.5).distance(eye);
                     let level = d.lod & 3;
                     let start = match level {
                         LOD_HI => 0.0,
@@ -1675,6 +1735,16 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     let end = if d.lod & LOD_LAST != 0 { f32::INFINITY } else if level == LOD_HI { presets_now.get().lod[0] } else { presets_now.get().lod[1] };
                     far >= start && far < end
                 }))
+    };
+    let shown = |d: &Draw| shown_from(d, scene_on.get(), eye_now.get(), forward_now.get(), sides_now.get());
+    // The static shadow layer is drawn once, from the view of the frame it is first asked for
+    // (`Renderer::far_shadow`); drawn again for new settings (`BARREL`'s live apply) it takes
+    // the casters that view has, as a cold start's does.
+    let mut far_replay = false;
+    let far_view = std::cell::Cell::new(None::<(bool, Vec3, Vec3, [glam::Vec4; 4])>);
+    let far_shown = |d: &Draw| match far_view.get() {
+        Some((on, eye, forward, sides)) => shown_from(d, on, eye, forward, sides),
+        None => shown(d),
     };
     // Lit as the field's models: the environment's light on their vertex colour (no sun yet).
     // Her draws take the toon ramp (flag 128, the row in bits 16-23).
@@ -1988,11 +2058,56 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if std::mem::take(&mut apply_settings) {
             let config = read_config();
             let now = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);
-            if now.graphics != renderer.settings {
+            if now.graphics != renderer.settings || now.presets != presets_now.get() {
                 eprintln!("settings: applied live (game frame {})", sound_base + i64::from(frame_no as i32));
+            }
+            if now.graphics != renderer.settings {
                 renderer = renderer.apply_settings(&gpu, presenter.as_ref(), now.graphics)?;
                 scene.rebind(&gpu, &renderer.shared);
                 shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
+            }
+            if now.presets.grass.density != presets_now.get().grass.density
+                && let (Some(f), Some(g)) = (&plant_field, &grass)
+                && let Some(cards) = plant_cards(g, &main, &files.area, now.presets.grass.density, f.vertex_base, f.index_base)
+            {
+                // The plants are the scene's last vertices and indices: laid again as a cold
+                // start with this density lays them, and their draws in the old ones' place.
+                let as_bytes = |p: *const u8, n: usize| unsafe { std::slice::from_raw_parts(p, n) };
+                scene.replace_geometry_tail(
+                    &gpu,
+                    renderer.pool,
+                    u64::from(f.vertex_base) * size_of::<Vertex>() as u64,
+                    as_bytes(cards.vertices.as_ptr() as *const u8, cards.vertices.len() * size_of::<Vertex>()),
+                    u64::from(f.index_base) * 4,
+                    as_bytes(cards.indices.as_ptr() as *const u8, cards.indices.len() * 4),
+                )?;
+                let at = draws.iter().position(|d| d.name == "plants").unwrap_or(draws.len());
+                draws.retain(|d| d.name != "plants");
+                let fresh: Vec<Draw> = plant_draws(&cards, f.atlas, f.normals, f.instance)
+                    .zip(&cards.cells)
+                    .map(|(mut d, c)| {
+                        d.light = FULL_LIGHT;
+                        d.bounds = Some(Bounds { lo: c.boxes[0].0, hi: c.boxes[0].1, pad: f32::INFINITY, round: false });
+                        d
+                    })
+                    .collect();
+                draws.splice(at..at, fresh);
+                *plant_boxes.borrow_mut() = cards.boxes();
+                eprintln!("settings: plants for density {}", now.presets.grass.density);
+            }
+            if now.presets.texture_bias != presets_now.get().texture_bias {
+                let biased: Vec<barrel_formats::g1t::Texture> = unbiased.iter().map(|t| t.without_top_levels(now.presets.texture_bias)).collect();
+                let biased: Vec<&barrel_formats::g1t::Texture> = biased.iter().collect();
+                let (uploaded, opaque, ..) = upload_textures(&gpu, renderer.pool, &biased, None, &linear)?;
+                scene.replace_textures(&gpu, &renderer.shared, uploaded, opaque)?;
+                eprintln!("settings: textures at mip bias {}", now.presets.texture_bias);
+            }
+            let (was, is) = (presets_now.get(), now.presets);
+            if (was.lod, was.lods, was.objects, was.ranged) != (is.lod, is.lods, is.objects, is.ranged) && far_view.get().is_some() {
+                // The static shadow layer's casters are the view's ranges and levels of detail
+                // at the frame it was drawn: drawn again with the new ones, from that view.
+                renderer.forget_far_shadow();
+                far_replay = true;
             }
             presets_now.set(now.presets);
             ranges.set(ranges_for(&now.presets)?);
@@ -2100,6 +2215,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if let Some((want, mut info)) = view.shadow_far
             && let Some((vp, layer)) = renderer.far_shadow(Some(want))
         {
+            // A layer being drawn takes this frame's view for its casters, unless it is the one
+            // drawn again for new settings (the first one's).
+            if renderer.far_shadow.borrow().build.is_some() && !std::mem::take(&mut far_replay) {
+                far_view.set(Some((scene_on.get(), eye_now.get(), forward_now.get(), sides_now.get())));
+            }
             for (k, col) in vp.to_cols_array_2d().into_iter().enumerate() {
                 view.look[SHADOW_FAR_SLOT + k] = col;
             }
@@ -2489,6 +2609,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             current_field: 0,
             hidden: &hidden,
             shown: &shown,
+            far_shown: Some(&far_shown),
             in_sight: &in_sight,
             material: &material,
             draw_vp,
