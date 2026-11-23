@@ -333,7 +333,9 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   file: `option_<key> N` lines, and the game's graphics keys once a graphics row was changed).
   The screen holds Camera, Game, Audio and Graphics rows; the graphics rows are
   `graphics::Settings` (changing an item makes the quality Custom, as the game's). **The
-  graphics apply on the next start** (the renderer reads the settings once; no live rebuild).
+  render settings apply at once on Yes** (2026-11-23; below, "Live apply"): the renderer is rebuilt in the same process.
+  What is not live yet: the plants' density, the textures' mip bias (both baked when the field loads: next start), the
+  display rows (resolution, window mode, frame rate limit, vsync: stored only).
   Unit test: `options::tests::a_change_goes_to_the_config_and_back`.
 - **Left over (each kept and stored, not honoured, or not built):**
   - Keyboard and Controller tabs show the game's pages but assign nothing (A on a command, the
@@ -419,9 +421,24 @@ clears Barrel's (msaa 1, no native AA). The filtering is the game's Anisotropic 
 `anisotropy` (`presets::Graphics::apply` keeps it; it forced 16). `scale`, `upscaler`, `msaa`, `taa`,
 `fsr3`, `gsr2`, `sharpen` and `anisotropy` go to the config once one of Barrel's choices was changed,
 and the screen reads them back (the run's render settings before the presets). Like the game's rows they
-apply on the next start. `--settings-as-game` (parity only) lists the game's 22 rows with the game's own
+apply at once on Yes (see "Live apply"). `--settings-as-game` (parity only) lists the game's 22 rows with the game's own
 choices, as the captures have them. Unit tests: `options::tests` (the rows, skip-closed stepping, the
 descriptions, the AA and filtering mapping), `presets::tests`.
+
+### Live apply (2026-11-23)
+
+After A on Yes (a player's, or the replayed key offscreen: `Leave::saved_at`) the run resolves the saved config
+again through the one function the start uses (`play::Resolved::from`: render settings, the game's settings, the
+tables' presets) and, when the render settings changed, `Renderer::apply_settings` (barrel-render) rebuilds what they
+shape: render passes, pipelines, targets and their sets, occlusion, glow, upscale and temporal passes, the shadow
+target, the sampler's filtering. The command pool, the descriptor layouts and the lighting ring are kept, the post
+pass stays compatible with the text layers, and `SceneGpu::rebind` writes the sampler and the shadow map into the
+scene's sets again. Temporal history starts over. The presets' per-frame values (shadow reach, bloom, level-of-detail
+distances, draw ranges, grass fade) are read from a cell each frame, so they change at once too.
+`tools/live-settings.sh ENV_FILE [CASE]` compares a live change with a cold start of the saved config (see its header).
+Known residual: the live picture differs from the cold one by about 0.3% of the pixels (31 dB; sparse small
+differences in the sun's share, also with the same settings applied again: the renderer's state after a rebuild is
+not yet the first one's, cause not found); Quality Low's plants and textures need the next start.
 
 ## Controller (Ryza)
 

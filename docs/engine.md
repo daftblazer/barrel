@@ -605,6 +605,8 @@ mistake for a day). `u46` in the events does not play its movie yet.
 
 ## Deliberate differences
 
+(Ryza's graphics settings apply live from the Settings screen's Yes: `Renderer::apply_settings`, docs/renderer.md "Rebuilding for new settings".)
+
 - **Ryza's run loop enters at a fitted phase.** When her run motion takes over from the start
   motion it begins 0.35 s into its loop (`player::RUN_LOOP_PHASE`, a stand-in: the game's
   hand-over is not read); with 0 the pelvis's cloth pins were 3.1 cm off the game's over the

@@ -131,6 +131,98 @@ pub struct Renderer {
     pub upto: std::cell::Cell<dump::Stop>,
 }
 
+/// What a renderer makes that no setting changes: the command pool, the descriptor layouts, the
+/// lighting ring and the black cube map. A scene's uploads and descriptor sets are made with them,
+/// so `Renderer::apply_settings` carries them over to the renderer it builds.
+struct Stable {
+    pool: vk::CommandPool,
+    set_layout: vk::DescriptorSetLayout,
+    instance_layout: vk::DescriptorSetLayout,
+    terrain_layout: vk::DescriptorSetLayout,
+    look_ring: ring::Ring,
+    black_cube: (vk::Image, vk::DeviceMemory, vk::ImageView),
+}
+
+impl Stable {
+    fn new(gpu: &Gpu) -> Result<Stable> {
+        let d = &gpu.device;
+        let pool = unsafe {
+            d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
+        };
+
+        // Descriptors: one combined image sampler per texture.
+        let binding = [vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
+        let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)? };
+        let storage = |b: u32| {
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(b)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX)
+        };
+        // And the field's character lighting (binding 4, for the fragment shader).
+        // The lighting block, one slot per frame in flight.
+        let look_ring = ring::Ring::new(&gpu, LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER)?;
+        let inst_binding = [
+            storage(0),
+            storage(1),
+            storage(2),
+            storage(3),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(4)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            // The sun's shadow map (binding 5).
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(5)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            // The field's light texture, the drifting cloud shadows (binding 6).
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(6)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            // The field's specular environment cube map (binding 7).
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(7)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        ];
+        let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
+        // Each field's ground textures: its blend maps, its layers' colour tiles and their normal maps.
+        let terrain_bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(TERRAIN_MAPS as u32)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(TERRAIN_LAYERS as u32)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(2)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(TERRAIN_LAYERS as u32)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        ];
+        let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
+        // A black cube map for the fields that have no specular one.
+        let black = [0u8; 48];
+        let black_cube = upload_cube(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba16f, format_code: 0, layers: 6, volume: false, levels: vec![&black[..]] })?;
+        Ok(Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube })
+    }
+}
+
 /// The images the post pass draws into: the window's swapchain images, or the offscreen one.
 fn target_views(presenter: Option<&Presenter>, offscreen: Option<vk::ImageView>) -> Vec<vk::ImageView> {
     match (presenter, offscreen) {
@@ -376,12 +468,15 @@ impl Renderer {
     /// window `presenter` shows, or offscreen at `width` × `height`; `timings` times the GPU's
     /// stages, `show_motion` shows the motion vectors in place of the frame.
     pub fn new(gpu: &Gpu, settings: RenderSettings, presenter: Option<&Presenter>, width: u32, height: u32, timings: bool, show_motion: bool) -> Result<Renderer> {
+        Renderer::build(gpu, settings, presenter, width, height, timings, show_motion, None)
+    }
+
+    /// `new`, taking the settings-independent objects from `keep` when it has them (the command
+    /// pool, the descriptor layouts, the lighting ring, the black cube map): what a scene's
+    /// sets and uploads were made with, which stay valid across `apply_settings`.
+    fn build(gpu: &Gpu, settings: RenderSettings, presenter: Option<&Presenter>, width: u32, height: u32, timings: bool, show_motion: bool, keep: Option<Stable>) -> Result<Renderer> {
         let d = &gpu.device;
         let color_format = presenter.map_or(COLOR_FORMAT, |p| p.format);
-        let pool = unsafe {
-            d.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(gpu.queue_family), None)?
-        };
-
         let anisotropy = (settings.anisotropy as f32).min(gpu.max_anisotropy).max(1.0);
         let sampler = unsafe {
             d.create_sampler(
@@ -397,77 +492,11 @@ impl Renderer {
                 None,
             )?
         };
-
-        // Descriptors: one combined image sampler per texture.
-        let binding = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
-        let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None)? };
-        let storage = |b: u32| {
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(b)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX)
+        let Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube } = match keep {
+            Some(stable) => stable,
+            None => Stable::new(gpu)?,
         };
-        // And the field's character lighting (binding 4, for the fragment shader).
-        // The lighting block, one slot per frame in flight.
-        let look_ring = ring::Ring::new(&gpu, LOOK_SIZE, vk::BufferUsageFlags::UNIFORM_BUFFER)?;
-        let inst_binding = [
-            storage(0),
-            storage(1),
-            storage(2),
-            storage(3),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(4)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            // The sun's shadow map (binding 5).
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(5)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            // The field's light texture, the drifting cloud shadows (binding 6).
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(6)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            // The field's specular environment cube map (binding 7).
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(7)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
-        let instance_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&inst_binding), None)? };
-        // Each field's ground textures: its blend maps, its layers' colour tiles and their normal maps.
-        let terrain_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(TERRAIN_MAPS as u32)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(TERRAIN_LAYERS as u32)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(2)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(TERRAIN_LAYERS as u32)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
-        let terrain_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&terrain_bindings), None)? };
         let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
-        // A black cube map for the fields that have no specular one.
-        let black = [0u8; 48];
-        let black_cube = upload_cube(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba16f, format_code: 0, layers: 6, volume: false, levels: vec![&black[..]] })?;
         let shared = scene_gpu::Shared {
             set_layout,
             sampler,
@@ -1752,14 +1781,48 @@ impl Renderer {
     }
 
     /// Everything it made, gone (the device idle first); the GPU timings reported.
-    pub fn destroy(mut self, gpu: &Gpu) -> Result<()> {
+    pub fn destroy(self, gpu: &Gpu) -> Result<()> {
+        let stable = self.release(gpu)?;
+        let d = &gpu.device;
+        unsafe {
+            d.destroy_descriptor_set_layout(stable.terrain_layout, None);
+            d.destroy_image_view(stable.black_cube.2, None);
+            d.destroy_image(stable.black_cube.0, None);
+            d.free_memory(stable.black_cube.1, None);
+            d.destroy_descriptor_set_layout(stable.set_layout, None);
+            d.destroy_descriptor_set_layout(stable.instance_layout, None);
+            d.destroy_command_pool(stable.pool, None);
+        }
+        stable.look_ring.destroy(gpu);
+        Ok(())
+    }
+
+    /// The settings changed (`barrel_ryza`'s Settings screen, after its Yes): the renderer for
+    /// `settings`, at the window's or picture's size, with everything built from them made anew
+    /// (render passes, pipelines, targets and their sets, the occlusion, glow, upscale and
+    /// temporal passes, the shadow target, the sampler's filtering) and everything made outside
+    /// still valid: the command pool, the descriptor layouts and the lighting ring are carried
+    /// over, and the post pass stays compatible with the text layers' pipelines. The scene's
+    /// sets name the sampler and the shadow map, so the caller rewrites them (`SceneGpu::rebind`,
+    /// with the new `shared`). The temporal history starts over.
+    pub fn apply_settings(self, gpu: &Gpu, presenter: Option<&Presenter>, settings: RenderSettings) -> Result<Renderer> {
+        let (width, height, timings, show_motion) = (self.extent.width, self.extent.height, self.timer.is_some(), self.show_motion);
+        let fixed_cloud_map = self.fixed_cloud_map.clone();
+        let stable = self.release(gpu)?;
+        let mut renderer = Renderer::build(gpu, settings, presenter, width, height, timings, show_motion, Some(stable))?;
+        renderer.fixed_cloud_map = fixed_cloud_map;
+        Ok(renderer)
+    }
+
+    /// Everything the settings shaped, gone (the device idle first); what they did not shape is
+    /// handed back.
+    fn release(mut self, gpu: &Gpu) -> Result<Stable> {
         let d = &gpu.device;
         unsafe {
             d.device_wait_idle()?;
             d.destroy_pipeline(self.terrain_gpu.pipeline, None);
             d.destroy_pipeline_layout(self.terrain_gpu.pipeline_layout, None);
             d.destroy_shader_module(self.terrain_gpu.shader, None);
-            d.destroy_descriptor_set_layout(self.terrain_layout, None);
             d.destroy_pipeline(self.post_pipeline, None);
             d.destroy_pipeline_layout(self.post_layout, None);
             d.destroy_shader_module(self.post_vs, None);
@@ -1767,9 +1830,6 @@ impl Renderer {
             d.destroy_descriptor_pool(self.post_pool, None);
             d.destroy_descriptor_set_layout(self.post_set_layout, None);
             d.destroy_sampler(self.post_sampler, None);
-            d.destroy_image_view(self.black_cube.2, None);
-            d.destroy_image(self.black_cube.0, None);
-            d.free_memory(self.black_cube.1, None);
             d.destroy_image_view(self.filter.2, None);
             d.destroy_image(self.filter.0, None);
             d.free_memory(self.filter.1, None);
@@ -1844,10 +1904,8 @@ impl Renderer {
                 d.destroy_image(color, None);
                 d.free_memory(cmem, None);
             }
-            d.destroy_descriptor_set_layout(self.set_layout, None);
             d.destroy_sampler(self.sampler, None);
         }
-        self.look_ring.destroy(gpu);
         self.shadow_target.destroy(gpu);
         if let Some(r) = self.reflect.take() {
             r.destroy(gpu);
@@ -1856,11 +1914,7 @@ impl Renderer {
             dof.destroy(gpu);
         }
         self.ao.destroy(gpu);
-        unsafe {
-            d.destroy_descriptor_set_layout(self.instance_layout, None);
-            d.destroy_command_pool(self.pool, None);
-        }
-        Ok(())
+        Ok(Stable { pool: self.pool, set_layout: self.set_layout, instance_layout: self.instance_layout, terrain_layout: self.terrain_layout, look_ring: self.look_ring, black_cube: self.black_cube })
     }
 }
 

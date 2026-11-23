@@ -131,6 +131,14 @@ pub struct Look {
 }
 
 impl Leave {
+    /// The frame the changes are written (A on Yes), once it was pressed.
+    pub fn saved_at(&self) -> Option<i32> {
+        match self.phase {
+            Phase::Saving { at, .. } => Some(at),
+            _ => None,
+        }
+    }
+
     fn settle(&mut self, frame: i32) {
         match self.phase {
             Phase::Closing { opened, at, .. } if frame >= at + SLIDE => {

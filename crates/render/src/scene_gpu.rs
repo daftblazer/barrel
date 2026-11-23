@@ -123,6 +123,10 @@ pub struct SceneGpu {
     instance_sets: Vec<vk::DescriptorSet>,
     fields: usize,
     patterns: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
+    /// Each field's light texture and specular cube map as its sets name them (the white
+    /// texture, the black cube map for a field without), kept to write the sets again.
+    pattern_views: Vec<vk::ImageView>,
+    cube_views: Vec<vk::ImageView>,
     cubes: Vec<(vk::Image, vk::DeviceMemory, vk::ImageView)>,
     ground_pool: Option<vk::DescriptorPool>,
     pub grounds: Vec<Ground>,
@@ -196,12 +200,10 @@ impl SceneGpu {
         let image = |sampler, view| [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         let shadow_info = image(shared.shadow_sampler, shared.shadow_view);
         let white_view = textures[data.white].2;
-        let pattern_infos: Vec<_> = (0..fields)
-            .map(|k| image(shared.sampler, data.patterns.get(k).and_then(|p| p.as_ref()).map_or(white_view, |p| p.2)))
-            .collect();
-        let cube_infos: Vec<_> = (0..fields)
-            .map(|k| image(shared.sampler, data.specular_cubes.get(k).and_then(|p| p.as_ref()).map_or(shared.black_cube, |p| p.2)))
-            .collect();
+        let pattern_views: Vec<vk::ImageView> = (0..fields).map(|k| data.patterns.get(k).and_then(|p| p.as_ref()).map_or(white_view, |p| p.2)).collect();
+        let cube_views: Vec<vk::ImageView> = (0..fields).map(|k| data.specular_cubes.get(k).and_then(|p| p.as_ref()).map_or(shared.black_cube, |p| p.2)).collect();
+        let pattern_infos: Vec<_> = pattern_views.iter().map(|&v| image(shared.sampler, v)).collect();
+        let cube_infos: Vec<_> = cube_views.iter().map(|&v| image(shared.sampler, v)).collect();
         for (k, set) in instance_sets.iter().enumerate() {
             let (slot, pattern_info, cube_info) = (k / fields, &pattern_infos[k % fields], &cube_infos[k % fields]);
             let infos = [[instances.info(slot)], [palette.info(slot)], delta_info, [weights.info(slot)]];
@@ -230,17 +232,7 @@ impl SceneGpu {
             for g in data.grounds {
                 let tl = [shared.terrain_layout];
                 let set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(tpool).set_layouts(&tl))?[0] };
-                let info = |k: usize| vk::DescriptorImageInfo::default().sampler(shared.sampler).image_view(g.textures[k].2).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-                let first_normal = crate::TERRAIN_MAPS + crate::TERRAIN_LAYERS;
-                let infos: Vec<vk::DescriptorImageInfo> = (0..first_normal).map(info).collect();
-                // The normal maps (as many as the layers have, the last repeated for the slots past them).
-                let normal_infos: Vec<vk::DescriptorImageInfo> = (0..crate::TERRAIN_LAYERS).map(|i| info((first_normal + i).min(g.textures.len() - 1))).collect();
-                let writes = [
-                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..crate::TERRAIN_MAPS]),
-                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[crate::TERRAIN_MAPS..]),
-                    vk::WriteDescriptorSet::default().dst_set(set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&normal_infos),
-                ];
-                unsafe { d.update_descriptor_sets(&writes, &[]) };
+                write_ground_set(d, set, shared.sampler, &g.textures);
                 grounds.push(Ground {
                     field: g.field,
                     set,
@@ -272,9 +264,33 @@ impl SceneGpu {
             instance_sets,
             fields,
             patterns,
+            pattern_views,
+            cube_views,
             cubes,
             sets,
         })
+    }
+
+    /// The renderer's sampler and shadow map are new (`Renderer::apply_settings`): every set
+    /// that names them is written again, with the same textures. Nothing may be in flight.
+    pub fn rebind(&self, gpu: &Gpu, shared: &Shared) {
+        let d = &gpu.device;
+        let image = |sampler, view| [vk::DescriptorImageInfo::default().sampler(sampler).image_view(view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        for (set, (_, _, view)) in self.sets.iter().zip(&self.textures) {
+            let info = image(shared.sampler, *view);
+            let write = vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info);
+            unsafe { d.update_descriptor_sets(&[write], &[]) };
+        }
+        let shadow = image(shared.shadow_sampler, shared.shadow_view);
+        for (k, set) in self.instance_sets.iter().enumerate() {
+            let field = k % self.fields;
+            let (pattern, cube) = (image(shared.sampler, self.pattern_views[field]), image(shared.sampler, self.cube_views[field]));
+            let writes = [(5, &shadow), (6, &pattern), (7, &cube)].map(|(b, info)| vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(b).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(info));
+            unsafe { d.update_descriptor_sets(&writes, &[]) };
+        }
+        for g in &self.grounds {
+            write_ground_set(d, g.set, shared.sampler, &g.textures);
+        }
     }
 
     /// Set 1 for field `field` (the first's for a scene without fields) in the slot of the
@@ -347,4 +363,19 @@ mod tests {
         let w = bake_words(&[e, 7, 9]);
         assert_eq!(w, [3, u32::from(e) | 7 << 16, 9, 0, 0, 0]);
     }
+}
+
+/// A ground's set: its blend maps, colour tiles and normal maps, each through `sampler`.
+fn write_ground_set(d: &ash::Device, set: vk::DescriptorSet, sampler: vk::Sampler, textures: &[(vk::Image, vk::DeviceMemory, vk::ImageView)]) {
+    let info = |k: usize| vk::DescriptorImageInfo::default().sampler(sampler).image_view(textures[k].2).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    let first_normal = crate::TERRAIN_MAPS + crate::TERRAIN_LAYERS;
+    let infos: Vec<vk::DescriptorImageInfo> = (0..first_normal).map(info).collect();
+    // The normal maps (as many as the layers have, the last repeated for the slots past them).
+    let normal_infos: Vec<vk::DescriptorImageInfo> = (0..crate::TERRAIN_LAYERS).map(|i| info((first_normal + i).min(textures.len() - 1))).collect();
+    let writes = [
+        vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[..crate::TERRAIN_MAPS]),
+        vk::WriteDescriptorSet::default().dst_set(set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&infos[crate::TERRAIN_MAPS..]),
+        vk::WriteDescriptorSet::default().dst_set(set).dst_binding(2).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&normal_infos),
+    ];
+    unsafe { d.update_descriptor_sets(&writes, &[]) };
 }

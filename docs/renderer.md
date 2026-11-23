@@ -1193,6 +1193,14 @@ story has not opened yet (R3 west of Colseit is unknown on the user's save),
 the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
 to World Map?" question is `question.rs`.
 
+## Rebuilding for new settings
+
+`Renderer::apply_settings(self, gpu, presenter, settings)` consumes the renderer and returns one for the new
+settings: `release` destroys everything the settings shaped and hands back the `Stable` parts (command pool,
+descriptor set layouts, the lighting ring, the black cube), which `build` takes in place of making them. A scene's
+uploads and sets stay valid; the sampler and the shadow map are new, so the caller calls `SceneGpu::rebind` with
+`renderer.shared`. Escha does not use it (it restarts).
+
 ## Graphics settings
 
 The PC release changes its graphics in a separate launcher; Barrel has none. Its graphics

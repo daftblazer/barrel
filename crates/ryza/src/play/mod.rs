@@ -765,6 +765,54 @@ fn flow_input(input: &barrel_ryza::title_menu::Input, loads: &dyn Fn(&barrel_ryz
     barrel_ryza::title_menu::Input { choose: input.choose.filter(|&c| loads(input, c)), ..input.clone() }
 }
 
+/// What the settings come to: the render settings the renderer is made with, the game's own
+/// graphics settings and the presets its tables give them (`barrel_ryza::presets`). The start
+/// and a live change of the settings (`Renderer::apply_settings`) resolve them the same way.
+struct Resolved {
+    graphics: RenderSettings,
+    /// The render settings before the presets' passes, which the Settings screen's own rows show.
+    render_before_presets: RenderSettings,
+    game_settings: barrel_ryza::graphics::Settings,
+    presets: barrel_ryza::presets::Graphics,
+}
+
+impl Resolved {
+    /// `preset` (`--preset`), else Barrel's graphics `config` text over the desktop preset, else
+    /// a launcher's default (`BARREL_DEFAULT_PRESET`), else the desktop's; the game's own
+    /// settings from the config's game keys, then `ini` (`--setting-ini`) over them (High with
+    /// nothing given); the presets through the game's tables, which `read` gives by file name.
+    fn from(preset: Option<RenderSettings>, config: Option<&str>, ini: Option<&str>, read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Resolved {
+        // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
+        // (`Frame::tone_white`) sees past the half range's 2.0. Its reflections and depth of field
+        // are on with a preset; a config can turn them off.
+        let ryza = |s: RenderSettings| RenderSettings { hdr_scene: true, reflections: true, depth_of_field: true, ..s };
+        let graphics = preset
+            .map(ryza)
+            .or(config.map(|c| RenderSettings { hdr_scene: true, ..RenderSettings::from_config_over(ryza(RenderSettings::DESKTOP), c) }))
+            .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)).map(ryza))
+            .unwrap_or(ryza(RenderSettings::DESKTOP));
+        let mut game_settings = barrel_ryza::graphics::Settings::default();
+        if let Some(c) = config {
+            game_settings.apply_config(c);
+        }
+        if let Some(ini) = ini {
+            game_settings.apply_ini(ini);
+        }
+        // The settings through the game's tables (`saves/graphicssetting`). They switch Barrel's
+        // passes only when the player gave some: else the render settings stand as they are.
+        let presets = barrel_ryza::presets::Graphics::resolve(&game_settings, read).unwrap_or_else(|e| {
+            eprintln!("graphics presets: {e}; the High one as shipped");
+            barrel_ryza::presets::Graphics::HIGH
+        });
+        let render_before_presets = graphics.resolved();
+        let graphics = if game_settings.given { presets.apply(graphics) } else { graphics }.resolved();
+        // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
+        // them, the handheld setting's in the same share.
+        let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };
+        Resolved { graphics, render_before_presets, game_settings, presets }
+    }
+}
+
 /// The settings the player changed go into Barrel's own config (the graphics config's file),
 /// their lines replacing the ones there; the rest of the file stays.
 fn save_options(state: &barrel_ryza::options::State) {
@@ -863,43 +911,19 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // Graphics as Escha's: --preset, else Barrel's graphics config (in a window, or offscreen
     // when `BARREL_CONFIG` names one), else a launcher's default (`BARREL_DEFAULT_PRESET`,
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
-    let config = (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
+    let read_config = || (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
+    let config = read_config();
     // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
     // (`Frame::tone_white`) sees past the half range's 2.0. Its reflections and depth of field
     // are on with a preset; a config can turn them off.
-    let ryza = |s: RenderSettings| RenderSettings { hdr_scene: true, reflections: true, depth_of_field: true, ..s };
-    let graphics = a
-        .preset
-        .map(ryza)
-        .or(config.as_deref().map(|c| RenderSettings { hdr_scene: true, ..RenderSettings::from_config_over(ryza(RenderSettings::DESKTOP), c) }))
-        .or(std::env::var("BARREL_DEFAULT_PRESET").ok().and_then(|n| RenderSettings::preset(&n)).map(ryza))
-        .unwrap_or(ryza(RenderSettings::DESKTOP));
-    // The game's own graphics settings (`barrel_ryza::graphics`): the config's game keys, then
-    // `--setting-ini` over them; High with nothing given.
-    let mut game_settings = barrel_ryza::graphics::Settings::default();
-    if let Some(c) = &config {
-        game_settings.apply_config(c);
-    }
-    if let Some(path) = &a.setting_ini {
-        game_settings.apply_ini(&String::from_utf8_lossy(&barrel_files::read(Path::new(path)).map_err(|e| format!("--setting-ini {path}: {e}"))?));
-    }
-    let install = Install::open(Path::new(&a.install))?;
-    // The settings through the game's tables (`saves/graphicssetting`). They switch Barrel's
-    // passes only when the player gave some: else the render settings stand as they are.
-    let presets = {
-        let read = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}")).ok();
-        barrel_ryza::presets::Graphics::resolve(&game_settings, &read).unwrap_or_else(|e| {
-            eprintln!("graphics presets: {e}; the High one as shipped");
-            barrel_ryza::presets::Graphics::HIGH
-        })
+    let ini_text = match &a.setting_ini {
+        Some(path) => Some(String::from_utf8_lossy(&barrel_files::read(Path::new(path)).map_err(|e| format!("--setting-ini {path}: {e}"))?).into_owned()),
+        None => None,
     };
+    let install = Install::open(Path::new(&a.install))?;
+    let read_table = |n: &str| install.read(&format!("\\saves\\graphicssetting\\{n}")).ok();
+    let Resolved { graphics, render_before_presets, game_settings, presets } = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);
     eprintln!("graphics: {game_settings:?} {presets:?}");
-    // (the Settings screen's own rows show these, before the presets draw their passes over them)
-    let render_before_presets = graphics.resolved();
-    let graphics = if game_settings.given { presets.apply(graphics) } else { graphics }.resolved();
-    // The game's shadow maps (`SHADOW_MAPS`) are up to 2400 texels: the image grows to hold
-    // them, the handheld setting's in the same share.
-    let graphics = RenderSettings { shadows: shadow::Shadows { size: graphics.shadows.size * SHADOW_LAYER / shadow::Shadows::DESKTOP.size, ..graphics.shadows }, ..graphics };
     let mut field_music: Option<u32> = None;
     if let Some(save) = &a.save {
         let state = barrel_ryza::save::decode(&barrel_files::read(Path::new(save))?).map_err(|e| format!("{save}: {e}"))?;
@@ -988,7 +1012,6 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The field's water (`<FIELD>_river.bin`): the pieces of its rivers and sea, in render space.
     let water = barrel_engine::field::named(&main, &format!("{}_river.bin", files.area)).and_then(|b| barrel_ryza::river::parse(b).ok()).map(|bodies| water_slots(&bodies));
     let plant_preset = presets.grass;
-    let lod_dist = presets.lod;
     // The title's backdrop: its event's stage run to the first frame's moment, and the characters
     // it stages (`actors`: Ryza, Lent and Tao), loaded before the textures that borrow them.
     let title_event = match a.title {
@@ -1550,7 +1573,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     if a.title {
         (center, yaw, pitch, dist) = barrel_ryza::title::CAMERA.look();
     }
-    let shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
+    let mut shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
 
     let hidden = vec![false; instances.len()];
     // The field's draw distances (`camera::DrawRanges`): a field object farther from the eye
@@ -1559,11 +1582,17 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The PC game uses them only below the top object-distance setting, or when the field's
     // file asks (docs/renderer.md, "Ryza DX: object draw ranges"); the setting's near, middle
     // and far ranges then stand in place of the field's.
-    let ranges = match (a.draw_ranges.as_str(), install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))) {
-        ("off", _) | (_, Err(_)) => None,
-        ("auto", Ok(bytes)) if !presets.ranged && !barrel_ryza::camera::DrawRanges::asked_for(&bytes) => None,
-        (which, Ok(bytes)) => Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?.preset(presets.objects)),
+    let ranges_for = |presets: &barrel_ryza::presets::Graphics| -> Result<Option<barrel_ryza::camera::DrawRanges>> {
+        Ok(match (a.draw_ranges.as_str(), install.read(&barrel_ryza::camera::FreeCamera::path(&a.field))) {
+            ("off", _) | (_, Err(_)) => None,
+            ("auto", Ok(bytes)) if !presets.ranged && !barrel_ryza::camera::DrawRanges::asked_for(&bytes) => None,
+            (which, Ok(bytes)) => Some(barrel_ryza::camera::DrawRanges::parse(&bytes, which == "nx")?.preset(presets.objects)),
+        })
     };
+    // The presets as they stand now: a live change of the settings (below, where the frame
+    // starts) replaces them, and the draw tests below read them each frame.
+    let presets_now = std::cell::Cell::new(presets);
+    let ranges = std::cell::Cell::new(ranges_for(&presets)?);
     // STAND-IN: The townsfolk and gimmicks have no draw range; the real thing is the field file's `chara` and `gimmick` ranges, which like the objects' count only when ranges are in use.
     // The plants have their own range (`shown`, below), not an object's.
     let boxes: std::collections::HashMap<(u32, u32), (Vec3, Vec3)> = draws.iter().filter(|d| d.field.is_some() && !d.sky && d.name != "plants" && !npc_drawn.iter().any(|&(_, i, ..)| i == d.instance) && !gimmick_instances.contains(&d.instance)).filter_map(|d| {
@@ -1573,7 +1602,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         let (lo, hi) = corners.fold((Vec3::MAX, Vec3::MIN), |(l, h), c| (l.min(c), h.max(c)));
         Some(((d.first_index, d.instance), (lo, hi)))
     }).collect();
-    eprintln!("draw ranges: {ranges:?}");
+    eprintln!("draw ranges: {:?}", ranges.get());
     // STAND-IN: A placed object wholly below the ground's skyline is left out of the scene; the real thing is the game's own test of what is hidden, not read (this one, on the sphere the view test uses, hides 65 of the 107 objects the game hides in Rasenboden's capture and none it draws).
     // The skyline is the field's heightmap seen from the eye (docs/renderer.md, "Ryza DX:
     // objects behind the ground"); `--no-skyline` draws them all.
@@ -1622,11 +1651,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             && plant_boxes.get(&d.first_index).filter(|_| d.name == "plants").is_none_or(|&[_, (lo, hi)]| {
                 let corners = (0..8).map(|k| Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
                 let depth = |c: Vec3| forward_now.get().dot(c - eye_now.get());
-                corners.clone().any(|c| depth(c) <= plant_preset.far[1]) && sides_now.get().iter().all(|p| corners.clone().any(|c| p.truncate().dot(c) + p.w >= 0.0))
+                corners.clone().any(|c| depth(c) <= presets_now.get().grass.far[1]) && sides_now.get().iter().all(|p| corners.clone().any(|c| p.truncate().dot(c) + p.w >= 0.0))
             })
             // A placed object wholly behind one of the field's occluder quads is left out.
             && (d.object == 0 || occluded_boxes.get(&d.object).is_none_or(|b| !occluders.borrow().hides(b, eye_now.get(), forward_now.get())))
-            && match (ranges, boxes.get(&(d.first_index, d.instance))) {
+            && match (ranges.get(), boxes.get(&(d.first_index, d.instance))) {
                 (Some(r), Some(&(lo, hi))) => r.shows(d.class, eye_now.get(), lo, hi),
                 _ => true,
             }
@@ -1635,15 +1664,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // the second, its low one past it; a draw without a box, and every draw at the top setting,
             // the full one.
             && (d.lod == 0
-                || boxes.get(&(d.first_index, d.instance)).filter(|_| presets.lods).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
+                || boxes.get(&(d.first_index, d.instance)).filter(|_| presets_now.get().lods).map_or(d.lod & 3 == LOD_HI, |&(lo, hi)| {
                     let far = ((lo + hi) * 0.5).distance(eye_now.get());
                     let level = d.lod & 3;
                     let start = match level {
                         LOD_HI => 0.0,
-                        LOD_MID => lod_dist[0],
-                        _ => lod_dist[1],
+                        LOD_MID => presets_now.get().lod[0],
+                        _ => presets_now.get().lod[1],
                     };
-                    let end = if d.lod & LOD_LAST != 0 { f32::INFINITY } else if level == LOD_HI { lod_dist[0] } else { lod_dist[1] };
+                    let end = if d.lod & LOD_LAST != 0 { f32::INFINITY } else if level == LOD_HI { presets_now.get().lod[0] } else { presets_now.get().lod[1] };
                     far >= start && far < end
                 }))
     };
@@ -1733,6 +1762,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut options_initial = options_state.clone();
     let mut leave = barrel_ryza::leave::Leave::default();
     let mut discard = false;
+    let mut apply_settings = false;
+    let mut scripted_saved = false;
     let mut was_in_settings = false;
     let mut scripted_holds: Vec<barrel_ryza::title_menu::Hold> = Vec::new();
     // The cursor's row when the holds were last cleared (a tab change clears them).
@@ -1942,6 +1973,21 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
             }
         }
+        // The settings were saved with Yes: the render settings and the presets they come to
+        // are applied now, in this run (`Renderer::apply_settings`), as a fresh start with the
+        // saved config would have them.
+        if std::mem::take(&mut apply_settings) {
+            let config = read_config();
+            let now = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);
+            if now.graphics != renderer.settings {
+                eprintln!("settings: applied live (game frame {})", sound_base + i64::from(frame_no as i32));
+                renderer = renderer.apply_settings(&gpu, presenter.as_ref(), now.graphics)?;
+                scene.rebind(&gpu, &renderer.shared);
+                shadow_size = (!a.no_shadows).then_some(renderer.shadow_target.size);
+            }
+            presets_now.set(now.presets);
+            ranges.set(ranges_for(&now.presets)?);
+        }
         sync.wait_slot(&gpu, renderer.pool)?;
         if pump.is_some() || cloth_moves || !cast.is_empty() || !moving.is_empty() || !npc_drawn.is_empty() {
             scene.write_instances(&gpu, &instances)?;
@@ -1976,7 +2022,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         // The point the sun's shadow is asked about for the sun flare: where the camera looks
         // behind her (the player and her look height), else where it is aimed.
         let sun_probe = rig.as_ref().map_or(center, |r| (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0));
-        let mut view = look_for(sub_box, center, sun_probe, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), &flare_look, shadow_size, presets.shadow, static_box, title_clip, sky_clock);
+        let mut view = look_for(sub_box, center, sun_probe, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), &flare_look, shadow_size, presets_now.get().shadow, static_box, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
@@ -2026,7 +2072,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             _ => 0,
         };
         view.look[51] = [1.0, 0.0, wind_turned % std::f32::consts::TAU, 0.0];
-        view.look[FADE_SLOT] = [plant_preset.far[0], plant_preset.far[1], 0.0, 0.0];
+        view.look[FADE_SLOT] = [presets_now.get().grass.far[0], presets_now.get().grass.far[1], 0.0, 0.0];
         view.look[EMISSION_SLOT] = [EMISSION_BY_TIME[a.time as usize], 0.0, 0.0, 0.0];
         if let Some((_, scale, tint)) = &specular {
             // STAND-IN: the light's weight (`vAmbSpcWgt.x`, 1 in the capture at Rasenboden's noon) is 1; the real thing is a run-time fade of it, not found in the set.
@@ -2087,6 +2133,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 scripted_holds = r.holds;
                 title_input.returned = leave.left_at();
                 title_input.returned_spin = menu.return_spin(&title_input, c);
+                // The replayed A on Yes writes the changes where a player's would (once), and the
+                // settings they come to are applied.
+                if !scripted_saved && leave.saved_at().is_some_and(|at| frame >= at) {
+                    scripted_saved = true;
+                    save_options(&options_state);
+                    apply_settings = true;
+                }
             }
             if let Some(p) = pump.as_ref() {
                 use winit::keyboard::KeyCode as K;
@@ -2162,7 +2215,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         } else if pressed(Act::Confirm) {
                             cue(&mut sound, "choose", barrel_ryza::sound::CLICK);
                             match leave.press(Key::Confirm, options_state.changed, frame) {
-                                Outcome::Save => save_options(&options_state),
+                                Outcome::Save => {
+                                    save_options(&options_state);
+                                    apply_settings = true;
+                                }
                                 Outcome::Discard => discard = true,
                                 Outcome::Nothing => {}
                             }
@@ -2438,7 +2494,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // The set's bloom: `fLumiThreshold` as the bright pass's threshold (on the scene as
             // stored) and `fBloomWeight` as the rate.
             // Bloom off (the game's `BloomType`): no glow, as its Low draws none.
-            glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, if presets.bloom { l.bloom_weight * GLOW_RANGE } else { 0.0 })),
+            glow: environment.as_ref().map_or((1.0, 0.0), |(_, _, l, _, _, _, _)| (l.lumi_threshold, if presets_now.get().bloom { l.bloom_weight * GLOW_RANGE } else { 0.0 })),
             // The exposure's metering by the set's rule (a window's frame time; offscreen the
             // first frame meters to the scene).
             meter: environment.as_ref().zip(view.exposure).map(|((_, _, l, _, _, _, _), baked)| barrel_render::meter::Params {
@@ -2478,7 +2534,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 specular_mips,
                 seconds: sky_clock,
                 glow: frame.glow,
-                rlr: graphics.rlr,
+                rlr: renderer.settings.rlr,
                 meter: frame.meter.as_ref(),
                 tone_white: frame.tone_white,
                 tone_gamma: frame.tone_gamma,
@@ -2929,4 +2985,34 @@ fn look_for(sub_box: Option<(Vec3, Vec3)>, center: Vec3, probe: Vec3, yaw: f32, 
         exposure_k = Some(k);
     }
     View { look, vp, shadow_vp, shadow_cascades, shadow_sub, shadow_far, sun_flare, sky_plane, clouds, near, far, exposure: exposure_k }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn none(_: &str) -> Option<Vec<u8>> {
+        None
+    }
+
+    #[test]
+    fn the_settings_come_to_the_same_at_the_start_and_after_a_change() {
+        // A config with Barrel's engine rows: the render settings take them over the desktop's.
+        let config = "scale 0.75\nmsaa 4\n";
+        let start = Resolved::from(None, Some(config), None, &none);
+        assert_eq!((start.graphics.scale, start.graphics.msaa), (0.75, 4));
+        assert!(start.graphics.hdr_scene && start.graphics.reflections);
+        // Without the game's tables the High presets stand.
+        assert_eq!(start.presets, barrel_ryza::presets::Graphics::HIGH);
+        // The same text again (what the save wrote) comes to the same settings.
+        let again = Resolved::from(None, Some(config), None, &none);
+        assert_eq!((start.graphics, start.presets), (again.graphics, again.presets));
+        // A changed row shows in the next resolve only.
+        let changed = Resolved::from(None, Some("scale 1\nmsaa 1\n"), None, &none);
+        assert_ne!(changed.graphics, start.graphics);
+        assert_eq!(changed.graphics.msaa, 1);
+        // --preset wins over the config's render rows, as at the start.
+        let preset = Resolved::from(Some(RenderSettings::DESKTOP), Some(config), None, &none);
+        assert_eq!(preset.graphics.scale, RenderSettings::DESKTOP.scale);
+    }
 }
