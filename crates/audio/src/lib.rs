@@ -122,7 +122,7 @@ pub struct Mixer {
     next: u64,
     /// The overall volume (0 to 1).
     pub master: f32,
-    /// The player's volume of each [`Kind`] of sound (0 to 1; music, effects, voices).
+    /// The player's volume of each [`Kind`] of sound (music, effects, voices): 1 at the default, more than 1 allowed.
     pub kinds: [f32; 3],
 }
 

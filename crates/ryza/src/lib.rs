@@ -31,6 +31,7 @@ pub mod load_view;
 pub mod leave;
 pub mod menu_input;
 pub mod options;
+pub mod preferences;
 pub mod options_view;
 pub mod field_hud;
 pub mod story;

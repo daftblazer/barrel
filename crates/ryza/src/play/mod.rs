@@ -960,6 +960,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // `BARREL_DEFAULT_FULLSCREEN=1` on a handheld), else the desktop's.
     let read_config = || (a.window || std::env::var_os("BARREL_CONFIG").is_some()).then(|| barrel_files::config::graphics_path().and_then(|p| std::fs::read_to_string(p).ok())).flatten();
     let config = read_config();
+    // The Settings screen's Audio, Camera and Game values as saved (applied again on Yes).
+    let mut play = barrel_ryza::preferences::Play::from_config(config.as_deref());
     // The game's scene is HDR (`trueHDR_`): drawn into a float target, so the tone curve
     // (`Frame::tone_white`) sees past the half range's 2.0. Its reflections and depth of field
     // are on with a preset; a config can turn them off.
@@ -1630,6 +1632,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // (A walked offscreen run with `--look-at` is steered by the capture's camera yaw, whatever angle the picture is taken from.)
     let walk_yaw = if a.walk_from.is_some() && a.look_at.is_some() { WALK_CAMERA_YAW } else { 180.0 - yaw };
     let mut cam = barrel_ryza::walk::Camera::new(walk_yaw, pitch, dist, pitch_range);
+    cam.feel = play.feel;
     if follow.is_some() && rig.is_some() {
         cam = cam.following();
     }
@@ -1883,6 +1886,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     if let (Some(s), Some(hash), false) = (sound.as_mut(), field_music, a.title) {
         s.schedule(barrel_ryza::sound::Cue::music(carry.music_at, hash));
     }
+    if let Some(s) = sound.as_mut() {
+        s.set_volumes(&play.volumes);
+    }
     let (sound_base, mut handoff_at, mut music_at) = (carry.frame, 0i64, 0i64);
     if pump.is_some() && !a.title {
         eprintln!("field: entered");
@@ -1979,6 +1985,12 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 Some(r) => barrel_ryza::walk::step(&mut r.player, &mut cam, &sticks, dt, r.ground.as_ref(), r.walls.as_ref()),
                 None => cam.steer(sticks.right, dt),
             }
+            if let Some(path) = std::env::var_os("BARREL_TRACE_CAMERA") {
+                use std::io::Write as _;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                    let _ = writeln!(f, "{} yaw {:.3} pitch {:.3}", frame_no, cam.yaw, cam.pitch);
+                }
+            }
             // The title keeps its own fixed camera (`title::CAMERA`, set after `cam` was made).
             // (A walked offscreen run with `--look-at` keeps the view it was given, moved with her.)
             if !a.title && !(a.walk_from.is_some() && a.look_at.is_some() && pump.is_none()) {
@@ -2071,6 +2083,18 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if std::mem::take(&mut apply_settings) {
             let config = read_config();
             let now = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);
+            // The Audio, Camera and Game rows: the volumes on the mixer, the camera's feel, the confirm button.
+            let saved = barrel_ryza::preferences::Play::from_config(config.as_deref());
+            if saved != play {
+                if saved.volumes != play.volumes
+                    && let Some(s) = sound.as_mut()
+                {
+                    s.set_volumes(&saved.volumes);
+                }
+                cam.feel = saved.feel;
+                play = saved;
+                eprintln!("settings: audio, camera and game values applied ({:?} {:?} swap {})", play.volumes, play.feel, play.swap_confirm);
+            }
             // The display rows: the live window takes the size or fullscreen and the pacing as the
             // config has them (the swapchain follows through the resize path). Offscreen runs have no window.
             let (new_display, new_pacing) = (display_of(config.as_deref()), pacing_of(config.as_deref()));
@@ -2327,8 +2351,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     (Act::Down, p.pad_down(Pad::Down) || lean.y < 0),
                     (Act::Left, p.pad_down(Pad::Left) || lean.x < 0),
                     (Act::Right, p.pad_down(Pad::Right) || lean.x > 0),
-                    (Act::Confirm, p.pad_down(Pad::South)),
-                    (Act::Back, p.pad_down(Pad::East)),
+                    (Act::Confirm, p.pad_down(play.buttons().0)),
+                    (Act::Back, p.pad_down(play.buttons().1)),
                     (Act::TabPrev, p.pad_down(Pad::LeftShoulder)),
                     (Act::TabNext, p.pad_down(Pad::RightShoulder)),
                 ]

@@ -11,6 +11,7 @@ use barrel_audio::{Kind, Playing};
 use barrel_formats::{ktsr, voice, vorbis};
 
 use crate::music::Entry;
+use crate::preferences::Volumes;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -185,6 +186,16 @@ impl Sound {
         let device = with_device.then(|| barrel_audio::Output::open(0.1).map_err(|e| eprintln!("sound: none: {e}")).ok()).flatten().map(|o| (o, barrel_audio::Mixer::game()));
         let library = device.is_some().then(|| Library { root: root.to_path_buf(), streams: HashMap::new(), effects: effects.into_iter().map(|e| (e.hash, e)).collect(), banks: HashMap::new() });
         Sound { queue: Vec::new(), seen: HashSet::new(), library, device, playing: Vec::new(), reported: HashSet::new() }
+    }
+
+    /// Sets the player's volumes of the categories (the Settings screen's Audio rows): at a start
+    /// and when Yes saves them. Logged, since an offscreen run has no device to hear it on.
+    /// The movie's gain is for the movie player's own mixer when the game's videos play.
+    pub fn set_volumes(&mut self, volumes: &Volumes) {
+        if let Some((_, mixer)) = self.device.as_mut() {
+            mixer.kinds = [volumes.music, volumes.effects, volumes.voice];
+        }
+        eprintln!("{}", volumes.log_line());
     }
 
     /// Schedules a cue (kept in frame order, equal frames in the order given).

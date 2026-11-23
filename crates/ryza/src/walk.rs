@@ -74,9 +74,34 @@ pub fn dead_zone(stick: [f32; 2], zone: f32) -> [f32; 2] {
     [stick[0] * k, stick[1] * k]
 }
 
+/// How the Camera tab's rows scale the right stick: a factor on the turn and on the pitch,
+/// negative for an inverted axis. The rows' default (normal, speed 5) is 1 each.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Feel {
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+impl Default for Feel {
+    fn default() -> Feel {
+        Feel { yaw: 1.0, pitch: 1.0 }
+    }
+}
+
+impl Feel {
+    /// The speed rows (1 to 10, default 5) are linear in the rate, 5 being the measured rate below.
+    // STAND-IN: the game's speed curve is not measured; only the default (5) is the captures'.
+    pub fn of(invert_horizontal: bool, invert_vertical: bool, horizontal_speed: i32, vertical_speed: i32) -> Feel {
+        let axis = |inverted: bool, speed: i32| speed.clamp(1, 10) as f32 / 5.0 * if inverted { -1.0 } else { 1.0 };
+        Feel { yaw: axis(invert_horizontal, horizontal_speed), pitch: axis(invert_vertical, vertical_speed) }
+    }
+}
+
 /// The follow camera: where it looks from, behind and above her.
 #[derive(Clone, Copy, Debug)]
 pub struct Camera {
+    /// The Camera tab's scaling of the right stick.
+    pub feel: Feel,
     /// Degrees; its forward axis is `(sin yaw, cos yaw)` on (x, z).
     pub yaw: f32,
     /// Degrees, positive looking down.
@@ -92,7 +117,7 @@ pub struct Camera {
 
 impl Camera {
     pub fn new(yaw: f32, pitch: f32, length: f32, pitch_range: (f32, f32)) -> Camera {
-        Camera { yaw, pitch, length, pitch_range, held: 0.0, pulls: false }
+        Camera { feel: Feel::default(), yaw, pitch, length, pitch_range, held: 0.0, pulls: false }
     }
 
     /// The camera that follows her: it does not go below `PITCH_FLOOR` and looking up brings it in.
@@ -105,13 +130,13 @@ impl Camera {
     /// The right stick turns and pitches the camera (`right` as held, the dead zone not yet out).
     pub fn steer(&mut self, right: [f32; 2], dt: f32) {
         let [x, y] = dead_zone(right, LOOK_DEAD_ZONE);
-        self.yaw -= x * CAMERA_TURN_RATE * dt;
+        self.yaw -= x * CAMERA_TURN_RATE * self.feel.yaw * dt;
         if y == 0.0 {
             self.held = 0.0;
         } else {
             self.held += dt;
             let gain = if self.held <= PITCH_RAMP { PITCH_RAMP_GAIN } else { 1.0 };
-            self.pitch = (self.pitch - y * PITCH_RATE * gain * dt).clamp(self.pitch_range.0, self.pitch_range.1);
+            self.pitch = (self.pitch - y * PITCH_RATE * self.feel.pitch * gain * dt).clamp(self.pitch_range.0, self.pitch_range.1);
         }
     }
 
@@ -278,6 +303,23 @@ mod tests {
         let (mut p, mut c) = (player(), cam());
         step(&mut p, &mut c, &Sticks { left: [0.0; 2], right: [1.0, 0.0] }, DT, None, None);
         assert!((c.yaw + 1.5).abs() < 1e-4, "{}", c.yaw);
+    }
+
+    #[test]
+    fn the_camera_rows_flip_and_scale_the_right_stick() {
+        let turn = |feel: Feel, right: [f32; 2]| {
+            let (mut p, mut c) = (player(), cam());
+            c.feel = feel;
+            step(&mut p, &mut c, &Sticks { left: [0.0; 2], right }, DT, None, None);
+            (c.yaw, c.pitch - 8.0)
+        };
+        let (yaw, pitch) = turn(Feel::default(), [1.0, 1.0]);
+        let (flipped_yaw, flipped_pitch) = turn(Feel::of(true, true, 5, 5), [1.0, 1.0]);
+        assert!((yaw + flipped_yaw).abs() < 1e-5 && yaw < 0.0);
+        assert!((pitch + flipped_pitch).abs() < 1e-5 && pitch < 0.0);
+        let (fast, _) = turn(Feel::of(false, false, 10, 5), [1.0, 1.0]);
+        assert!((fast / yaw - 2.0).abs() < 1e-4);
+        assert_eq!(Feel::of(false, false, 5, 5), Feel::default());
     }
 
     #[test]
