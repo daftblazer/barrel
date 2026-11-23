@@ -538,7 +538,10 @@ fn backdrop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
     let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..barrel_ryza::field_menu::BACKDROP_TEXTURES])?)
+    let mut layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..barrel_ryza::field_menu::BACKDROP_TEXTURES])?;
+    // The game's first quad reads the blurred menu; the plain white texture stands in for it in the trace.
+    layer.set_screen_texture(Some(barrel_ryza::field_menu::BACKDROP_WHITE));
+    Ok(layer)
 }
 
 /// The load screen's layer (the textures of `barrel_ryza::load_view`), its view and the saving
@@ -2961,7 +2964,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
             layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
             // The blurred menu and the vignettes over it, from the menu's going out to the screen's last frame (and out after it).
-            // In a window the blurred picture itself is not drawn yet (the renderer has no blur of the layers before it): only the vignettes.
+            // The first quad is the blurred picture of what the menu drew (the renderer's `screen_blur`); a window whose swapchain cannot be copied from has only the vignettes.
             showing_backdrop = false;
             if let (Some(sr), Some(layer)) = (settings_run.as_ref(), backdrop.as_mut()) {
                 let fade = match sr.over_since() {
@@ -2969,7 +2972,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     None => barrel_ryza::field_menu::backdrop_fade(menu_tick - (sr.first as f32 - barrel_ryza::field_menu::BACKDROP_BEFORE), None),
                 };
                 let mut quads = barrel_ryza::field_menu::backdrop(fade, (width, height));
-                if pump.is_some() && !quads.is_empty() {
+                if pump.is_some() && !renderer.can_blur_screen() && !quads.is_empty() {
                     quads.remove(0);
                 }
                 showing_backdrop = !quads.is_empty();

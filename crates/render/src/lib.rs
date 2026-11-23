@@ -28,6 +28,7 @@ pub mod gsr2;
 pub mod movie;
 pub mod present;
 pub mod renderer;
+pub mod screen_blur;
 pub mod ring;
 pub mod scene_gpu;
 pub mod settings;

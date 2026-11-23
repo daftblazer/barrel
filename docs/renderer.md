@@ -1197,6 +1197,30 @@ story has not opened yet (R3 west of Colseit is unknown on the user's save),
 the "Area Info" button. The sectors listed are the known ones (`area_map::known`); the "Return
 to World Map?" question is `question.rs`.
 
+## The blurred screen
+
+A layer can ask for the picture of what was drawn before it, at half size and blurred, as one of its textures: the game's
+way of backing a sub-screen with its menu (Ryza's field menu under the Settings screen: two 960 x 540 targets, then a
+full-screen quad that reads the second). `text::Layer::set_screen_texture(Some(i))` makes the quads on texture `i` draw that
+picture instead, each over its whole rectangle (the quad's uv is ignored: 0 to 1 across it); the trace still lists the quad
+with its own texture and uv, so the draw rows stay as they were.
+
+What the renderer does when such a layer is in a frame (`screen_blur.rs`, `screen_blur.frag`): the post pass is split in two
+render passes (`split_passes`: the first ends in TRANSFER_SRC, the second loads what it left), and between them the target
+so far is blitted to half size (linear), blurred along x (spacing 1.33 px of the half-size image) and then along y (1.3 px)
+into two images, the last one being the picture the layer draws. Seven taps, bilinear, weights 0.1404, 0.1428, 0.1443,
+0.1448, 0.1443, 0.1428, 0.1404. A frame without such a layer is one pass as before (Escha's frames never split). A window's
+swapchain is made with TRANSFER_SRC when the surface allows it (`Presenter::readable`); where it does not, the layer's first
+quad is left out by the game's code (`Renderer::can_blur_screen`).
+
+Read off the capture (field-menu 2310 and 2370, `rt960x540` dumps of both targets, which show the menu's photo blurred):
+the second pass fits an integer-tap kernel to 0.25 of a byte (mean) as taps at 0, +1.3, +2.6, +3.9 and, on the other side,
+a short one: STAND-IN offsets -2.0, -1.0, -1.0 px (the game's negative taps are not read; a symmetric -1.3, -2.6, -3.9 fits
+at 1.8 bytes, this at 0.25). The first pass uses the same shape at 1.33 px, mirrored (mirrored fits better, 1.97 against
+2.19 bytes mean). With those, Barrel's two targets at 2310 differ from the game's by a mean of about 2 and 1.5 bytes
+(`BARREL_DUMP_STAGES` writes them as `screen_blur_x` and `screen_blur`). The source (what the layers before drew) is not the
+same pixel for pixel: the menu's own layer differs by the rows listed in `docs/ryza/open.md`.
+
 ## Rebuilding for new settings
 
 `Renderer::apply_settings(self, gpu, presenter, settings)` consumes the renderer and returns one for the new

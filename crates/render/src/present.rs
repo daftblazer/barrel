@@ -35,6 +35,8 @@ pub struct Presenter {
     limit: Option<std::time::Duration>,
     /// The present mode of the swapchain.
     pub mode: vk::PresentModeKHR,
+    /// The swapchain's images can be copied from (the blurred screen reads them, `screen_blur`).
+    pub readable: bool,
     /// When the next present may go.
     next: std::cell::Cell<std::time::Instant>,
 }
@@ -85,6 +87,7 @@ impl Presenter {
             vsync: true,
             limit: None,
             mode: vk::PresentModeKHR::FIFO,
+            readable: false,
             next: std::cell::Cell::new(std::time::Instant::now()),
         };
         p.rebuild(gpu, width, height)?;
@@ -128,7 +131,7 @@ impl Presenter {
                     .image_color_space(chosen.color_space)
                     .image_extent(extent)
                     .image_array_layers(1)
-                    .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST)
+                    .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST | (caps.supported_usage_flags & vk::ImageUsageFlags::TRANSFER_SRC))
                     .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
                     .pre_transform(caps.current_transform)
                     .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
@@ -161,6 +164,7 @@ impl Presenter {
                 )
             })
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        self.readable = caps.supported_usage_flags.contains(vk::ImageUsageFlags::TRANSFER_SRC);
         (self.swapchain, self.format, self.extent, self.images, self.views, self.mode) = (swapchain, chosen.format, extent, images, views, mode);
         Ok(())
     }

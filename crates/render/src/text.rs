@@ -144,6 +144,9 @@ pub struct Layer {
     /// The draw trace (`crate::trace`): this layer's id, its textures' names, and the quads set
     /// last with the frame they were set in, until a record writes them.
     trace: Option<(u64, Vec<String>, std::cell::RefCell<Option<(u64, Vec<Quad>)>>)>,
+    /// The texture whose quads draw the blurred picture of what the layers before this one drew
+    /// instead (`crate::screen_blur`): each over its whole rectangle, the uv ignored.
+    screen: Option<usize>,
 }
 
 impl Layer {
@@ -233,8 +236,20 @@ impl Layer {
             let add_att = [blend_att[0].dst_color_blend_factor(vk::BlendFactor::ONE)];
             let add_blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&add_att);
             let additive = d.create_graphics_pipelines(vk::PipelineCache::null(), &[info.color_blend_state(&add_blend)], None).map_err(|(_, e)| e)?[0];
-            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, additive, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0, trace })
+            Ok(Layer { textures, sampler, set_layout, pool: dpool, sets, runs: Vec::new(), layout, pipeline, additive, modules, buffers: [None; crate::ring::SLOTS], current: 0, written: None, count: 0, screen: None, trace })
         }
+    }
+
+    /// Makes the quads on `texture` draw the blurred picture of what was drawn before this layer
+    /// (`crate::screen_blur`), each over its whole rectangle, in place of that texture. The
+    /// renderer provides the picture when the layer is recorded.
+    pub fn set_screen_texture(&mut self, texture: Option<usize>) {
+        self.screen = texture;
+    }
+
+    /// Whether the next draw has quads that read the screen so far.
+    pub fn reads_screen(&self) -> bool {
+        self.count > 0 && self.screen.is_some_and(|s| self.runs.iter().any(|r| r.0 == s))
     }
 
     /// Sets what the next frames draw (the buffer grows as needed).
@@ -275,7 +290,7 @@ impl Layer {
                 _ => self.runs.push((texture, mask_texture, verts.len() as u32, 6, add)),
             }
             let [tl, tr, br, bl] = q.corners();
-            let [u0, v0, u1, v1] = q.uv;
+            let [u0, v0, u1, v1] = if self.screen == Some(texture) { [0.0, 0.0, 1.0, 1.0] } else { q.uv };
             let v = |[x, y]: [f32; 2], u, w| {
                 let (mask_at, mask_uv) = match mask {
                     Some(m) => {
@@ -328,6 +343,15 @@ impl Layer {
     /// # Safety
     /// `cb` is recording inside a render pass compatible with the one the layer was made for.
     pub unsafe fn record(&self, d: &ash::Device, cb: vk::CommandBuffer, width: u32, height: u32) {
+        unsafe { self.record_with(d, cb, width, height, None) }
+    }
+
+    /// As [`Layer::record`], with `picture_set` (a set of one combined sampler) as the picture the
+    /// quads of [`Layer::set_screen_texture`] draw.
+    ///
+    /// # Safety
+    /// As [`Layer::record`].
+    pub unsafe fn record_with(&self, d: &ash::Device, cb: vk::CommandBuffer, width: u32, height: u32, picture_set: Option<vk::DescriptorSet>) {
         if let Some((id, names, pending)) = &self.trace {
             if let Some((frame, quads)) = pending.borrow_mut().take() {
                 crate::trace::quads(frame, *id, width, height, names, &quads);
@@ -345,7 +369,11 @@ impl Layer {
                     d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, if add { self.additive } else { self.pipeline });
                     bound = add;
                 }
-                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[self.sets[texture], self.sets[mask]], &[]);
+                let picture = match picture_set {
+                    Some(set) if self.screen == Some(texture) => set,
+                    _ => self.sets[texture],
+                };
+                d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.layout, 0, &[picture, self.sets[mask]], &[]);
                 d.cmd_draw(cb, count, 1, first, 0);
             }
         }

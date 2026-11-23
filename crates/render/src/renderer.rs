@@ -47,6 +47,12 @@ pub struct Renderer {
     refraction_pool: vk::DescriptorPool,
     refraction_sampler: vk::Sampler,
     pub post_pass: vk::RenderPass,
+    /// The post pass in two parts, for a frame with a layer that reads the screen so far (`screen_blur`): the first ends in TRANSFER_SRC, the second loads what it left.
+    split_passes: [vk::RenderPass; 2],
+    color_format: vk::Format,
+    /// The images the post pass draws into (the offscreen one, or the swapchain's) and whether they can be read.
+    target_images: Vec<vk::Image>,
+    screen_blur: std::cell::RefCell<Option<screen_blur::Blur>>,
     pub post_set_layout: vk::DescriptorSetLayout,
     pub post_pool: vk::DescriptorPool,
     pub post_sets: [vk::DescriptorSet; 2],
@@ -225,6 +231,16 @@ impl Stable {
         let black = [0u8; 48];
         let black_cube = upload_cube(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba16f, format_code: 0, layers: 6, volume: false, levels: vec![&black[..]] })?;
         Ok(Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube, shadow: None })
+    }
+}
+
+/// The images behind [`target_views`] (none when a window's cannot be copied from: the blurred screen is then left out).
+fn target_images(presenter: Option<&Presenter>, offscreen: Option<vk::Image>) -> Vec<vk::Image> {
+    match (presenter, offscreen) {
+        (Some(p), _) if p.readable => p.images.clone(),
+        (Some(_), _) => Vec::new(),
+        (None, Some(i)) => vec![i],
+        (None, None) => Vec::new(),
     }
 }
 
@@ -605,6 +621,35 @@ impl Renderer {
                 .dst_access_mask(if presenter.is_some() { vk::AccessFlags::empty() } else { vk::AccessFlags::TRANSFER_READ }),
         ];
         let post_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&post_attachment).subpasses(&post_subpass).dependencies(&post_dependencies), None)? };
+        // The two parts of the same pass around a copy of the screen so far: the first leaves the
+        // image for the copy to read, the second loads it again and ends as the whole one does.
+        let split_passes = unsafe {
+            let to_copy = [post_attachment[0].final_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)];
+            let to_copy_deps = [
+                post_dependencies[0],
+                vk::SubpassDependency::default()
+                    .src_subpass(0)
+                    .dst_subpass(vk::SUBPASS_EXTERNAL)
+                    .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                    .dst_stage_mask(vk::PipelineStageFlags::TRANSFER)
+                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                    .dst_access_mask(vk::AccessFlags::TRANSFER_READ),
+            ];
+            let first = d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&to_copy).subpasses(&post_subpass).dependencies(&to_copy_deps), None)?;
+            let again = [post_attachment[0].load_op(vk::AttachmentLoadOp::LOAD).initial_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)];
+            let again_deps = [
+                vk::SubpassDependency::default()
+                    .src_subpass(vk::SUBPASS_EXTERNAL)
+                    .dst_subpass(0)
+                    .src_stage_mask(vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TRANSFER)
+                    .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                    .src_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::TRANSFER_READ)
+                    .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE),
+                post_dependencies[1],
+            ];
+            let second = d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&again).subpasses(&post_subpass).dependencies(&again_deps), None)?;
+            [first, second]
+        };
         // The post pass's one texture: the scene.
         let post_binding = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(|b| {
             vk::DescriptorSetLayoutBinding::default()
@@ -1034,7 +1079,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, shadow_opaque_pipelines, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: std::cell::RefCell::new(far_shadow), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, shadow_opaque_pipelines, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: std::cell::RefCell::new(far_shadow), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full), split_passes, color_format, target_images: target_images(presenter, offscreen.map(|(i, _)| i)), screen_blur: Default::default() })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1706,9 +1751,11 @@ impl Renderer {
             });
             self.sun.record(d, cb, sun_flare.as_ref());
             // The post pass: the scene back to its range with the glow, then the text over it.
+            // A layer that reads the screen so far (`screen_blur`) splits the pass around a copy.
+            let splits = !self.target_images.is_empty() && layers.iter().any(|l| l.reads_screen());
             d.cmd_begin_render_pass(
                 cb,
-                &vk::RenderPassBeginInfo::default().render_pass(post_pass).framebuffer(targets.framebuffers[image]).render_area(area),
+                &vk::RenderPassBeginInfo::default().render_pass(if splits { self.split_passes[0] } else { post_pass }).framebuffer(targets.framebuffers[image]).render_area(area),
                 vk::SubpassContents::INLINE,
             );
             d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, post_pipeline);
@@ -1737,8 +1784,37 @@ impl Renderer {
             d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
             d.cmd_set_scissor(cb, 0, &[area]);
             d.cmd_draw(cb, 3, 1, 0, 0);
+            let mut blurred = None;
             for layer in layers {
-                layer.record(d, cb, width, height);
+                if splits && blurred.is_none() && layer.reads_screen() {
+                    d.cmd_end_render_pass(cb);
+                    let mut held = self.screen_blur.borrow_mut();
+                    if held.as_ref().is_some_and(|b| b.output_half() != screen_blur::half(width, height)) {
+                        // A new size: the old images may still be in flight.
+                        let _ = d.device_wait_idle();
+                        held.take().map(|b| b.destroy(gpu));
+                    }
+                    if held.is_none() {
+                        *held = screen_blur::Blur::new(gpu, self.color_format, (width, height)).ok();
+                    }
+                    if let Some(b) = held.as_ref() {
+                        b.record(gpu, cb, self.target_images[image], (width, height));
+                        blurred = Some(b.picture());
+                        if let Some(dump) = &self.dump {
+                            for (name, image) in b.stages() {
+                                dump.grab(gpu, cb, name, image, b.output_half(), dump::Texels::Rgba8, 1.0);
+                            }
+                        }
+                    }
+                    d.cmd_begin_render_pass(
+                        cb,
+                        &vk::RenderPassBeginInfo::default().render_pass(self.split_passes[1]).framebuffer(targets.framebuffers[image]).render_area(area),
+                        vk::SubpassContents::INLINE,
+                    );
+                    d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: width as f32, height: height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                    d.cmd_set_scissor(cb, 0, &[area]);
+                }
+                layer.record_with(d, cb, width, height, blurred);
             }
             d.cmd_end_render_pass(cb);
             if let Some(t) = &timer {
@@ -1777,9 +1853,16 @@ impl Renderer {
         }
     }
 
+    /// Whether a layer can draw the blurred screen so far ([`text::Layer::set_screen_texture`]): offscreen always, in a
+    /// window when the swapchain's images can be copied from.
+    pub fn can_blur_screen(&self) -> bool {
+        !self.target_images.is_empty()
+    }
+
     /// The targets again at a new window size (after the presenter's swapchain was rebuilt).
     pub fn rebuild_targets(&mut self, gpu: &Gpu, presenter: Option<&Presenter>, width: u32, height: u32) -> Result<()> {
         self.targets.destroy(gpu);
+        self.target_images = target_images(presenter, self.offscreen.map(|(i, _)| i));
         let s = &self.settings;
         self.ao.resize(gpu, s.scene_size(width, height))?;
         let targets = Targets::new(gpu, self.render_pass, self.post_pass, &target_views(presenter, self.color_view), width, height, s.scene_size(width, height), self.post_sets, self.post_sampler, &self.glow_pipelines, self.upscale_pipelines.as_ref(), self.taa_pipelines.as_ref(), self.gsr2_pipelines.as_ref(), self.fsr3_pipelines.as_ref(), self.samples, s.motion, self.show_motion, s.scene_format(), self.reflect.is_some(), self.ao.from_scene())?;
@@ -1851,6 +1934,12 @@ impl Renderer {
             d.destroy_image(self.filter.0, None);
             d.free_memory(self.filter.1, None);
             d.destroy_render_pass(self.post_pass, None);
+            for pass in self.split_passes {
+                d.destroy_render_pass(pass, None);
+            }
+            if let Some(b) = self.screen_blur.take() {
+                b.destroy(gpu);
+            }
             for pass in self.water_passes {
                 d.destroy_render_pass(pass, None);
             }
