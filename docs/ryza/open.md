@@ -318,7 +318,10 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   - *Display rows* (resolution, window mode, frame rate limit, vertical sync) are stored as
     `option_` keys; once the resolution or the window mode is moved off its default they also
     write the window's own `window WxH` and `fullscreen on|off` lines (Borderless and
-    Fullscreen both mean on). The frame rate limit and vertical sync have no Barrel setting yet.
+    Fullscreen both mean on); back at the defaults the lines go back to the default window (1280x720,
+    off). The frame rate limit and vertical sync are Barrel's own `frame_limit N|off` and `vsync on|off`
+    (`barrel_render::settings::Pacing`), always written with the options (the game starts at 60 frames and
+    vsync on); an old config without them is as before (no limit).
   - *Fitted* (each `// STAND-IN:` in the code): the thumb's height and travel
     (`options_view::View::thumb`), the Keyboard and Controller pages' places (`KEYS_*`, `PAD_*`),
     the help plate's extra atlas pixel(s) (one, and one more where the last glyph reaches past its
@@ -334,7 +337,7 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   The screen holds Camera, Game, Audio and Graphics rows; the graphics rows are
   `graphics::Settings` (changing an item makes the quality Custom, as the game's). **The
   render settings apply at once on Yes** (2026-11-23; below, "Live apply"): the renderer is rebuilt in the same process.
-  The plants' density and the textures' mip bias are live too. Not live: the display rows (resolution, window mode, frame rate limit, vsync: stored only).
+  The plants' density and the textures' mip bias are live too, and so are the display rows (2026-11-23, below).
   Unit test: `options::tests::a_change_goes_to_the_config_and_back`.
 - **Left over (each kept and stored, not honoured, or not built):**
   - Keyboard and Controller tabs show the game's pages but assign nothing (A on a command, the
@@ -454,6 +457,22 @@ change of the presets it is drawn again from that frame's view (`far_view`, `Fra
 off in that frame). What is left of Quality Low (a level of detail change) is a few pixels in the trees' shadows
 (51 of 518,400 pixels, 54.6 dB; tools/live-settings.sh passes `low` at 50 dB): the layer drawn again has the models in the poses of now,
 not those of that frame.
+
+### Display rows live (2026-11-23)
+
+On Yes in a window run the display rows reach the open window: `Pump::set_display` gives it the new size
+(`request_inner_size`) or borderless fullscreen (`set_fullscreen`, for Borderless and Fullscreen both), the
+swapchain and targets follow through the existing resize path. Wayland has a catch: a configure the compositor sent
+before it saw the request sets the old size back, so the pump asks again (up to three times) until the size it
+asked for arrives. Vertical Sync and Frame Rate Limit are `Presenter::set_pacing` (vsync off remakes the swapchain
+in MAILBOX, else IMMEDIATE, else FIFO, with no hold to the refresh; the limit sleeps the loop to its interval in
+every mode). Both are read at each scene's start too. Offscreen runs have no window and ignore all of it.
+`tools/live-display.sh ENV_FILE [CASE]` opens a real window and checks each case from the log line printed 120
+frames after the apply (`display: inner, fullscreen, swapchain, present mode, mean frame`). Results (2026-11-23,
+KDE Wayland): resolution 1600x900 -> inner and swapchain 1600x900; Borderless -> fullscreen, 3440x1440 (the
+screen); back to Window -> 1280x720 windowed; vsync off with the limit Unlimited -> MAILBOX, 2.6 ms a frame; limit
+30 (vsync off) -> 33.1 ms a frame. Note: with vsync on this desktop's FIFO swapchain ran the title at about 50 ms a
+frame (the compositor's frame callbacks; refresh unknown on Wayland, so no MAILBOX), as before this change.
 
 ## Controller (Ryza)
 

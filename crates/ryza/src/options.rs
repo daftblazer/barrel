@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use barrel_render::graphics_options::{self as g, Aa, Row as EngineRow, Up};
-use barrel_render::settings::{RenderSettings, Upscaler};
+use barrel_render::settings::{Pacing, RenderSettings, Upscaler};
 
 use crate::graphics::{self, Item, Quality};
 use crate::options_view::{Ask, Kind, Page, Row, Screen};
@@ -333,6 +333,8 @@ pub fn entries(tab: usize, extended: bool) -> Vec<Entry> {
 /// The sizes of the Screen Resolution row, in its order (the string numbers `655_380` ... `655_383` read the same).
 const RESOLUTIONS: [&str; 8] = ["960x540", "1024x576", "1280x720", "1366x768", "1600x900", "1920x1080", "2560x1440", "3840x2160"];
 const RESOLUTION_DEFAULT: i32 = 5;
+/// The Frame Rate Limit row's choices in its order (the words 30, 60, 120, 144, Unlimited), in frames a second.
+const FRAME_LIMITS: [Option<u32>; 5] = [Some(30), Some(60), Some(120), Some(144), None];
 
 /// The settings the screen shows and changes.
 #[derive(Clone, Debug, PartialEq)]
@@ -593,6 +595,11 @@ impl State {
         format!("{first}^00<CLRE>{}<CLNR>", lines.join("^00"))
     }
 
+    /// The Vertical Sync and Frame Rate Limit rows as the window paces its frames.
+    pub fn pacing(&self) -> Pacing {
+        Pacing { vsync: self.values["vsync"] == 0, limit: FRAME_LIMITS.get(self.values["frame_rate"] as usize).copied().flatten() }
+    }
+
     /// The game options and graphics items as `key value` lines for Barrel's config.
     pub fn config_lines(&self) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = Vec::new();
@@ -627,6 +634,9 @@ impl State {
             out.push(("window".into(), RESOLUTIONS[resolution as usize % RESOLUTIONS.len()].into()));
             out.push(("fullscreen".into(), if mode == 0 { "off" } else { "on" }.into()));
         }
+        // The pacing rows go as Barrel's own keys, always: the game has them at 60 frames and
+        // vsync on from its first start.
+        out.extend(self.pacing().to_config().lines().filter_map(|l| l.split_once(' ')).map(|(k, v)| (k.to_string(), v.to_string())));
         let mut keys: Vec<_> = self.values.iter().collect();
         keys.sort();
         for (k, v) in keys {
@@ -645,6 +655,13 @@ impl State {
                 Some(n) => {
                     out.push(format!("{} {}", lines[n].0, lines[n].1));
                     done[n] = true;
+                }
+                // The display rows back at their defaults: a window or fullscreen key an earlier save
+                // left goes back to Barrel's default window (the lines name them only off it).
+                None if matches!(line.trim().split_once(' '), Some(("window" | "fullscreen", _))) => {
+                    let default = barrel_render::settings::Display::DEFAULT.to_config();
+                    let key = line.trim().split_once(' ').map_or("", |(k, _)| k);
+                    out.extend(default.lines().filter(|l| l.split_once(' ').is_some_and(|(k, _)| k == key)).map(str::to_string));
                 }
                 None => out.push(line.to_string()),
             }
@@ -790,6 +807,32 @@ mod tests {
     fn on_row(s: &mut State, f: impl Fn(&Entry) -> bool) {
         s.tab = 3;
         s.cursor[3] = s.entries(3).iter().position(f).expect("the row");
+    }
+
+    #[test]
+    fn the_display_rows_go_to_the_config_and_back() {
+        let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        // The game's start: 60 frames a second and vsync on, the window at its default.
+        assert_eq!(s.pacing(), Pacing { vsync: true, limit: Some(60) });
+        let text = s.store("");
+        assert!(text.contains("vsync on\n") && text.contains("frame_limit 60\n") && !text.contains("window "));
+        // Back at the defaults, the window a saved choice left is Barrel's default again.
+        let back = s.store("window 1920x1080\nfullscreen on\n");
+        assert_eq!(barrel_render::settings::Display::from_config(&back), barrel_render::settings::Display::DEFAULT);
+        // Vsync off, the limit at 30 (one step down), Unlimited (three up from there), a 2560x1440 borderless window.
+        s.values.insert("vsync", 1);
+        s.values.insert("frame_rate", 0);
+        assert_eq!(s.pacing(), Pacing { vsync: false, limit: Some(30) });
+        s.values.insert("frame_rate", 4);
+        assert_eq!(s.pacing().limit, None);
+        s.values.insert("resolution", 6);
+        s.values.insert("window_mode", 1);
+        let text = s.store("window 1x1\n");
+        assert_eq!(barrel_render::settings::Pacing::from_config(&text), Pacing { vsync: false, limit: None });
+        assert_eq!(barrel_render::settings::Display::from_config(&text), barrel_render::settings::Display { width: 2560, height: 1440, fullscreen: true });
+        let mut back = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
+        back.load(&text);
+        assert_eq!(back.pacing(), s.pacing());
     }
 
     #[test]

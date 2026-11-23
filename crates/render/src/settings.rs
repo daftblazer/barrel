@@ -266,6 +266,42 @@ impl Display {
     }
 }
 
+/// How frames are paced to the window: vertical sync on (the swapchain waits for the display)
+/// or off (frames go as fast as the loop draws them), and an optional frame rate limit. In the
+/// same config as the render settings: `vsync on|off`, `frame_limit N|off`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pacing {
+    pub vsync: bool,
+    /// The most frames a second the loop presents (none: as the display and vsync allow).
+    pub limit: Option<u32>,
+}
+
+impl Pacing {
+    pub const DEFAULT: Pacing = Pacing { vsync: true, limit: None };
+
+    pub fn to_config(&self) -> String {
+        let limit = self.limit.map_or("off".to_string(), |n| n.to_string());
+        format!("vsync {}\nframe_limit {limit}\n", if self.vsync { "on" } else { "off" })
+    }
+
+    pub fn from_config(text: &str) -> Pacing {
+        let mut p = Self::DEFAULT;
+        for line in text.lines() {
+            match line.trim().split_once(' ') {
+                Some(("vsync", v)) => p.vsync = v.trim() != "off",
+                Some(("frame_limit", v)) => p.limit = v.trim().parse::<u32>().ok().filter(|n| *n > 0),
+                _ => {}
+            }
+        }
+        p
+    }
+
+    /// The time one frame takes at the limit.
+    pub fn interval(&self) -> Option<std::time::Duration> {
+        self.limit.map(|n| std::time::Duration::from_secs_f64(1.0 / f64::from(n)))
+    }
+}
+
 /// Whether the scene pass keeps its depth for a temporal upscaler to read.
 impl RenderSettings {
     pub fn keeps_depth(&self) -> bool {
@@ -330,5 +366,16 @@ mod tests {
         let d = Display { width: 2560, height: 1440, fullscreen: true };
         let text = d.to_config() + &RenderSettings::HANDHELD.resolved().to_config();
         assert_eq!((Display::from_config(&text), RenderSettings::from_config(&text)), (d, RenderSettings::HANDHELD.resolved()));
+    }
+
+    #[test]
+    fn pacing_keys_and_limit_interval() {
+        assert_eq!(Pacing::from_config(""), Pacing::DEFAULT);
+        let p = Pacing { vsync: false, limit: Some(30) };
+        assert_eq!(Pacing::from_config(&p.to_config()), p);
+        assert_eq!(Pacing::from_config("frame_limit off\nvsync on\n"), Pacing::DEFAULT);
+        assert_eq!(Pacing::from_config("frame_limit 0\n").limit, None);
+        assert_eq!(p.interval(), Some(std::time::Duration::from_secs_f64(1.0 / 30.0)));
+        assert_eq!(Pacing::DEFAULT.interval(), None);
     }
 }

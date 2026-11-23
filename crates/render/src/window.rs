@@ -63,6 +63,9 @@ struct PumpState {
     window: Option<Window>,
     closed: bool,
     error: Option<String>,
+    /// A size asked of the live window not yet seen as its own, and the asks left for it.
+    asked: Option<winit::dpi::PhysicalSize<u32>>,
+    asks_left: u8,
     /// Set when the window changed size since it was last taken.
     resized: bool,
     /// Keys held down now, and keys pressed since the last `take_pressed`.
@@ -105,7 +108,20 @@ impl ApplicationHandler for PumpState {
     fn window_event(&mut self, _: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => self.closed = true,
-            WindowEvent::Resized(_) => self.resized = true,
+            WindowEvent::Resized(s) => {
+                self.resized = true;
+                // A configure the compositor sent before it saw a size request (Wayland) sets
+                // the old size back: ask again, a few times, until it takes the one asked for.
+                if let (Some(size), Some(window)) = (self.asked, self.window.as_ref()) {
+                    match (s == size, self.asks_left) {
+                        (true, _) | (_, 0) => self.asked = None,
+                        _ => {
+                            self.asks_left -= 1;
+                            let _ = window.request_inner_size(size);
+                        }
+                    }
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let winit::keyboard::PhysicalKey::Code(code) = event.physical_key {
                     if event.state.is_pressed() {
@@ -183,6 +199,27 @@ impl Pump {
             return Err("the window did not open again".into());
         }
         Ok(())
+    }
+
+    /// Gives the live window `display`'s size or fullscreen without closing it: the resize
+    /// reaches the frame loop as any other ([`Pump::take_resized`]). Fullscreen is borderless on
+    /// the window's screen; windowed asks for the size again.
+    pub fn set_display(&mut self, display: crate::settings::Display) {
+        let size = winit::dpi::PhysicalSize::new(display.width, display.height);
+        let window = self.window();
+        let mut resized = false;
+        if display.fullscreen {
+            window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+            self.state.asked = None;
+        } else {
+            window.set_fullscreen(None);
+            // (Some: the size was taken at once, which winit does not report as a resize event)
+            resized = window.request_inner_size(size).is_some();
+            self.state.asked = Some(size);
+            self.state.asks_left = 3;
+        }
+        self.state.resized |= resized;
+        self.state.display = Some(display);
     }
 
     pub fn window(&self) -> &Window {

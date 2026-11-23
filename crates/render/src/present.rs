@@ -30,8 +30,12 @@ pub struct Presenter {
     pub views: Vec<vk::ImageView>,
     /// The display's refresh interval, which `present` holds a MAILBOX swapchain's loop to.
     interval: Option<std::time::Duration>,
-    /// Whether the swapchain is MAILBOX, and when the next present may go.
-    mailbox: bool,
+    /// Vertical sync (the default) or not, and a frame rate limit's interval (`set_pacing`).
+    vsync: bool,
+    limit: Option<std::time::Duration>,
+    /// The present mode of the swapchain.
+    pub mode: vk::PresentModeKHR,
+    /// When the next present may go.
     next: std::cell::Cell<std::time::Instant>,
 }
 
@@ -78,7 +82,9 @@ impl Presenter {
             images: Vec::new(),
             views: Vec::new(),
             interval: refresh_hz.filter(|hz| *hz >= 20.0).map(|hz| std::time::Duration::from_secs_f64(1.0 / hz)),
-            mailbox: false,
+            vsync: true,
+            limit: None,
+            mode: vk::PresentModeKHR::FIFO,
             next: std::cell::Cell::new(std::time::Instant::now()),
         };
         p.rebuild(gpu, width, height)?;
@@ -110,11 +116,8 @@ impl Presenter {
         if caps.max_image_count > 0 {
             count = count.min(caps.max_image_count);
         }
-        // MAILBOX where offered and the refresh is known: a frame that misses a refresh shows at
-        // the next one, where FIFO holds it to a whole multiple of the refresh (a 35 ms frame at
-        // 60 Hz shown every 50 ms); `present` keeps the loop to the refresh as FIFO did.
         let modes = unsafe { surface_fn.get_physical_device_surface_present_modes(gpu.physical, surface)? };
-        let mailbox = self.interval.is_some() && modes.contains(&vk::PresentModeKHR::MAILBOX);
+        let mode = choose_mode(self.vsync, self.interval.is_some(), &modes);
         let old = self.swapchain;
         let swapchain = unsafe {
             self.swapchain_fn.create_swapchain(
@@ -129,7 +132,7 @@ impl Presenter {
                     .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
                     .pre_transform(caps.current_transform)
                     .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                    .present_mode(if mailbox { vk::PresentModeKHR::MAILBOX } else { vk::PresentModeKHR::FIFO })
+                    .present_mode(mode)
                     .clipped(true)
                     .old_swapchain(old),
                 None,
@@ -158,7 +161,19 @@ impl Presenter {
                 )
             })
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        (self.swapchain, self.format, self.extent, self.images, self.views, self.mailbox) = (swapchain, chosen.format, extent, images, views, mailbox);
+        (self.swapchain, self.format, self.extent, self.images, self.views, self.mode) = (swapchain, chosen.format, extent, images, views, mode);
+        Ok(())
+    }
+
+    /// Sets vertical sync and the frame rate limit. A change of vertical sync remakes the
+    /// swapchain in another present mode.
+    pub fn set_pacing(&mut self, gpu: &Gpu, pacing: crate::settings::Pacing) -> Result<()> {
+        self.limit = pacing.interval();
+        if pacing.vsync != self.vsync {
+            self.vsync = pacing.vsync;
+            let (width, height) = (self.extent.width, self.extent.height);
+            self.rebuild(gpu, width, height)?;
+        }
         Ok(())
     }
 
@@ -175,8 +190,10 @@ impl Presenter {
     /// Shows image `index` once `done` is signalled; true when the swapchain should be
     /// rebuilt (stale or no longer a perfect fit).
     pub fn present(&self, gpu: &Gpu, index: u32, done: vk::Semaphore) -> Result<bool> {
-        // A MAILBOX loop no faster than the display's refresh (FIFO's own pace when it keeps up).
-        if let (true, Some(interval)) = (self.mailbox, self.interval) {
+        // A MAILBOX loop with vertical sync goes no faster than the display's refresh (FIFO's own
+        // pace when it keeps up); the frame rate limit holds any mode to its interval.
+        let held = (self.mode == vk::PresentModeKHR::MAILBOX && self.vsync).then_some(self.interval).flatten();
+        if let Some(interval) = held.max(self.limit) {
             let now = std::time::Instant::now();
             let at = self.next.get();
             if at > now {
@@ -205,5 +222,38 @@ impl Presenter {
             self.swapchain_fn.destroy_swapchain(self.swapchain, None);
             self.surface_fn.destroy_surface(self.surface, None);
         }
+    }
+}
+
+/// The present mode for vertical sync on or off, given the modes the surface offers and whether
+/// the display's refresh is known. With vsync: MAILBOX where offered and the refresh is known (a
+/// frame that misses a refresh shows at the next one, where FIFO holds it to a whole multiple of
+/// the refresh: a 35 ms frame at 60 Hz shown every 50 ms; `present` keeps the loop to the refresh
+/// as FIFO did), else FIFO. Without: the newest frame at once, MAILBOX, else IMMEDIATE, else FIFO
+/// (always offered).
+fn choose_mode(vsync: bool, refresh_known: bool, offered: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
+    use vk::PresentModeKHR as M;
+    let order: &[M] = match (vsync, refresh_known) {
+        (true, true) => &[M::MAILBOX],
+        (true, false) => &[],
+        (false, _) => &[M::MAILBOX, M::IMMEDIATE],
+    };
+    order.iter().copied().find(|m| offered.contains(m)).unwrap_or(M::FIFO)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vk::PresentModeKHR as M;
+
+    #[test]
+    fn present_mode_follows_vsync_and_the_offer() {
+        let all = [M::FIFO, M::MAILBOX, M::IMMEDIATE];
+        assert_eq!(choose_mode(true, true, &all), M::MAILBOX);
+        assert_eq!(choose_mode(true, false, &all), M::FIFO);
+        assert_eq!(choose_mode(true, true, &[M::FIFO, M::IMMEDIATE]), M::FIFO);
+        assert_eq!(choose_mode(false, true, &all), M::MAILBOX);
+        assert_eq!(choose_mode(false, false, &[M::FIFO, M::IMMEDIATE]), M::IMMEDIATE);
+        assert_eq!(choose_mode(false, true, &[M::FIFO]), M::FIFO);
     }
 }

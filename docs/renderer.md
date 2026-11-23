@@ -514,6 +514,10 @@ a 1280×720 window (winit 0.30, Wayland or X11) and presents through a FIFO swap
 (`present.rs`: the surface, the swapchain, acquire and present; vsync, so the display paces the
 loop), with the engine clock taking each frame's real time (`docs/engine.md`, "Timing").
 `Gpu::new` takes the window's display handle to add the surface and swapchain extensions.
+The present mode follows `Presenter::set_pacing` (`vsync`, `frame_limit`): with vsync MAILBOX held to the refresh where
+the refresh is known and MAILBOX offered, else FIFO; without, MAILBOX, else IMMEDIATE, else FIFO, unheld. The limit
+sleeps `present` to its interval in any mode; changing vsync remakes the swapchain. `Pump::set_display` resizes or
+fullscreens the live window.
 
 **Events in the window.** `--window FRAMES` with `--field`/`--event` plays the event live:
 the window is opened first (`window::Pump`, winit's events pumped once a frame without

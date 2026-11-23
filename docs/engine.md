@@ -613,6 +613,13 @@ mistake for a day). `u46` in the events does not play its movie yet.
   run, with 0.35 1.0 cm. Her position does not depend on it (she moves at the lean's speed).
   Lockstep checks on her walk see the pose of the run differ in phase, not the path.
 
+- **Ryza's Fullscreen is borderless.** The Window Settings row's Borderless and Fullscreen both open a
+  borderless window on the window's screen (the saved `fullscreen on`); the Screen Resolution row sizes the
+  window only. Frame Rate Limit sleeps the loop to its interval (30, 60, 120, 144 or none) before each present;
+  Vertical Sync off presents in MAILBOX (else IMMEDIATE) without holding the loop to the refresh. The game's
+  default of 60 frames with vsync on is written with the options, so a refresh above 60 Hz is paced to 60 after
+  the first Settings save.
+
 - **The Options screen's second page.** The game's Options screen (layout 511) has one page
   (volumes, Fast Forward Event, Voice Language, Default, Confirm); Barrel adds a second, the
   graphics page (`play/options.rs`, `docs/renderer.md`, "Graphics settings"). Down off "Confirm"

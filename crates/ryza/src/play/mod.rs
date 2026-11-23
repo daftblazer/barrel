@@ -1472,11 +1472,17 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
 
     let (mut width, mut height) = a.size;
     // A window to play in (--window), or an offscreen image.
-    let display = match config.as_deref() {
-        Some(text) => settings::Display::from_config(text),
-        None => settings::Display { width, height, fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1") },
+    let (start_w, start_h) = (width, height);
+    let display_of = |config: Option<&str>| {
+        let display = match config {
+            Some(text) => settings::Display::from_config(text),
+            None => settings::Display { width: start_w, height: start_h, fullscreen: std::env::var_os("BARREL_DEFAULT_FULLSCREEN").is_some_and(|v| v == "1") },
+        };
+        settings::Display { fullscreen: display.fullscreen || a.fullscreen, ..display }
     };
-    let display = settings::Display { fullscreen: display.fullscreen || a.fullscreen, ..display };
+    let pacing_of = |config: Option<&str>| config.map_or(settings::Pacing::DEFAULT, settings::Pacing::from_config);
+    let mut display = display_of(config.as_deref());
+    let mut pacing = pacing_of(config.as_deref());
     if a.window {
         eprintln!("graphics: {graphics:?}, {display:?}");
     }
@@ -1506,6 +1512,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (pump, gpu, presenter)
         }
     };
+    // Vertical sync and the frame rate limit (a window kept from the last scene gets the config's again).
+    if let Some(p) = presenter.as_mut() {
+        p.set_pacing(&gpu, pacing)?;
+    }
     if let Some(p) = &presenter {
         (width, height) = (p.extent.width, p.extent.height);
         eprintln!("window: {width}x{height}");
@@ -1833,6 +1843,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut leave = barrel_ryza::leave::Leave::default();
     let mut discard = false;
     let mut apply_settings = false;
+    // After a live display change: when the frames were counted from, and how many since.
+    let mut display_probe: Option<(std::time::Instant, u32)> = None;
     let reapply_at = std::env::var("BARREL_REAPPLY_AT").ok().and_then(|v| v.parse::<u32>().ok());
     let mut scripted_saved = false;
     let mut was_in_settings = false;
@@ -2058,6 +2070,23 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if std::mem::take(&mut apply_settings) {
             let config = read_config();
             let now = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);
+            // The display rows: the live window takes the size or fullscreen and the pacing as the
+            // config has them (the swapchain follows through the resize path). Offscreen runs have no window.
+            let (new_display, new_pacing) = (display_of(config.as_deref()), pacing_of(config.as_deref()));
+            if let (Some(p), Some(pr)) = (pump.as_mut(), presenter.as_mut()) {
+                if new_display != display {
+                    p.set_display(new_display);
+                }
+                if new_pacing != pacing {
+                    pr.set_pacing(&gpu, new_pacing)?;
+                    stale = true;
+                }
+                if new_display != display || new_pacing != pacing {
+                    eprintln!("display: changed live ({new_display:?}, {new_pacing:?})");
+                    display_probe = Some((std::time::Instant::now(), 0));
+                }
+                (display, pacing) = (new_display, new_pacing);
+            }
             if now.graphics != renderer.settings || now.presets != presets_now.get() {
                 eprintln!("settings: applied live (game frame {})", sound_base + i64::from(frame_no as i32));
             }
@@ -2746,6 +2775,16 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         gpu.frame.set(gpu.frame.get() + 1);
         frame_no += 1;
+        // The window's state a hundred and twenty frames after a live display change, for the check.
+        if let (Some((since, n)), Some(p), Some(pr)) = (display_probe.as_mut(), pump.as_ref(), presenter.as_ref()) {
+            *n += 1;
+            if *n == 120 {
+                let w = p.window();
+                let ms = since.elapsed().as_secs_f64() * 1000.0 / 120.0;
+                eprintln!("display: inner {}x{}, fullscreen {}, swapchain {}x{}, present mode {:?}, mean frame {ms:.2} ms", w.inner_size().width, w.inner_size().height, w.fullscreen().is_some(), pr.extent.width, pr.extent.height, pr.mode);
+                display_probe = None;
+            }
+        }
     }
     if let Some(t) = renderer.timer.as_mut()
         && presenter.is_none()
