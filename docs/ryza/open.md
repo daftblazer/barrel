@@ -459,7 +459,8 @@ LB or RB with a value changed since the screen opened opens the same dialog firs
   not up, starts with the tab's first visit and goes on from where it was when the tab comes back (Game tab
   left at 1530 and shown again at 1700: clock 82). This replaces the earlier "restart at every tab change"
   (the old rows still fit it: they only visit each tab once).
-- B in the tab dialog: not captured; Barrel closes the dialog and stays on the tab, as the leave's does.
+- B in the tab dialog closes it and stays on the tab with the change kept; a second RB asks again (ryza-recomp
+  scenario settings-tabask-b, rows settings-tabaskb1600-1930 at 0).
 - A B with nothing changed runs the title's fade, cursor and spin one frame ahead of the screen's last frame
   (`Leave::lead`, from the capture's 2130 to 2160; the dialogs' leaves are fitted without it); the list's help
   plate of the screen also goes on fading over the title for 15 frames there (not drawn: `settings-tabask2130`
