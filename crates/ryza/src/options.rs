@@ -335,6 +335,9 @@ const RESOLUTIONS: [&str; 8] = ["960x540", "1024x576", "1280x720", "1366x768", "
 const RESOLUTION_DEFAULT: i32 = 5;
 /// The Frame Rate Limit row's choices in its order (the words 30, 60, 120, 144, Unlimited), in frames a second.
 const FRAME_LIMITS: [Option<u32>; 5] = [Some(30), Some(60), Some(120), Some(144), None];
+/// The pacing of the rows' defaults (Frame Rate Limit 60, Vertical Sync on): a window's pacing where
+/// the config names none.
+pub const GAME_PACING: Pacing = Pacing { vsync: true, limit: Some(60) };
 
 /// The settings the screen shows and changes.
 #[derive(Clone, Debug, PartialEq)]
@@ -813,7 +816,8 @@ mod tests {
     fn the_display_rows_go_to_the_config_and_back() {
         let mut s = State::new(graphics::Settings::default(), RenderSettings::DESKTOP.resolved());
         // The game's start: 60 frames a second and vsync on, the window at its default.
-        assert_eq!(s.pacing(), Pacing { vsync: true, limit: Some(60) });
+        assert_eq!(s.pacing(), GAME_PACING);
+        assert_eq!(GAME_PACING.over(""), s.pacing());
         let text = s.store("");
         assert!(text.contains("vsync on\n") && text.contains("frame_limit 60\n") && !text.contains("window "));
         // Back at the defaults, the window a saved choice left is Barrel's default again.

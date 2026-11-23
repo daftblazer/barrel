@@ -321,7 +321,7 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     Fullscreen both mean on); back at the defaults the lines go back to the default window (1280x720,
     off). The frame rate limit and vertical sync are Barrel's own `frame_limit N|off` and `vsync on|off`
     (`barrel_render::settings::Pacing`), always written with the options (the game starts at 60 frames and
-    vsync on); an old config without them is as before (no limit).
+    vsync on); a config without them gets the rows' defaults (`options::GAME_PACING`: 60 frames, vsync on), so the rows always show what runs; Unlimited is one step on the row.
   - *Fitted* (each `// STAND-IN:` in the code): the thumb's height and travel
     (`options_view::View::thumb`), the Keyboard and Controller pages' places (`KEYS_*`, `PAD_*`),
     the help plate's extra atlas pixel(s) (one, and one more where the last glyph reaches past its

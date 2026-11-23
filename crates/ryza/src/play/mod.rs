@@ -1480,7 +1480,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         };
         settings::Display { fullscreen: display.fullscreen || a.fullscreen, ..display }
     };
-    let pacing_of = |config: Option<&str>| config.map_or(settings::Pacing::DEFAULT, settings::Pacing::from_config);
+    // The game's own default (60 frames, vsync on: the rows' defaults) where the config says nothing.
+    let pacing_of = |config: Option<&str>| barrel_ryza::options::GAME_PACING.over(config.unwrap_or(""));
     let mut display = display_of(config.as_deref());
     let mut pacing = pacing_of(config.as_deref());
     if a.window {

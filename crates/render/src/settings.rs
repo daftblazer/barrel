@@ -285,7 +285,13 @@ impl Pacing {
     }
 
     pub fn from_config(text: &str) -> Pacing {
-        let mut p = Self::DEFAULT;
+        Self::DEFAULT.over(text)
+    }
+
+    /// This pacing with what `text` (a config) sets laid over it: a game's own default where the
+    /// config says nothing.
+    pub fn over(self, text: &str) -> Pacing {
+        let mut p = self;
         for line in text.lines() {
             match line.trim().split_once(' ') {
                 Some(("vsync", v)) => p.vsync = v.trim() != "off",
