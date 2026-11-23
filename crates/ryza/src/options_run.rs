@@ -218,6 +218,24 @@ mod tests {
     }
 
     #[test]
+    fn the_cursor_stands_still_on_the_frame_b_leaves() {
+        let mut r = run();
+        for _ in 0..10 {
+            r.step(&[]);
+        }
+        let before = r.moment().blink;
+        r.step(&[Key::Back]);
+        // (the blink would have moved on by a frame's step; on the leaving frame it has not)
+        assert_eq!(r.moment().age, 11);
+        let mut other = run();
+        for _ in 0..11 {
+            other.step(&[]);
+        }
+        assert_ne!(r.moment().blink, other.moment().blink);
+        assert!(before != other.moment().blink);
+    }
+
+    #[test]
     fn a_change_asks_before_leaving_and_no_drops_it() {
         let mut r = run();
         let before = r.state.clone();

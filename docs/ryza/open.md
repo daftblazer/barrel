@@ -282,23 +282,44 @@ the menu when it is left (`Key::Return`, at its last frame; the menu's cards and
 frames later). Offscreen `--menu-keys` also takes `left,right,lb,rb`. The title still runs its own
 copy of this key code (`play::run_once`, on the title's frame clock): the two are not yet one.
 
+Settings from the menu, drawn as the game's (2026-11-23, rows `field-menu-2225` to `-2445`, `-2460` to `-2550` at 0):
+- The menu goes out 41 frames after A (`SETTINGS_OUT_AT`, 2 frames before the screen's first): the buttons, plates
+  and cards as on B (the background, the photo and the bottom-right picture `mm_put` stay), the Settings glow by
+  itself over 9 frames (1 - out / 9), the help bar from A itself (`Bar::out`: words gone at +2.6, the plate
+  shrinks to its shortest over 6.4 frames, the fade holds 5 frames then runs 15; the same on B, so one rule).
+  Nodes at no opacity are not drawn.
+- Over it the game draws the blurred picture of the menu: two passes on 960 x 540 targets (a 7-tap line blur each way,
+  taps 1.33 px and 1.3 px apart, near-flat weights 0.1448, 0.1443, 0.1428, 0.1404), then a full-screen `sys_white`
+  quad (shader `shbd81156d`) whose colour is that picture at the screen's pixels, white times a fade of 7.5 frames
+  (fitted to 2265's 8/15), and the two vignettes (`a21_common` 1, alphas 0.59 and 0.35 at full, `field_menu::VIGNETTES`).
+  Out again over the same 7.5 frames from the frame after the screen's last. Barrel draws these as the `backdrop`
+  layer (made between the menu's and the screen's: the layers draw and the trace lists them in the order they were made).
+  **The blur itself is not drawn**: the layer's first quad is the plain `sys_white` quad, which in a window would be a
+  white wash, so a window leaves it out (vignettes only); an offscreen run keeps it for the trace. Needs the renderer to
+  copy what the layers before it drew, blur it and draw it between layers (not built).
+- The screen over the menu differs from the title's: its caption comes down 30 layout pixels as it fades in (outcubic over
+  30 frames from 1 frame before the screen's first) and is drawn after the page (`Moment::from_menu`); its help bar fades in
+  from the screen's frame 3 (the plate 0.2 frames later); after B (nothing changed) the cursor's blink stands still on the
+  key's frame, and after the last frame the caption goes out the way it came (`View::remnants`) with the bar going out
+  as the menu's (until ~2435); the menu's bar comes in again from 33 frames after its return (plate 0.2 frames later).
+  The ring's loop runs 120.75 frames (fitted: a frame ahead after 4 loops).
+
+A window run (2026-11-23, a scripted pad: Y, five downs, A, down, right twice, B, down, A on Yes, B): the log reads
+`menu: open`, `settings: opened from the menu`, the screen's keys (`[Down]`, `[Right]`, `[Right]` with `changed true`,
+`[Back]` asking, `[Down]`, `[Confirm]`), `settings: saved from the menu's screen`, `settings: left`, `menu: closed`, and
+the config file (`BARREL_CONFIG`) holds the values. Two bugs it found, fixed: a key a window stamped on a game frame the
+screen had stepped already (it renders faster than 60 Hz) was dropped (keys are now taken by their stamps), and the
+screen's last key with a fractional stamp sorted after the `Return` and closed the menu too (keys now sort by frame).
+
 Left (each a listed cause):
-- Settings from the menu: the screen opens and leaves (B at 2400 gone at 2401, the menu back 2402) but
-  rows 2265 to 2400 are not at 0 (about 2000 mismatches at 2280, 116 at 2400): the game draws the menu
-  under it as a blurred picture (a full-screen `sys_white` quad reading a 960 x 540 target, then two
-  vignette quads of `a21_common` 1, alphas 0.59 and 0.35 at full) and the buttons and plates go out
-  over 30 frames from 2261 (alpha cubed, 0.65, 0.34, 0.15, 0.05 on 2265 to 2280) as the screen comes
-  in; Barrel keeps the menu as it was and draws the screen's own fade over it. The help bar goes out
-  after A as after B (2225: the plate 3 pieces at 1282, no words; 2230: 1543, alpha 2/3; alpha
-  1 - (age - 5) / 15, plate grown 0.625 at +5) and comes in again after the return (2440: alpha 1/3,
-  plate 0.75 grown). None built; the same bar transients as the rest of this list.
+- The blurred picture's pixels (above).
+- The title's Options key code is still its own copy in `play::run_once`; only the menu uses `options_run::Run`.
 - The help bar's transients: the field's bar fading out over the opening (1909 to 1925, 1910 and 1920
-  rows), the menu's bar growing in (1940 and 1945, its plate first 828 px then 1125), the menu's
-  bar going out as the menu closes (2555 to 2565: the plate and words go in steps) and after it the
-  field's coming back (2575 to 2585: a short plate first). All at full width in Barrel.
-- The Settings button's glow while the menu closes (2555 to 2565: the game's goes out 2 frames after
-  the slide's, over 9, from full) and its ring and glow a pixel off in the loops after returning
-  from Settings (2460 to 2550: the animation clock's 121 is a fit, a frame off now and then).
+  rows), the menu's bar growing in (1940 and 1945, its plate first 828 px then 1125) and after the menu closes
+  the field's coming back (2575 to 2585: a short plate first). All at full width in Barrel.
+- The Settings button's glow while the menu closes on B (2555 to 2565: the game's goes out later than the slide's:
+  about 3 frames, over 7, which does not fit the capture's two bytes exactly; Barrel's follows the first button's slide:
+  1 to 3 mismatches at 2555 and 2560).
 - The other five buttons: A runs the select pulse and does nothing else (Container, Equip, Gathering
   Tools, Status, Guide are not built; the game's "not available" cue is not read). Left, right,
   X, Y, LB, RB and the other photos (ids by story) are not tried in the game.

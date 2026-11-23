@@ -980,6 +980,9 @@ struct SettingsRun {
     run: barrel_ryza::options_run::Run,
     first: i32,
     told: bool,
+    /// The stamp of the key last given to the screen: a key a window stamps on a game frame that was stepped already (it renders
+    /// faster than 60 Hz) goes to the next frame stepped, so the keys are taken by their stamps and not by the frame alone.
+    seen: f32,
 }
 
 /// Frames after the Settings screen's last one its caption and help bar take to go out (`field-menu`: the caption by 2431,
@@ -2868,13 +2871,17 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         let menu_tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
         let mut menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
+        if menu_now.is_some() != menu_up {
+            eprintln!("menu: {} (game frame {})", if menu_now.is_some() { "open" } else { "closed" }, menu_tick.floor());
+        }
         menu_up = menu_now.is_some();
         // The Settings screen A on the menu's Settings button opened: it runs on its own clock from its first frame.
         // (Its leaving is told to the menu as a key, which the menu's state is then replayed with.)
         loop {
         match (menu_now.as_ref().filter(|n| n.in_settings).and_then(|n| n.chosen), settings_run.as_mut()) {
             (Some(c), None) => {
-                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false });
+                eprintln!("settings: opened from the menu (game frame {})", c.floor());
+                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false, seen: (c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT) as f32 - 0.001 });
             }
             // A on Settings again while the last screen's remnants are still going out: a new screen.
             (Some(c), Some(sr)) if sr.over_since().is_some() => {
@@ -2882,7 +2889,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     options_state = done.run.finish();
                     options_initial = options_state.clone();
                 }
-                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false });
+                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false, seen: (c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT) as f32 - 0.001 });
             }
             (None, Some(sr)) if sr.over_since().is_some_and(|over| menu_tick >= over as f32 + SETTINGS_AFTER) => {
                 // Back on the menu: the values the screen left stand.
@@ -2899,8 +2906,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let now = menu_tick.floor() as i32;
             while sr.run.frame() < now - sr.first + 1 {
                 let at = sr.first + sr.run.frame();
-                let keys: Vec<_> = menu_keys.iter().filter(|(t, _)| t.floor() as i32 == at).filter_map(|&(_, k)| screen_key(k)).collect();
+                let due: Vec<_> = menu_keys.iter().filter(|(t, _)| *t > sr.seen && t.floor() as i32 <= at).collect();
+                if let Some(last) = due.last() {
+                    sr.seen = last.0;
+                }
+                let keys: Vec<_> = due.into_iter().filter_map(|&(_, k)| screen_key(k)).collect();
                 let fx = sr.run.step(&keys);
+                if !keys.is_empty() {
+                    eprintln!("settings: {keys:?} on the menu's screen (game frame {at}), row {}, changed {}", sr.run.state.cursor[sr.run.state.tab], sr.run.changed());
+                }
                 if let Some(sound) = sound.as_mut() {
                     let when = sound_base + i64::from(at - a.hud_at as i32);
                     for cue in fx.cues {
@@ -2914,6 +2928,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     }
                 }
                 if fx.saved {
+                    eprintln!("settings: saved from the menu's screen (game frame {})", at);
                     save_options(&sr.run.state);
                     apply_settings = true;
                 }
@@ -2921,8 +2936,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     told_now = true;
                     eprintln!("settings: left (game frame {})", sound_base + i64::from(sr.first + l - 1));
                     menu_keys.push(((sr.first + l - 1) as f32, barrel_ryza::field_menu::Key::Return));
-                    // (the menu's replay takes the keys in time order)
-                    menu_keys.sort_by(|x, y| x.0.total_cmp(&y.0));
+                    // (the menu's replay takes the keys in the order of their frames; within the frame the screen's own key, which a
+                    // window stamps with a fraction of it, comes before the return)
+                    menu_keys.sort_by(|x, y| x.0.floor().total_cmp(&y.0.floor()));
                     sr.told = true;
                 }
             }
