@@ -357,10 +357,12 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     Tests: `preferences::tests`, `walk::tests::the_camera_rows_flip_and_scale_the_right_stick`,
     `tools/options-effects.sh ENV_FILE` (a field walk with the right stick held, and the title's volumes line).
     Not live-checked through the screen's Yes (the apply path is the start path's `Play::from_config`).
-  - Still stored only: Camera Auto-correct (its meaning is unread: the follow after walking is on
-    in the captures at the row's default, so it is not simply that), Zoom controls, Map Rotation
+  - Still stored only: Camera Auto-correct (its description, string 4522104: "Set to On to
+    automatically reset the camera behind your character", so a swing back behind her on top of the
+    follow, which is on at the row's default; when and how fast it swings is not read), Zoom controls, Map Rotation
     (the minimap is drawn fixed-north only; turning it with the camera is not built), Difficulty,
-    Dash, Event Autoplay, Subtitle Size, Autosave, Vibration, Item Auto Select, Save Order, Toggle
+    Dash (string 4522107: hold the dash button to sprint, or press it to toggle sprinting; Barrel has no
+    sprint yet), Event Autoplay, Subtitle Size, Autosave, Vibration, Item Auto Select, Save Order, Toggle
     Icons, Cursor Speed (each belongs to code the field or the events do not have yet). Their
     order and descriptions on the Camera and Audio tabs are the string tables', not captured
     (the capture shows the Game tab only); Difficulty offers five levels of the seven strings
