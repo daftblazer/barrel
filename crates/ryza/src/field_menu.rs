@@ -58,6 +58,10 @@ const CURSOR_AT: f32 = 30.0;
 /// the loop's length (`anm_cursor_on_loop`).
 const ON_FRAMES: f32 = 18.0;
 const OFF_FRAMES: f32 = 9.0;
+/// The cursor's glow as the menu closes on B: it goes out linearly, starting `CLOSE_GLOW_AT` frames after the buttons' going and taking
+/// `CLOSE_GLOW_FRAMES` (STAND-IN: fitted to the capture's two samples, 170/255 on 2555 and 20/255 on 2560; the slide of no one button fits both).
+const CLOSE_GLOW_AT: f32 = 1.17;
+const CLOSE_GLOW_FRAMES: f32 = 8.5;
 /// The speed of the cursor's select pulse (`anim_ctrl select`).
 const SELECT_SPEED: f32 = 1.5;
 // STAND-IN: The loops run 121 frames (the animation's 120 and a frame at its end), as the Settings screen's cursor blink does (`options::BLINK_LOOP`, read off the same kind of capture); the real thing is the game's own animation clock.
@@ -87,7 +91,7 @@ const CLOSE_MONEY_SPEED: f32 = 2.25;
 const CLOSE_PUT_SPEED: f32 = 3.0;
 /// The help bar's fade and its start after the menu's.
 const HELP_FADE: f32 = 15.0;
-const HELP_AT: f32 = 34.0;
+const HELP_AT: f32 = 33.0;
 /// The same after the Settings screen (`field-menu`: 1/3 of the fade on 2440, the menu's frames from 2402), and the frames its plate starts later.
 const HELP_AT_BACK: f32 = 33.0;
 const BACK_PLATE_LATE: f32 = 0.2;
@@ -234,7 +238,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -510,6 +514,10 @@ struct Bar {
     alpha: f32,
     grow: f32,
     words: bool,
+    /// Layout pixels added to the plate's width (the menu's bar comes in wider than it stays: `open_plate_extra`).
+    extra: f32,
+    /// The field's own bar (its seven entries) in place of the menu's five.
+    field: bool,
 }
 
 /// Frames the bar holds its opacity after the key that sends it out, and the frames its fade takes (`field-menu`: after A
@@ -520,8 +528,26 @@ impl Bar {
     /// The bar `age` frames after the key that sends it out: the words go first, the plate shrinks to its shortest
     /// (`load_view`'s fitted rule, the same on this capture: 0.625 of the way at +5) and the plate fades after `BAR_HOLD`.
     fn out(age: f32) -> Bar {
-        Bar { alpha: 1.0 - (age - BAR_HOLD) / HELP_FADE, grow: 1.0 - ((age - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0), words: age < PLATE_LEAVE }
+        Bar { alpha: 1.0 - (age - BAR_HOLD) / HELP_FADE, grow: 1.0 - ((age - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0), words: age < PLATE_LEAVE, extra: 0.0, field: false }
     }
+}
+
+/// The field's bar under the opening menu: it holds until this many frames after the menu's first, then fades out over
+/// `HELP_FADE` (`field-menu` 1910 to 1920: opacity 14/15 on 1910, 4/15 on 1920), its whole plate and line as it stood.
+const FIELD_BAR_HOLD: f32 = 3.0;
+
+/// The extra width the menu's own bar has as it comes in, in layout pixels, at frames after its first: read off the capture's
+/// plate edges (`field-menu` 1940, 1945, 1950: 551.8, 717.1 and 750.1 layout pixels from the left, the last the full plate's).
+/// STAND-IN: the game's own tween is not read; this joins the three samples by straight lines.
+const OPEN_PLATE_EXTRA: [(f32, f32); 3] = [(1.0, 198.33), (6.0, 33.06), (11.0, 0.0)];
+
+/// The opening plate's extra width `a` frames after the bar's first (`OPEN_PLATE_EXTRA`).
+fn open_plate_extra(a: f32) -> f32 {
+    let t = &OPEN_PLATE_EXTRA;
+    if a <= t[0].0 {
+        return t[0].1;
+    }
+    t.windows(2).find(|w| a < w[1].0).map_or(0.0, |w| w[0].1 + (w[1].1 - w[0].1) * (a - w[0].0) / (w[1].0 - w[0].0))
 }
 
 /// Opacity from an animation's alpha curve at `t` seconds, as the game's byte.
@@ -674,7 +700,7 @@ impl View {
             pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], white(alpha));
             // (the glow goes with the first button's slide; on the way to Settings it goes out by itself over `OFF_FRAMES`:
             // the capture's 142/255 on 2265 is 1 - 4/9)
-            let glow_slide = if closed { byte(slide_state(0.0).0 * 255.0) } else if closing { byte((1.0 - out / OFF_FRAMES).clamp(0.0, 1.0) * 255.0) } else { alpha };
+            let glow_slide = if closed { byte((1.0 - (out - CLOSE_GLOW_AT) / CLOSE_GLOW_FRAMES).clamp(0.0, 1.0) * 255.0) } else if closing { byte((1.0 - out / OFF_FRAMES).clamp(0.0, 1.0) * 255.0) } else { alpha };
             self.glow(&mut pen, nav, i, at, glow_slide, frame);
             let image = BUTTONS[i];
             pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], white(alpha));
@@ -707,7 +733,11 @@ impl View {
             None => {
                 // (back from Settings it comes up one frame earlier, with its plate a fifth of a frame late, as the screen's own)
                 let (at, late) = if nav.warm { (HELP_AT_BACK, BACK_PLATE_LATE) } else { (HELP_AT, 0.0) };
-                Bar { alpha: (age - at) / HELP_FADE, grow: if nav.warm { ((age - at - late) / PLATE_FRAMES).clamp(0.0, 1.0) } else { 1.0 }, words: true }
+                if !nav.warm && age < FIELD_BAR_HOLD + HELP_FADE {
+                    // The field's bar fading out as the menu comes up.
+                    self.help_bar(&mut pen, Bar { alpha: 1.0 - (age - FIELD_BAR_HOLD) / HELP_FADE, grow: 1.0, words: true, extra: 0.0, field: true });
+                }
+                Bar { alpha: (age - at) / HELP_FADE, grow: if nav.warm { ((age - at - late) / PLATE_FRAMES).clamp(0.0, 1.0) } else { 1.0 }, words: true, extra: if nav.warm { 0.0 } else { open_plate_extra(age - at) }, field: false }
             }
         };
         self.help_bar(&mut pen, bar);
@@ -785,12 +815,13 @@ impl View {
         if alpha <= 0.0 {
             return;
         }
-        let line = HELP_ENTRIES.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ");
+        let entries: &[(char, u32)] = if bar.field { &crate::field_hud::HELP_ENTRIES } else { &HELP_ENTRIES };
+        let line = entries.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ");
         let s = self.help_text.size * pen.k / ATLAS_SIZE;
         let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
         // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`).
         let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
-        let width = PLATE_MIN + (full - PLATE_MIN) * bar.grow;
+        let width = PLATE_MIN + (full - PLATE_MIN) * bar.grow + bar.extra;
         let [x, y, w, h] = self.help.pictures[0];
         let [ml, mr] = self.help.margins.unwrap_or([0.0; 2]);
         let (cap_l, cap_r, height) = (ml / PER_LAYOUT, mr / PER_LAYOUT, h / PER_LAYOUT);
@@ -858,6 +889,15 @@ pub fn backdrop(fade: f32, screen: (u32, u32)) -> Vec<Quad> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_opening_plate_is_wide_and_settles_by_the_eleventh_frame() {
+        assert!((open_plate_extra(1.0) - 198.33).abs() < 1e-3);
+        assert!((open_plate_extra(6.0) - 33.06).abs() < 1e-3);
+        assert_eq!(open_plate_extra(11.0), 0.0);
+        assert_eq!(open_plate_extra(40.0), 0.0);
+        assert!(open_plate_extra(3.5) > open_plate_extra(6.0));
+    }
 
     #[test]
     fn the_blurred_picture_is_whole_by_its_eighth_frame_and_the_vignettes_follow_it() {

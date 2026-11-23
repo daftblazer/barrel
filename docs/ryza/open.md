@@ -294,9 +294,15 @@ Settings from the menu, drawn as the game's (2026-11-23, rows `field-menu-2225` 
   (fitted to 2265's 8/15), and the two vignettes (`a21_common` 1, alphas 0.59 and 0.35 at full, `field_menu::VIGNETTES`).
   Out again over the same 7.5 frames from the frame after the screen's last. Barrel draws these as the `backdrop`
   layer (made between the menu's and the screen's: the layers draw and the trace lists them in the order they were made).
-  **The blur itself is not drawn**: the layer's first quad is the plain `sys_white` quad, which in a window would be a
-  white wash, so a window leaves it out (vignettes only); an offscreen run keeps it for the trace. Needs the renderer to
-  copy what the layers before it drew, blur it and draw it between layers (not built).
+  The layer's first quad is drawn as the blurred picture of what the layers before it drew (the renderer's `screen_blur`,
+  `docs/renderer.md` "The blurred screen": the target so far scaled to half, blurred along x then y); its trace row is still
+  the plain `sys_white` quad. A window whose swapchain cannot be copied from leaves the quad out (vignettes only).
+  Pictures: Barrel's 2310 and 2370 frames against the game's backbuffers differ by a mean of 0.00033 of full scale
+  (rows `field-menu-blur-2310` and `-2370`, local `checks-blur.txt`, tolerance 0.001), and Barrel's two 960 x 540 targets
+  at 2310 against the game's dumps (`rt960x540`) by a mean of about 2.0 and 1.55 bytes (`BARREL_DUMP_STAGES` writes
+  `screen_blur_x` and `screen_blur`). The Options screen's own background covers the picture at those frames; where it shows
+  is the fade in (2263 to 2270) and out (2405 to 2412), which the capture has no backbuffers of. The taps' negative side is
+  a STAND-IN (-2.0, -1.0, -1.0 px along y; the game's are not read).
 - The screen over the menu differs from the title's: its caption comes down 30 layout pixels as it fades in (outcubic over
   30 frames from 1 frame before the screen's first) and is drawn after the page (`Moment::from_menu`); its help bar fades in
   from the screen's frame 3 (the plate 0.2 frames later); after B (nothing changed) the cursor's blink stands still on the
@@ -311,15 +317,27 @@ the config file (`BARREL_CONFIG`) holds the values. Two bugs it found, fixed: a 
 screen had stepped already (it renders faster than 60 Hz) was dropped (keys are now taken by their stamps), and the
 screen's last key with a fractional stamp sorted after the `Return` and closed the menu too (keys now sort by frame).
 
+Help bar transients (2026-11-23, rows `field-menu-1910` to `-1920`, `-1940` to `-1950`, `-2575` to `-2585` at 0):
+- The field's own bar (seven entries, its whole plate) stays under the opening menu for 3 frames after its first, then
+  fades out over 15 (`FIELD_BAR_HOLD`; 14/15 on 1910, 4/15 on 1920).
+- The menu's bar starts one frame sooner than the fade the rule had (`HELP_AT` 33: 1/15 on 1940, 6/15 on 1945, 11/15 on
+  1950) and comes in with a plate wider than it stays: 198.3 layout pixels extra on its first frame, 33.1 on the sixth, none
+  on the eleventh (`OPEN_PLATE_EXTRA`: STAND-IN, the three samples joined by lines; the game's tween is not read).
+- The field's bar back after the menu closes: its fade comes a frame later than at an arrival (2/15 on 2575) with a
+  plate that grows over 6.4 frames from 0.4 before the fade (0.375 of the way on 2575, whole on 2580;
+  `HelpBar::returning`).
+- The Settings glow as the menu closes on B goes out linearly from 1.17 frames after the buttons began over 8.5
+  (`CLOSE_GLOW_AT`, `CLOSE_GLOW_FRAMES`: STAND-IN fitted to 170/255 on 2555 and 20/255 on 2560; no button's slide fits both).
+  The glow's other parts fit exactly; the cursor part (the pulse's own alpha and scale) is one byte off at 2555 (the game
+  has 0.667, Barrel 0.533: the game applies no pulse alpha then) and at 2560 (0.078 against 0.067, and its rectangle 0.9
+  px wider): 1 mismatch each. Not read: what the pulse does in the game when the menu closes.
+- 2150 to 2160 and 2510 show one mismatch each (a glow byte, 0.031 against 0.039; not rows).
+
 Left (each a listed cause):
-- The blurred picture's pixels (above).
-- The title's Options key code is still its own copy in `play::run_once`; only the menu uses `options_run::Run`.
-- The help bar's transients: the field's bar fading out over the opening (1909 to 1925, 1910 and 1920
-  rows), the menu's bar growing in (1940 and 1945, its plate first 828 px then 1125) and after the menu closes
-  the field's coming back (2575 to 2585: a short plate first). All at full width in Barrel.
-- The Settings button's glow while the menu closes on B (2555 to 2565: the game's goes out later than the slide's:
-  about 3 frames, over 7, which does not fit the capture's two bytes exactly; Barrel's follows the first button's slide:
-  1 to 3 mismatches at 2555 and 2560).
+- The title's Options key code is still its own copy in `play::run_once` (not done in this pass: the title's offscreen
+  frames replay scripted keys through `leave::replay` and keep their cursor holds in the title's own input record, which
+  `options_run::Run` does not model; the 100 `checks-settings` rows hang on it, so it needs a pass of its own); only the
+  menu uses `options_run::Run`.
 - The other five buttons: A runs the select pulse and does nothing else (Container, Equip, Gathering
   Tools, Status, Guide are not built; the game's "not available" cue is not read). Left, right,
   X, Y, LB, RB and the other photos (ids by story) are not tried in the game.

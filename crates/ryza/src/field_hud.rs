@@ -51,7 +51,7 @@ const MENU_WORDS_SPAN: u32 = 512;
 // STAND-IN: The help bar's button glyphs and the "Photo Mode" string are the capture's (the game picks the pictures for the pad's assignment; three strings of the table read "Photo Mode", which one the game takes is not checked); the other words are the table's own.
 /// The help bar's entries in the order the game lists them: the button glyph (a private-use
 /// character of `mainfont01`) and the words' string number.
-const HELP_ENTRIES: [(char, u32); 7] = [
+pub(crate) const HELP_ENTRIES: [(char, u32); 7] = [
     ('\u{4f0}', 4_194_353),
     ('\u{4f1}', 4_194_351),
     ('\u{4e7}', 4_194_338),
@@ -82,6 +82,11 @@ const HELP_GROW_FRAMES: f32 = 16.0;
 // STAND-IN: The short line's switch to the full one falls with the plate's grow start; the capture has it at 1740 (short, 7 frames in) and 1750 (full, 17 frames in).
 /// The entries (of `HELP_ENTRIES`) the bar shows when it first comes up, before the full line.
 const HELP_FIRST: [usize; 2] = [2, 5];
+/// The returning bar's plate takes these frames to grow and is this far on at the fade's first frame (the menu's plate frames,
+/// fitted on 2575 and 2580), and its fade starts this many frames after an arrival's would.
+const BACK_GROW_FRAMES: f32 = 6.4;
+const BACK_GROW_LEAD: f32 = 0.4;
+const BACK_IDLE_LATER: f32 = 1.0;
 /// The plate's shortest width in layout pixels (376.5 px of the capture at 1.5 px a layout pixel).
 const HELP_PLATE_MIN: f32 = 376.5 / 1.5;
 
@@ -115,18 +120,22 @@ pub struct HelpBar {
     alpha: f32,
     /// Frames since the bar first showed (its plate grows on the first appearance only).
     shown: f32,
+    /// The bar as it returns from the menu (`HelpBar::returning`): its plate grows by its own rule.
+    back: bool,
 }
 
 impl HelpBar {
     /// The bar at a field's arrival.
     pub fn arriving() -> HelpBar {
-        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0 }
+        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0, back: false }
     }
 
-    /// The bar as the field comes back from the menu: it fades in the same time after as at an
-    /// arrival, but with its full line and plate at once (it has shown before).
+    /// The bar as the field comes back from the menu: it fades in a frame later than at an
+    /// arrival, with its full line (it has shown before) and a plate that grows over `BACK_GROW_FRAMES`,
+    /// from 0.4 frames before the fade (`field-menu` 2575 to 2585: opacity 2/15 and the plate 0.375 of
+    /// the way on 2575, the whole plate on 2580).
     pub fn returning() -> HelpBar {
-        HelpBar { shown: HELP_GROW_FROM + HELP_GROW_FRAMES, ..HelpBar::arriving() }
+        HelpBar { idle: HELP_IDLE_AT_ARRIVAL - BACK_IDLE_LATER, back: true, ..HelpBar::arriving() }
     }
 
     /// Moves on `frames` frames (60 a second), the move stick out of its dead zone or not.
@@ -146,11 +155,14 @@ impl HelpBar {
 
     /// Whether the bar still shows its first, short line (the first frames of its first showing).
     fn first_line(&self) -> bool {
-        self.shown < HELP_GROW_FROM
+        !self.back && self.shown < HELP_GROW_FROM
     }
 
     /// How far the plate has grown from its shortest to its full width, 0 to 1.
     fn grow(&self) -> f32 {
+        if self.back {
+            return ((self.shown + BACK_GROW_LEAD) / BACK_GROW_FRAMES).clamp(0.0, 1.0);
+        }
         ((self.shown - HELP_GROW_FROM) / HELP_GROW_FRAMES).clamp(0.0, 1.0)
     }
 }
@@ -926,5 +938,28 @@ mod tests {
         // The capture's second frame: camera yaw -61.02 degrees, the frame turned 118.98.
         assert!((minimap_turn(-61.02).to_degrees() - 118.98).abs() < 1e-3);
         close(marker_at([0.0, 0.0], [0.0, 0.0], [1250.0, 0.0], minimap_turn(0.0)), [-10.0, 0.0]);
+    }
+
+    #[test]
+    fn the_returning_bar_fades_a_frame_later_and_its_plate_is_on_its_way_at_the_second_frame() {
+        let (mut back, mut first) = (HelpBar::returning(), HelpBar::arriving());
+        let (mut back_at, mut first_at) = (0, 0);
+        for n in 1..=10 {
+            back.step(false, 1.0);
+            first.step(false, 1.0);
+            if back.alpha() > 0.0 && back_at == 0 {
+                back_at = n;
+            }
+            if first.alpha() > 0.0 && first_at == 0 {
+                first_at = n;
+            }
+        }
+        assert_eq!(first_at + 1, back_at);
+        assert!(!back.first_line());
+        // 2575: opacity 2/15, the plate 0.375 of the way.
+        let mut b = HelpBar::returning();
+        (0..back_at + 1).for_each(|_| b.step(false, 1.0));
+        assert!((b.alpha() - 2.0 / 15.0).abs() < 1e-6);
+        assert!((b.grow() - 0.375).abs() < 1e-6);
     }
 }
