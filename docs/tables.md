@@ -2743,3 +2743,22 @@ inside the damage range at rate 0 and the other two (Katla's 21, Wilbell's 26) i
 step (a flank hit and a critical); all of Barrel's stats match the game's (with the save's
 equipped item units, `Tables::equip_units`; the session's fresh-item equipment leaves
 Awin's attack and defence 6 and 9 under, as her Sledge Head is quality 69 with two traits).
+
+## Ryza DX: a party member's numbers (`Saves/party/party_param.xml`, `Saves/item/itemdata.xml`)
+
+What the field menu's cards and the Equipment and Status pages show (`barrel_ryza::party_stats`). `party_param.xml`
+is one row a level (100, level 1 first: row `level - 1`) of 72 attributes `paramHCC`: `CC` the character (the save's number,
+0 Ryza, 1 Klaudia, 2 Lent, 3 Tao ... 11) and `H` the number: 0 HP, 1 not shown (Ryza 11, Lent 8, Tao 3 at level 3;
+0 or 1 for the later characters), 2 attack, 3 defence, 4 speed, 5 dexterity. Some rows hold fractions (`68.8`): they round down.
+The save's `Party` records keep the same row at the character's level (words 6 to 11 of a record: checked for Ampel at level
+30, 104, 0, 32, 27, 54, 67) and word 4 the maximum HP with the worn items' (106 for Ampel: 104 and her weapon's 2).
+
+Shown value = the row's number + the equip quality (attack, defence and speed only) + the worn items' own bonuses
+(`itemData.xml`'s `hp`, `atk`, `def`, `spd`, the row the item's number in the save names: the table's n-th `itemData`, from 0).
+Checked against the capture at level 3: Ryza (staff row 406: attack 6, speed 2; first armour row 456: defence 4) HP 37, attack
+11 + 3 + 6 = 20, defence 8 + 3 + 4 = 15, speed 11 + 3 + 2 = 16, dexterity 5, equip quality 3; Lent (row 416: attack 9, defence 2)
+HP 57, attack 26, defence 23, speed 11, dexterity 2; Tao HP 31.
+
+STAND-IN: the 3 added to attack, defence and speed is read as the equip quality, the mean of the worn items' qualities (30 and
+30 here) over 10; Lv is 3 in the capture as well, so the two cannot be told apart with one level. The page's "Equip Quality" is
+the same number. Not read: the second number of the row, the element resists, the role levels.

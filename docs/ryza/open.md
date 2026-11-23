@@ -1883,3 +1883,35 @@ Left, with causes:
   taken after a B straight out of the menu).
 - The photo's blur is not drawn (the quad stays in the trace); the page's own backdrop in is not drawn either. A window run was not made.
 - Offscreen, the photo shows white in the menu's pictures already (main too); not looked into.
+
+### Field menu, part 6: the stats rule and the Equipment page
+
+Built:
+- The numbers (`crates/ryza/src/party_stats.rs`, rule in `docs/tables.md` "Ryza DX: a party member's numbers", tests with the
+  capture's Lv 3 numbers): the cards' HP is the rule's (`MAX_HP` is gone) and the page's panel shows HP, attack, defence, speed,
+  equip quality and dexterity (`save::members` reads the worn items from the save's `party` record, `docs/formats.md`).
+  STAND-IN: the +3 on attack, defence and speed is read as the equip quality (level 3 gives the same number).
+- The Equipment page (`crates/ryza/src/field_page.rs`; Equipment only, A on Status still shows the pick): from 10 frames after A
+  on a card (`PAGE_AT`, STAND-IN) the menu draws only its background, the photo, the mask and the corner picture, the `backdrop`
+  layer comes up over them and the page's own layer draws the character's figure (`etc_a21_chara_stand_card`), the four slots with
+  the worn items' pictures and the cursor's glow, and the stat panel (window, name, lines, labels and numbers). A small generic
+  walker reads the layouts (`uil_a21_menu_equip`, `uil_a21_menu_chara`, `uil_a21_menu_chara_status`): nodes by place, turn and
+  scale, images by style (the style files name their texture and place in it), texts with the outline of `bold_size`, clones by
+  `copy` and `command`. DOWN goes from the weapon to the first accessory (the slots are two rows of two), RT and LT (offscreen
+  `rt`, `lt`; Q and E in a window) go round the party.
+- Nothing is a frame at 0: the whole page is not drawn (below), so no row was added (the frames are 800 or so mismatches each).
+
+Left, with causes:
+- The item card (`uil_a21_item_status`: the big paper `a21_item_info`, the item's name, level, quality bar, Effect, Status, Trait,
+  Change Role and Equippable panels, about 600 of the page's 860 quads), the title plate "Equipment" (`a21_caption`), the party
+  icons with LT and RT, the Element Resist icons, the help bar and the lines' nine-slice caps are not drawn. The Status page (tabs,
+  skills list, name plate) is not drawn at all.
+- No animation: the page appears whole from its first frame (`PAGE_AT`), its blur backdrop comes in over 7.5 frames; the slot
+  cursor and the figure change at once (the game slides the card and the figure and fades the names), the cursor's blink
+  (`anm_common_blink`) is not run, the glow is steady. B on the page takes the page away at once.
+- The figure's quad: the capture's trace has it 1240 x 2078 pixels with uv 0 to 2.07 (twice the file's
+  size over the texture's: not explained); Barrel draws it at the style's size, which is what the pixels of the
+  game's picture show (Ryza's face at (200, 185) of 720): the rows would disagree on this quad's rectangle.
+- A window run was not made (this session had no window): the log of each page is unverified; offscreen `--menu-keys` runs show the
+  Equipment page at 2290 and 2410.
+

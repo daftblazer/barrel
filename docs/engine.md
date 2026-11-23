@@ -611,6 +611,9 @@ mistake for a day). `u46` in the events does not play its movie yet.
   the arrows move, Enter chooses, Backspace or Escape closes (as the title's keys), and the field
   stands still under the menu (the walk takes no sticks). Offscreen the script's pad frames
   (`--menu-keys`) drive it.
+  On a character page (Equipment, from A on a card) up and down move the slot cursor along its two rows of two, left
+  and right along a row, and Q and E (the pad's shoulder buttons; offscreen `--menu-keys` `lt` and `rt`, also `lb`
+  and `rb`) the previous and next character round the party: Barrel's choice, the game's own keys on the PC are not read.
 
 - **Ryza's run loop enters at a fitted phase.** When her run motion takes over from the start
   motion it begins 0.35 s into its loop (`player::RUN_LOOP_PHASE`, a stand-in: the game's

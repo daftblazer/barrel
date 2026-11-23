@@ -96,6 +96,55 @@ pub fn story(state: &[u8], pe: &barrel_formats::pe::Pe) -> Result<crate::story::
     Ok(story)
 }
 
+/// A party member as the save keeps them (`party`: a version record, a big-endian count and that many
+/// `Party` records of 942 bytes; the records after them are the squad lists).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Member {
+    /// The character's number (0 Ryza, 1 Klaudia, 2 Lent, 3 Tao ...), the party tables' column.
+    pub id: u8,
+    pub level: u8,
+    /// The four worn items: weapon, armour, two accessories.
+    pub worn: [Option<Worn>; 4],
+}
+
+/// An item unit of a `Party` record: its number in `itemData.xml` (the table's row) and its quality.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Worn {
+    pub item: u16,
+    pub quality: u16,
+}
+
+/// The first of a `Party` record's four item units, and their size in bytes: each is a little-endian
+/// slot number, the item's number (`0xffff` for none) and its quality, then more not read.
+const WORN_AT: usize = 0x190;
+const WORN_SIZE: usize = 0x42;
+
+/// The save's members in its own order (all of its `party` records, in the party or not).
+pub fn members(state: &[u8]) -> Option<Vec<Member>> {
+    let d = find(state, &["party"])?;
+    let version = u32::from_le_bytes(d.get(..4)?.try_into().ok()?) as usize;
+    let count = u32::from_be_bytes(d.get(version..version + 4)?.try_into().ok()?) as usize;
+    let mut rest = d.get(version + 4..)?;
+    let mut out = Vec::new();
+    for _ in 0..count {
+        let size = u32::from_le_bytes(rest.get(..4)?.try_into().ok()?) as usize;
+        let whole = rest.get(..size)?;
+        let end = whole[4..].iter().position(|&b| b == 0)? + 4;
+        let c = &whole[end + 1..];
+        let word = |i: usize| c.get(i * 4..i * 4 + 4).map(|b| u32::from_be_bytes(b.try_into().unwrap()));
+        let mut worn = [None; 4];
+        for (k, w) in worn.iter_mut().enumerate() {
+            let at = WORN_AT + k * WORN_SIZE;
+            let item = u16::from_le_bytes(c.get(at + 2..at + 4)?.try_into().ok()?);
+            let quality = u16::from_le_bytes(c.get(at + 4..at + 6)?.try_into().ok()?);
+            *w = (item != 0xffff).then_some(Worn { item, quality });
+        }
+        out.push(Member { id: word(0)? as u8, level: word(1)? as u8, worn });
+        rest = &rest[size..];
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +199,31 @@ mod tests {
         // A game save has the story's events; the settings file has none.
         if find(&state, &["event"]).is_some() {
             assert!(!events_done(&state).unwrap().is_empty());
+            // ... and the party: Ryza (0) at level 3 wears the first staff (row 406) and the first armour (456).
+            let party = members(&state).unwrap();
+            assert_eq!((party[0].id, party[0].level), (0, 3));
+            assert_eq!(party[0].worn[0], Some(Worn { item: 406, quality: 30 }));
+            assert_eq!(party[0].worn[1].map(|w| w.item), Some(456));
+            assert_eq!(party[0].worn[2], None);
         }
+    }
+
+    /// A party record's layout built by hand: the version record, the count and a record with one worn item.
+    #[test]
+    fn reads_a_party_record() {
+        let mut c = vec![0u8; 942];
+        c[4..8].copy_from_slice(&5u32.to_be_bytes());
+        c[WORN_AT..WORN_AT + 6].copy_from_slice(&[0, 0, 0x96, 1, 30, 0]);
+        for k in 1..4 {
+            c[WORN_AT + k * WORN_SIZE + 2..WORN_AT + k * WORN_SIZE + 4].copy_from_slice(&[0xff, 0xff]);
+        }
+        let mut party = rec("version", &[0, 1]);
+        party.extend_from_slice(&1u32.to_be_bytes());
+        party.extend(rec("Party", &c));
+        let state = [vec![0; 0x20], rec("party", &party)].concat();
+        let m = members(&state).unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].id, m[0].level), (0, 5));
+        assert_eq!(m[0].worn, [Some(Worn { item: 406, quality: 30 }), None, None, None]);
     }
 }

@@ -834,6 +834,14 @@ an autosave's 5, -1.0, 325.2, 61.80, 303.34 arrive as (32520, 6180, 30334) facin
 light set and sunny weather (`0x14071e970 (env, 1, ...)`, `0x14071e9d0 (env, 0, 1)` at frame
 1728), how the word picks the set not yet read. Continue loads `AutoSaveData`.
 
+`party` (17,595 bytes): a `version` record, a big-endian count (9) and that many `Party` records (942 bytes each: the
+characters in their own order, in the party or not; `save::members`), then `m_squad`, `m_battleMember`, ... A record's contents
+begin with big-endian words: the character (0 Ryza, 1 Klaudia, 2 Lent, 3 Tao ...), the level, the experience, then the
+maximum HP with the worn items' at word 4 and the growth row's six numbers at words 6 to 11 (`docs/tables.md`, "Ryza DX: a
+party member's numbers"). From byte 0x190 four item units of 0x42 bytes each, little-endian: the slot number (weapon,
+armour, two accessories), the item's number (the `itemData.xml` row; `0xffff` for none), its quality (30 for the starting
+gear) and more not read.
+
 ## Voices (`Sound/Voice/Series*.fp`)
 
 `Data/x64/Sound/Voice` (and `Voice_EN`) hold 18 banks, `Series0000` to `Series17000`, each

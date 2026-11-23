@@ -105,8 +105,6 @@ const HELP_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', 4_19
 /// The help bar's plate and text come from the load screen's bar (`uil_a21_shade.xml`).
 const MENU_WORDS: [u32; 5] = [HELP_ENTRIES[0].1, HELP_ENTRIES[1].1, HELP_ENTRIES[2].1, HELP_ENTRIES[3].1, HELP_ENTRIES[4].1];
 
-// STAND-IN: The three cards' maximum HP (character, level 3) are the capture's; the game's own value is the character's growth row and equipment, which Ryza's save does not store.
-const MAX_HP: [(u8, u8, u32); 3] = [(0, 3, 37), (2, 3, 57), (3, 3, 31)];
 /// The card's place in the photo's list (`list_0`: the clones 0, 2 and 3 for a party of three).
 const CARD_SLOTS: [&str; 3] = ["clone_regular_status_0", "clone_regular_status_2", "clone_regular_status_3"];
 
@@ -135,6 +133,9 @@ pub struct Sources<'a> {
 pub struct Member {
     pub id: u8,
     pub level: u8,
+    /// The numbers the cards and pages show (`party_stats::Tables::stats`) and the worn items (the Equipment page's slots).
+    pub stats: crate::party_stats::Stats,
+    pub worn: [Option<crate::save::Worn>; 4],
 }
 
 /// What the menu shows of the play.
@@ -451,7 +452,15 @@ pub struct Pick {
     pub confirmed: Option<f32>,
     /// B on the page.
     pub leaving: Option<f32>,
+    /// The page's slot under the cursor (Equipment: weapon, armour, the two accessories), moved by up and down.
+    pub slot: usize,
+    /// The Status page (the button was Status) and not the Equipment page.
+    pub status: bool,
 }
+
+/// Frames from A on the character to the page's first frame (STAND-IN: the capture's page is whole by 2290, the first sample
+/// after 2150; the opening is not measured).
+pub const PAGE_AT: f32 = 10.0;
 
 /// Frames from B on a page to the menu's coming back (`field-menu-equip`: B on 2500; the cards at 6/30 of their fade and the
 /// photo's blur at 24/30 left on 2530, so both ran from 2524).
@@ -514,7 +523,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, status: self.cursor == STATUS });
         }
     }
 
@@ -534,6 +543,35 @@ impl Nav {
     pub fn pick_confirm(&mut self, at: f32) {
         if let Some(p) = self.pick.as_mut().filter(|p| at >= p.first && p.confirmed.is_none()) {
             p.confirmed = Some(at);
+        }
+    }
+
+    /// Whether a page is up at frame `at`: A was pressed on a card `PAGE_AT` frames ago and B has not left it.
+    pub fn page(&self, at: f32) -> Option<&Pick> {
+        self.pick.as_ref().filter(|p| p.confirmed.is_some_and(|c| at >= c + PAGE_AT) && p.leaving.is_none())
+    }
+
+    /// A direction on the Equipment page: the four slots are two rows of two (weapon and armour, the two accessories), so down
+    /// goes from the weapon to the first accessory (`field-menu-equip`: DOWN on 2300, the cursor on the third slot) and left and
+    /// right along a row (STAND-IN: the others stop at the edges, not captured).
+    pub fn page_slot(&mut self, dx: i32, dy: i32, at: f32) {
+        if self.page(at).is_none() {
+            return;
+        }
+        if let Some(p) = self.pick.as_mut() {
+            let (col, row) = ((p.slot % 2) as i32 + dx, (p.slot / 2) as i32 + dy);
+            p.slot = (row.clamp(0, 1) * 2 + col.clamp(0, 1)) as usize;
+        }
+    }
+
+    /// LT or RT on a page: the next or the one before in the party's order (`party`: its size; `field-menu-equip`: RT on 2380 goes
+    /// from Ryza to Lent), round the ends (STAND-IN: the wrap is not captured).
+    pub fn page_card(&mut self, way: i32, at: f32, party: usize) {
+        if self.page(at).is_none() || party == 0 {
+            return;
+        }
+        if let Some(p) = self.pick.as_mut() {
+            p.card = (p.card as i32 + way).rem_euclid(party as i32) as usize;
         }
     }
 
@@ -662,6 +700,12 @@ pub fn replay(keys: &[(f32, Key)], tick: f32, order: &[usize]) -> Option<Nav> {
                 Key::Up if !n.in_settings && n.pick.is_none() => n.step(-1, at),
                 Key::Confirm if !n.in_settings && n.pick.is_none() => n.choose(at),
                 Key::Confirm => n.pick_confirm(at),
+                Key::Down if n.page(at).is_some() => n.page_slot(0, 1, at),
+                Key::Up if n.page(at).is_some() => n.page_slot(0, -1, at),
+                Key::Screen(crate::options_run::Key::Left) if n.page(at).is_some() => n.page_slot(-1, 0, at),
+                Key::Screen(crate::options_run::Key::Right) if n.page(at).is_some() => n.page_slot(1, 0, at),
+                Key::Screen(crate::options_run::Key::TabNext) if n.page(at).is_some() => n.page_card(1, at, order.len()),
+                Key::Screen(crate::options_run::Key::TabPrev) if n.page(at).is_some() => n.page_card(-1, at, order.len()),
                 Key::Screen(crate::options_run::Key::Left) => n.pick_step(-1, at, order),
                 Key::Screen(crate::options_run::Key::Right) => n.pick_step(1, at, order),
                 Key::Return if n.in_settings => n.back_from_settings(at),
@@ -751,6 +795,21 @@ struct Pen<'a> {
 }
 
 impl Pen<'_> {
+    /// The quads, which are added and which are in the trace only. A node at no opacity is not drawn (the additive list names
+    /// quads by place).
+    fn finish(self) -> (Vec<Quad>, Vec<usize>, Vec<usize>) {
+        let Pen { out, additive, hidden, .. } = self;
+        let mut places = Vec::with_capacity(out.len());
+        let mut kept = 0;
+        for q in &out {
+            places.push(kept);
+            kept += usize::from(q.color[3] > 0.0);
+        }
+        let additive = additive.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
+        let hidden = hidden.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
+        (out.into_iter().filter(|q| q.color[3] > 0.0).collect(), additive, hidden)
+    }
+
     fn place(&self, at: [f32; 2]) -> [f32; 2] {
         [self.left + at[0] * self.k, at[1] * self.k]
     }
@@ -864,6 +923,12 @@ impl View {
         }
         let (mask_at, mask_size, mask_turn) = &self.mask;
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
+        // A page (Equipment, Status) over the menu: only the background, the photo and the corner picture stay under it.
+        if nav.page(frame).is_some_and(|p| !p.status) {
+            let (put_at, put) = &self.put;
+            pen.natural(MENU1, put, 0, *put_at, white(1.0));
+            return pen.finish();
+        }
         // The picked character's figure, sharp over the blurred photo.
         if let Some((p, _)) = picked {
             if let Some(&(at, turn, picture)) = shown.party.get(p.card).and_then(|m| self.pick.figures.get(self.name_of(m.id))) {
@@ -893,8 +958,8 @@ impl View {
                 let p = card.plate.1.pictures[0];
                 pen.scaled(MENU0, p, [origin[0] + over_at[0], origin[1] + over_at[1]], [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], pivot, scale, [byte(v[0]), byte(v[1]), byte(v[2]), byte(v[3])]);
             }
-            let hp = MAX_HP.iter().find(|m| m.0 == member.id).map_or(0, |m| m.2);
-            let number = |n: u32| n.to_string();
+            let hp = member.stats.hp;
+            let number = |n: i32| n.to_string();
             pen.text(&card.hp_value, origin, &number(hp), cards);
             pen.text(&card.hp_slash, origin, "/", cards);
             pen.text(&card.hp_max, origin, &number(hp), cards);
@@ -987,17 +1052,7 @@ impl View {
             }
         };
         self.help_bar(&mut pen, bar);
-        // A node at no opacity is not drawn (the additive list names quads by place).
-        let Pen { out, additive, hidden, .. } = pen;
-        let mut places = Vec::with_capacity(out.len());
-        let mut kept = 0;
-        for q in &out {
-            places.push(kept);
-            kept += usize::from(q.color[3] > 0.0);
-        }
-        let additive = additive.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
-        let hidden = hidden.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
-        (out.into_iter().filter(|q| q.color[3] > 0.0).collect(), additive, hidden)
+        pen.finish()
     }
 
     /// The glow behind a picked card (the layout's `selected_bg_back`): the glow itself, its ring growing and fading in a loop
@@ -1295,5 +1350,36 @@ mod tests {
         let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2060.0, Key::Confirm), (2150.0, Key::Back)];
         let nav = replay(&keys, 2160.0, &ORDER).unwrap();
         assert!(nav.closed.is_none() && nav.pick.is_none());
+    }
+
+    fn page_keys() -> Vec<(f32, Key)> {
+        use crate::options_run::Key as S;
+        vec![(1900.0, Key::Open), (2000.0, Key::Down), (2060.0, Key::Confirm), (2140.0, Key::Confirm), (2300.0, Key::Down), (2380.0, Key::Screen(S::TabNext)), (2500.0, Key::Back)]
+    }
+
+    #[test]
+    fn the_page_is_up_from_ten_frames_after_a_on_the_card_until_b() {
+        let keys = page_keys();
+        assert!(replay(&keys, 2149.0, &ORDER).unwrap().page(2149.0).is_none());
+        assert!(replay(&keys, 2150.0, &ORDER).unwrap().page(2150.0).is_some());
+        assert!(replay(&keys, 2501.0, &ORDER).unwrap().page(2501.0).is_none());
+    }
+
+    #[test]
+    fn down_moves_to_the_third_slot_and_rt_to_the_next_character() {
+        let keys = page_keys();
+        let nav = replay(&keys, 2290.0, &ORDER).unwrap();
+        assert_eq!((nav.pick.as_ref().unwrap().slot, nav.pick.as_ref().unwrap().card), (0, 0));
+        let nav = replay(&keys, 2400.0, &ORDER).unwrap();
+        assert_eq!((nav.pick.as_ref().unwrap().slot, nav.pick.as_ref().unwrap().card), (2, 1));
+    }
+
+    #[test]
+    fn rt_goes_round_the_party() {
+        use crate::options_run::Key as S;
+        let mut keys = page_keys()[..4].to_vec();
+        keys.extend([(2200.0, Key::Screen(S::TabNext)), (2210.0, Key::Screen(S::TabPrev)), (2220.0, Key::Screen(S::TabPrev))]);
+        let nav = replay(&keys, 2230.0, &ORDER).unwrap();
+        assert_eq!(nav.pick.unwrap().card, 2);
     }
 }

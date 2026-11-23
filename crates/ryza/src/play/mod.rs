@@ -277,8 +277,8 @@ fn args(args: Vec<String>) -> Result<Args> {
                         "b" => Key::Back,
                         "left" => Key::Screen(barrel_ryza::options_run::Key::Left),
                         "right" => Key::Screen(barrel_ryza::options_run::Key::Right),
-                        "lb" => Key::Screen(barrel_ryza::options_run::Key::TabPrev),
-                        "rb" => Key::Screen(barrel_ryza::options_run::Key::TabNext),
+                        "lb" | "lt" => Key::Screen(barrel_ryza::options_run::Key::TabPrev),
+                        "rb" | "rt" => Key::Screen(barrel_ryza::options_run::Key::TabNext),
                         _ => return Err("--menu-keys F:y,F:down,F:up,F:a,F:b,F:left,F:right,F:lb,F:rb".into()),
                     };
                     a.menu_keys.push((frame.parse()?, key));
@@ -533,6 +533,26 @@ fn menu_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fm::TEXTURES])?;
     Ok((layer, view))
+}
+
+/// The Equipment page's layer (the fonts, the white and the page's own textures) and its view.
+fn page_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, party: &[barrel_ryza::field_menu::Member], tables: &barrel_ryza::party_stats::Tables) -> Result<(text::Layer, barrel_ryza::field_page::Page)> {
+    use barrel_ryza::field_page as fp;
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = |va| barrel_ryza::font::glyphs_at(&exe, va).ok_or("the executable's font table");
+    let read = |p: &str| install.read(p).map_err(|e| e.to_string());
+    let page = fp::Page::read(fp::Files { read: &read, glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?] }, party, &|i| tables.image(i))?;
+    let mut wanted: Vec<(String, usize)> = vec![
+        ("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t".into(), 0),
+        ("\\data\\x64\\res_en\\font\\mainfont00_hd1080_0.g1t".into(), 0),
+        ("\\data\\x64\\res_cmn\\ui\\sys_white.g1t".into(), 0),
+    ];
+    wanted.extend(page.wanted().iter().cloned());
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex)?;
+    Ok((layer, page))
 }
 
 /// The layer of the blurred menu picture and the vignettes over it (`barrel_ryza::field_menu::backdrop`).
@@ -1129,13 +1149,23 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     eprintln!("graphics: {game_settings:?} {presets:?}");
     let mut field_music: Option<u32> = None;
     let mut menu_shown = barrel_ryza::field_menu::Shown { party: Vec::new(), money: 0 };
+    let mut party_tables: Option<barrel_ryza::party_stats::Tables> = None;
     if let Some(save) = &a.save {
         let file = barrel_files::read(Path::new(save))?;
         if let Some(h) = barrel_ryza::saves::Header::parse(&file) {
             eprintln!("menu party {:?}", h.party);
-            menu_shown = barrel_ryza::field_menu::Shown { party: h.party.iter().map(|&(id, level)| barrel_ryza::field_menu::Member { id, level }).collect(), money: h.money };
+            menu_shown = barrel_ryza::field_menu::Shown { party: h.party.iter().map(|&(id, level)| barrel_ryza::field_menu::Member { id, level, stats: Default::default(), worn: [None; 4] }).collect(), money: h.money };
         }
         let state = barrel_ryza::save::decode(&file).map_err(|e| format!("{save}: {e}"))?;
+        // The party's numbers: the growth table at each member's level with the items they wear.
+        if let (Some(saved), Ok(tables)) = (barrel_ryza::save::members(&state), barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)) {
+            for m in &mut menu_shown.party {
+                if let Some(s) = saved.iter().find(|s| s.id == m.id) {
+                    (m.worn, m.stats) = (s.worn, tables.stats(m.id, m.level, &s.worn));
+                }
+            }
+            party_tables = Some(tables);
+        }
         let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
         a.story = barrel_ryza::save::story(&state, &pe).map_err(|e| format!("{save}: {e}"))?;
@@ -2001,6 +2031,12 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         true => Some(backdrop_layer(&install, &gpu, &renderer)?),
         false => None,
     };
+    // The Equipment page, over the blurred picture of the menu (made after the backdrop: layers draw in the order they were made).
+    let mut page = match (hud.is_some(), party_tables.as_ref()) {
+        (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t)?),
+        _ => None,
+    };
+    let mut showing_page = false;
     // The Settings screen's own layer and what it shows (the config's values over the defaults).
     // The field's menu opens it too (where there is a field HUD to leave).
     let field_has_menu = (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some();
@@ -2164,6 +2200,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     } else if down(K::Backspace, back) || title_keys.contains(&K::Escape) {
                         press(MenuKey::Back);
                     }
+                } else if down(K::KeyQ, Pad::LeftShoulder) {
+                    // (LT and RT on a page, Q and E in a window: the page's previous and next character)
+                    press(MenuKey::Screen(barrel_ryza::options_run::Key::TabPrev));
+                } else if down(K::KeyE, Pad::RightShoulder) {
+                    press(MenuKey::Screen(barrel_ryza::options_run::Key::TabNext));
                 } else if down(K::ArrowLeft, Pad::Left) {
                     press(MenuKey::Screen(barrel_ryza::options_run::Key::Left));
                 } else if down(K::ArrowRight, Pad::Right) {
@@ -2986,6 +3027,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
+            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick).filter(|p| !p.status), backdrop.as_mut()) {
+                // The page's blurred picture of the menu and its vignettes come in from the page's first frame.
+                let first = pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_menu::PAGE_AT;
+                let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(menu_tick - first, None), (width, height));
+                if pump.is_some() && !renderer.can_blur_screen() && !quads.is_empty() {
+                    quads.remove(0);
+                }
+                showing_backdrop = !quads.is_empty();
+                layer.set(&gpu, &quads)?;
             } else if let (Some(back), Some(layer)) = (nav.blur_out, backdrop.as_mut()) {
                 // The menu coming back from a page: the page's blurred picture and vignettes go out from its first frame.
                 let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(0.0, Some(menu_tick - back)), (width, height));
@@ -2994,6 +3044,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
+            }
+            // The Equipment page over the blurred menu.
+            showing_page = false;
+            if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), nav.page(menu_tick).filter(|p| !p.status), party_tables.as_ref()) {
+                if let Some(member) = menu_shown.party.get(pick.card) {
+                    let look = barrel_ryza::field_page::Look { member, item_images: &|i| tables.image(i), slot: pick.slot, age: menu_tick - pick.confirmed.unwrap_or(0.0) - barrel_ryza::field_menu::PAGE_AT };
+                    layer.set(&gpu, &view.quads(&look, (width, height)))?;
+                    showing_page = true;
+                }
             }
             // What the screen leaves after its last frame (its caption and help bar going out).
             if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.over_since().is_some()), options_screen.as_mut()) {
@@ -3053,6 +3112,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 .iter()
                 .map(|(l, _)| l)
                 .chain(backdrop.as_ref().filter(|_| showing_backdrop))
+                .chain(page.as_ref().filter(|_| showing_page).map(|(l, _)| l))
                 .chain(options_screen.as_ref().filter(|_| showing_options).map(|(l, _, _)| l))
                 .chain(load_screen.as_ref().filter(|_| showing_options && showing_notice).map(|(n, _, _)| n))
                 .collect(),
