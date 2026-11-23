@@ -341,8 +341,7 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
   Unit test: `options::tests::a_change_goes_to_the_config_and_back`.
 - **Left over (each kept and stored, not honoured, or not built):**
   - Keyboard and Controller tabs show the game's pages but assign nothing (A on a command, the
-    pad's buttons), and show no key names. Frame Rate Limit and Vertical Sync are stored only;
-    Texture Filtering, Shadow Draw Distance, Water Quality and LOD Distance are
+    pad's buttons), and show no key names. Texture Filtering, Shadow Draw Distance, Water Quality and LOD Distance are
     `graphics::Item`s the presets read. Frames the capture did not cover (the list's scroll back
     up, a tab's cursor after Escape) follow the same rules, unchecked.
   - Every Game, Camera and Audio value is stored only: nothing reads them (volumes too, here: the
