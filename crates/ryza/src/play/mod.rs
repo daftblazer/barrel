@@ -99,6 +99,8 @@ struct Args {
     save_hour: Option<u32>,
     /// The frame of the game's capture the HUD's pulse starts at (`--hud-at`), to line a frame up with it.
     hud_at: f32,
+    /// The camera's yaw in the game's terms, when a run is given it (`--camera-yaw`), instead of behind her.
+    camera_yaw: Option<f32>,
     /// `--no-skyline`: objects behind the ground are drawn too.
     no_skyline: bool,
     no_occluders: bool,
@@ -175,7 +177,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -255,6 +257,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--save" => a.save = Some(value()?),
             "--hud" => a.hud = true,
             "--hud-at" => a.hud_at = value()?.parse()?,
+            "--camera-yaw" => a.camera_yaw = Some(value()?.parse()?),
             "--no-skyline" => a.no_skyline = true,
             "--no-occluders" => a.no_occluders = true,
             "--ryza" => {
@@ -1622,7 +1625,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // How high above her feet the camera looks (`LOOK_HEIGHT`).
     let mut look_height = barrel_ryza::walk::LOOK_HEIGHT;
     let (mut yaw, mut pitch) = match (follow, &rig) {
-        (Some(c), Some(r)) => (c.yaw - r.player.turn.to_degrees(), c.pitch),
+        (Some(c), Some(r)) => (a.camera_yaw.map_or(c.yaw - r.player.turn.to_degrees(), |g| 180.0 - g), c.pitch),
         _ => (a.yaw, a.pitch),
     };
     let mut dist = a.distance.or(follow.map(|c| c.length)).unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
@@ -2621,6 +2624,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 basket: barrel_ryza::field_hud::BASKET,
                 tool: 0,
                 map: a.field == barrel_ryza::field_hud::MAP_FIELD,
+                camera_yaw: play.map_rotation.then_some(180.0 - yaw),
                 tick: a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 },
             };
             let (quads, clips, glows) = view.quads(&state, &hud_markers, (width, height));

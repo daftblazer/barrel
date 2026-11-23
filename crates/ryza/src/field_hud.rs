@@ -68,6 +68,9 @@ pub struct State {
     pub tool: usize,
     /// Whether the field has a minimap picture read (`Hud::map`).
     pub map: bool,
+    /// The camera's yaw in degrees (the game's: 0 looking along +z) when the Map Rotation row is
+    /// On, so the minimap turns with it; `None` draws it fixed-north.
+    pub camera_yaw: Option<f32>,
     /// The frames the HUD has been up (60 a second), which the destination's glow pulses by.
     pub tick: f32,
 }
@@ -280,22 +283,31 @@ impl Hud {
         let map_mask = pen.out.len();
         pen.picture(FIELD, self.mask.0, self.mask.1, self.mask.2, white);
         let center = self.arrow_center();
+        let spin = state.camera_yaw.map(minimap_turn);
         if state.map {
-            pen.terrain(state.at, center);
+            pen.terrain(state.at, center, spin);
         }
         // The markers, clipped with the terrain: the ways out, then the townsfolk.
-        let beside = |at: &[f32; 2]| [center[0] + (at[0] - state.at[0]) / MARKER_UNITS_PER_PIXEL, center[1] + (at[1] - state.at[2]) / MARKER_UNITS_PER_PIXEL];
+        let beside = |at: &[f32; 2]| marker_at(center, [state.at[0], state.at[2]], *at, spin.unwrap_or(0.0));
         for at in &markers.exits {
             pen.centered(FIELD, self.exit_icon, beside(at), 1.0, white);
         }
         for at in &markers.folk {
             pen.centered(FIELD, self.folk_icon, beside(at), 1.0, white);
         }
-        pen.arrow(self.arrow, center, state.turn);
+        pen.arrow(self.arrow, center, state.turn, spin.unwrap_or(0.0));
         let mut clips = vec![Clip { mask: map_mask, quads: map_mask + 1..pen.out.len() }];
         pen.picture(FIELD, self.gmd.0, self.gmd.1, 1.0, white);
+        // The frame turns about its own middle, the north mark about the frame's.
         pen.picture(FIELD, self.frame.0, self.frame.1, 1.0, white);
+        let middle = [self.frame.1[0] + self.frame.0[2] / PER_LAYOUT / 2.0, self.frame.1[1] + self.frame.0[3] / PER_LAYOUT / 2.0];
+        if let Some(angle) = spin {
+            pen.turn_last(middle, angle);
+        }
         pen.picture(FIELD, self.north.0, self.north.1, 1.0, white);
+        if let Some(angle) = spin {
+            pen.turn_last(middle, angle);
+        }
         // The destination and its glows, over the frame: on the map where it is in view, else on
         // the ring at its edge toward it.
         let glow = pen.out.len() + 1;
@@ -360,6 +372,22 @@ impl Hud {
     fn arrow_center(&self) -> [f32; 2] {
         [1729.0 / 1.5, 886.0 / 1.5]
     }
+}
+
+/// How far the minimap is turned for a camera yaw (game degrees), in radians clockwise on the
+/// screen: the camera's yaw plus a half turn (ryza-recomp `map-rotation`, six frames: the frame's
+/// turn is 180 degrees plus the camera's yaw, to 0.05 degrees; yaw -1.00 gives 179.0).
+pub fn minimap_turn(camera_yaw: f32) -> f32 {
+    (180.0 + camera_yaw).to_radians()
+}
+
+/// Where a thing at `thing` (game units, x then z) is on the minimap when she stands at `her`:
+/// the arrow's middle `center`, plus the way from her to it at `MARKER_UNITS_PER_PIXEL`, turned
+/// by `angle` (radians clockwise on the screen) about `center`.
+pub fn marker_at(center: [f32; 2], her: [f32; 2], thing: [f32; 2], angle: f32) -> [f32; 2] {
+    let (dx, dy) = ((thing[0] - her[0]) / MARKER_UNITS_PER_PIXEL, (thing[1] - her[1]) / MARKER_UNITS_PER_PIXEL);
+    let (s, c) = angle.sin_cos();
+    [center[0] + dx * c - dy * s, center[1] + dx * s + dy * c]
 }
 
 // STAND-IN: The minimap's scale and place for Rasenboden are fitted to six captured frames (hud-walk 2030 to 3330, her place from the walk's state): the terrain's corner falls 1 layout pixel per 125 game units in x and in z (the markers' scale; x fitted as 120 before the markers showed 125 fits all six frames to under a pixel), and x = 0, z = 0 put it at (1152.67, 590.66); the game's own per-map bounds are not found in its tables.
@@ -464,20 +492,33 @@ impl Pen<'_> {
     }
 
     /// The terrain picture under her arrow: it slides with her walk, twice over.
-    fn terrain(&mut self, at: [f32; 3], _arrow: [f32; 2]) {
+    fn terrain(&mut self, at: [f32; 3], arrow: [f32; 2], spin: Option<f32>) {
         let (x, y) = (TERRAIN_ORIGIN[0] - at[0] * TERRAIN_PER_UNIT[0], TERRAIN_ORIGIN[1] - at[2] * TERRAIN_PER_UNIT[1]);
         let [l, t] = self.at([x, y]);
         let s = TERRAIN_SIZE * self.k;
         self.quad(MINIMAP, [0.0, 0.0, 2.0, 2.0], [l, t, l + s, t + s], [1.0; 4]);
+        if let Some(angle) = spin {
+            self.turn_last(arrow, angle);
+        }
     }
 
-    /// Her arrow turned about its middle to face the way she does on the fixed-north map. The
-    /// game keeps the turn within a quarter either side of the picture's own upright and flips
-    /// the picture's texture coordinates for the other half (the capture's six frames).
-    fn arrow(&mut self, p: [f32; 4], center: [f32; 2], turn: f32) {
+    /// Turns the quad just drawn by `angle` (radians clockwise on the screen) about `pivot`
+    /// (layout pixels).
+    fn turn_last(&mut self, pivot: [f32; 2], angle: f32) {
+        let pivot = self.at(pivot);
+        if let Some(q) = self.out.last_mut() {
+            q.spin = Some(Spin::About { pivot, angle });
+        }
+    }
+
+    /// Her arrow turned about its middle to face the way she does on the map, itself turned by
+    /// `map_turn` radians (0 fixed-north). The game keeps the turn within a quarter either side
+    /// of the picture's own upright and flips the picture's texture coordinates for the other
+    /// half (the capture's six frames, and six more with the map turned).
+    fn arrow(&mut self, p: [f32; 4], center: [f32; 2], turn: f32, map_turn: f32) {
         let [cx, cy] = self.at(center);
         let (w, h) = (p[2] / PER_LAYOUT * self.k, p[3] / PER_LAYOUT * self.k);
-        let mut r = (180.0 - turn).rem_euclid(360.0);
+        let mut r = (180.0 - turn + map_turn.to_degrees()).rem_euclid(360.0);
         if r > 180.0 {
             r -= 360.0;
         }
@@ -520,5 +561,36 @@ impl Pen<'_> {
             self.quad(if font == 0 { FONT01 } else { FONT00 }, [gx / aw, gy / ah, (gx + gw) / aw, (gy + gh) / ah], [x0, y0, x0 + gw * s, y0 + gh * s], color);
             pen += g.advance as f32 * s;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn close(a: [f32; 2], b: [f32; 2]) {
+        assert!((a[0] - b[0]).abs() < 1e-3 && (a[1] - b[1]).abs() < 1e-3, "{a:?} vs {b:?}");
+    }
+
+    #[test]
+    fn a_marker_stays_where_the_fixed_map_has_it_at_no_turn() {
+        // 1250 units east and 625 south of her: 10 and 5 layout pixels from the arrow.
+        close(marker_at([100.0, 200.0], [0.0, 0.0], [1250.0, 625.0], 0.0), [110.0, 205.0]);
+    }
+
+    #[test]
+    fn the_map_turns_clockwise_about_the_arrow() {
+        let quarter = std::f32::consts::FRAC_PI_2;
+        // East of her swings to south on the screen (y down), south to west.
+        close(marker_at([100.0, 200.0], [0.0, 0.0], [1250.0, 0.0], quarter), [100.0, 210.0]);
+        close(marker_at([100.0, 200.0], [0.0, 0.0], [0.0, 1250.0], quarter), [90.0, 200.0]);
+    }
+
+    #[test]
+    fn the_camera_behind_her_at_yaw_zero_turns_the_map_a_half_turn() {
+        assert!((minimap_turn(0.0) - std::f32::consts::PI).abs() < 1e-6);
+        // The capture's second frame: camera yaw -61.02 degrees, the frame turned 118.98.
+        assert!((minimap_turn(-61.02).to_degrees() - 118.98).abs() < 1e-3);
+        close(marker_at([0.0, 0.0], [0.0, 0.0], [1250.0, 0.0], minimap_turn(0.0)), [-10.0, 0.0]);
     }
 }

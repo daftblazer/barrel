@@ -51,6 +51,8 @@ pub struct Play {
     pub feel: Feel,
     /// The Confirm Button row's second choice: B confirms and A goes back.
     pub swap_confirm: bool,
+    /// The Map Rotation row on (value 0; Off, 1, is the default): the minimap turns with the camera.
+    pub map_rotation: bool,
 }
 
 impl Play {
@@ -66,6 +68,7 @@ impl Play {
             },
             feel: Feel::of(value("camera_horizontal", 0) != 0, value("camera_vertical", 0) != 0, value("camera_horizontal_speed", 5), value("camera_vertical_speed", 5)),
             swap_confirm: value("confirm_button", 0) != 0,
+            map_rotation: value("map_rotation", 1) == 0,
         }
     }
 
@@ -117,5 +120,12 @@ mod tests {
         assert_eq!(p.volumes.effects, 1.0);
         assert_eq!(p.feel, Feel { yaw: -1.0, pitch: 2.0 });
         assert_eq!(p.buttons(), (Pad::East, Pad::South));
+    }
+
+    #[test]
+    fn map_rotation_is_on_at_value_zero_and_off_by_default() {
+        assert!(!Play::from_config(None).map_rotation);
+        assert!(Play::from_config(Some("option_map_rotation 0\n")).map_rotation);
+        assert!(!Play::from_config(Some("option_map_rotation 1\n")).map_rotation);
     }
 }

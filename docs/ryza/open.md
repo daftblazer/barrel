@@ -127,7 +127,19 @@ What the capture shows (read, not in a table):
   fixed arrow: its corner moves 1 layout pixel per 125 game units in x and in z
   (`TERRAIN_PER_UNIT`, `TERRAIN_ORIGIN`: fitted to the six frames, Rasenboden only, x was 120
   until the markers showed 125: the six frames differ by one constant 10.73 layout pixels; the game's
-  per-map bounds are not in its tables). The map does not turn with the camera; only her arrow does.
+  per-map bounds are not in its tables). With Map Rotation Off (the default) the map does not turn
+  with the camera; only her arrow does.
+- Map Rotation On (`option_map_rotation 0`, `Play::map_rotation`, live on Yes; ryza-recomp scenario
+  `map-rotation`, six `maprot-*` rows at 0, 3750 at the same 3 zero-size quads as hud-3130): the
+  map turns clockwise on the screen by 180 plus the camera's yaw in degrees (the game's, 0 looking
+  along +z; `field_hud::minimap_turn`, read off the frame's corners: yaw -1.00 gives 179.0, to 0.05
+  degrees over six frames). The terrain and the markers' places turn about her arrow's middle
+  (1729, 886 on 1080 lines); the markers' pictures stay upright. The frame turns about its own
+  middle and the north mark about the frame's (1728.5, 888). The glass layer and the grid stay.
+  Her arrow keeps its middle and takes the map's turn on top of its own (the quarter-turn flip rule
+  as before). Parity runs give the camera with `--camera-yaw DEG` (an offscreen run with `--ryza`
+  has no camera of the game's); the glows' blink there runs on the capture's frame plus 9 (`--hud-at`,
+  the loop of 71 frames started 9 frames before the HUD's first).
 - Her arrow turns about its middle by 180 minus her turn, kept within a quarter either side and
   with the texture coordinates flipped for the other half (all six frames).
 - The minimap's mask is a stencil (`hud-walk` 2230, draws 1946-1955): the grid writes stencil 255,
@@ -350,7 +362,7 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     play nothing yet, their codec being silent), the Movie volume is held for the video player
     (the game's videos do not play yet); the two camera inversions flip and the two speeds scale
     the right stick's turn and pitch (`walk::Feel`; the follow after walking is not scaled);
-    the Confirm Button's second choice swaps the pad's A and B in the menus. Defaults change
+    the Confirm Button's second choice swaps the pad's A and B in the menus. Map Rotation On turns the field HUD's minimap with the camera (see Field HUD). Defaults change
     nothing. STAND-IN: the volumes' curve (row 5 = today's level, 6 dB a step down to -24 dB at
     1, silence at 0, 1.2 dB a step up to +6 dB at 10) and the speeds (linear, 5 = the measured
     rate) are Barrel's, the game's are not read; the volumes' range 0-10 and defaults remain guesses.
@@ -359,8 +371,8 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     Not live-checked through the screen's Yes (the apply path is the start path's `Play::from_config`).
   - Still stored only: Camera Auto-correct (its description, string 4522104: "Set to On to
     automatically reset the camera behind your character", so a swing back behind her on top of the
-    follow, which is on at the row's default; when and how fast it swings is not read), Zoom controls, Map Rotation
-    (the minimap is drawn fixed-north only; turning it with the camera is not built), Difficulty,
+    follow, which is on at the row's default; when and how fast it swings is not read), Zoom controls,
+    Difficulty,
     Dash (string 4522107: hold the dash button to sprint, or press it to toggle sprinting; Barrel has no
     sprint yet), Event Autoplay, Subtitle Size, Autosave, Vibration, Item Auto Select, Save Order, Toggle
     Icons, Cursor Speed (each belongs to code the field or the events do not have yet). Their
