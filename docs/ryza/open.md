@@ -272,12 +272,26 @@ effect system draws from textures it builds at run time, the glow's ~40 sprites 
 tool names an unindexed texture `tex<hash>`): 22 frames at 0 mismatches: 1930 to 2220 (opening done,
 the five moves, A on Settings), 2500, 2570, 2590 to 2650 (the field back).
 
+Settings from the menu (2026-11-23, `crates/ryza/src/options_run.rs`): A on Settings starts a `Run`
+of the Options screen on a clock of its own (its first frame `SETTINGS_AT` = 43 frames after A: 2263 in
+the capture), with the title's own `State`, `Leave` and `Blinks`: up and down (a held one repeats
+30, then 8 frames: `RepeatUp`/`RepeatDown`), left and right, Q/E or LB/RB with the tab ask, B with the
+leave dialog, A on Yes saving and applying live (the same `save_options` and `apply_settings`). The
+menu's keys are the one log (`menu_keys`); the run takes the ones from its first frame on and tells
+the menu when it is left (`Key::Return`, at its last frame; the menu's cards and buttons come in 2
+frames later). Offscreen `--menu-keys` also takes `left,right,lb,rb`. The title still runs its own
+copy of this key code (`play::run_once`, on the title's frame clock): the two are not yet one.
+
 Left (each a listed cause):
-- Settings is not drawn from the menu: A on Settings runs the select pulse and B comes back, but
-  the Options screen is not shown (the capture's 2225 to 2440: the buttons go out, the Options screen
-  fades in over the closing menu from 2265, and fades out over the coming back to 2440). It needs the
-  title's Options code (`play::run_once`, the `Stage` and `leave` replay) moved out of the title's
-  frame clock; rows 2225 to 2445 fail on it.
+- Settings from the menu: the screen opens and leaves (B at 2400 gone at 2401, the menu back 2402) but
+  rows 2265 to 2400 are not at 0 (about 2000 mismatches at 2280, 116 at 2400): the game draws the menu
+  under it as a blurred picture (a full-screen `sys_white` quad reading a 960 x 540 target, then two
+  vignette quads of `a21_common` 1, alphas 0.59 and 0.35 at full) and the buttons and plates go out
+  over 30 frames from 2261 (alpha cubed, 0.65, 0.34, 0.15, 0.05 on 2265 to 2280) as the screen comes
+  in; Barrel keeps the menu as it was and draws the screen's own fade over it. The help bar goes out
+  after A as after B (2225: the plate 3 pieces at 1282, no words; 2230: 1543, alpha 2/3; alpha
+  1 - (age - 5) / 15, plate grown 0.625 at +5) and comes in again after the return (2440: alpha 1/3,
+  plate 0.75 grown). None built; the same bar transients as the rest of this list.
 - The help bar's transients: the field's bar fading out over the opening (1909 to 1925, 1910 and 1920
   rows), the menu's bar growing in (1940 and 1945, its plate first 828 px then 1125), the menu's
   bar going out as the menu closes (2555 to 2565: the plate and words go in steps) and after it the
