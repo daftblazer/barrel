@@ -1848,3 +1848,38 @@ Left over, not solved:
 - Eye overlays, hair highlights and the toon ramp are carried only as extra images; the base
   colour is the albedo alone.
 - Costume `pc00a_wet` and the others were not looked at per submesh (marked ~ above).
+
+### Field menu, part 5: the character pick (A on Equip or Status), and the way back from a page
+
+Built (rows in the local `field-menu-rows-pages.txt`, not in checks.txt; `field-menu-equip` and `field-menu-status`, offscreen with
+`--menu-keys`, `left` and `right` move the pick):
+- A on Equip or Status starts a pick whose first frame is 42 frames later (`PICK_AT`; the pad's A on 2060, first frame 2102): the menu
+  stays as the A pulse had it until then, with the bar going out as on the Settings button (`Bar::out`), so 2070 to 2100 are the old rules.
+- From the first frame: the buttons darken (`anm_select_blackout` run in 20 frames, 255 to 179, rounded per channel), each button's
+  glow goes, each button's name plate and base are drawn once more through the game's blurring shader (alpha cubic over 20 frames; in
+  the trace only, `Pen::hidden` makes them the mask of a clip that draws nothing), the level plate and money go out as on B (out cubic,
+  `CLOSE_MONEY_SPEED`), the photo's blurring quad (`blur_bg`, `sys_white`, cubic over 30 frames) is in the trace over the photo and
+  the character's sharp figure (`a21v2_main_menu_image`, the style of its `list_0` image) is drawn after the mask.
+- The picked card: its glow (`bg_hilight_on`), the ring (`anm_cursor_scale`) and the turning ring (`anm_cursor_rolling`, 0.75 degrees
+  a frame, `a21_common` 5) behind its plate and the blinking glow (`anm_status_blink_loop`) over it, all added; the loops start on the pick's
+  second frame, or a frame before the key that moved the pick to the card. Left and right go along the cards left to right and stop at
+  the ends (STAND-IN, an end not tried). The party's order is `View::card_order`.
+- The pick's bar: from 4 frames after the first frame, three entries ("Select Character", "Back", "Confirm"), the plate growing over
+  6.4 frames as it fades in over 15.
+- B in the pick: back to the menu at once (STAND-IN, not captured). A on the card (`Pick::confirmed`): the page opens; B on the page: the
+  menu is back 24 frames later (`PAGE_OUT`): the cards and the buttons come in as after the Settings screen, the photo's blur goes out
+  over 30 frames, the blurred picture and the vignettes of the page go out over 7.5 (the `backdrop` layer), the menu's bar from 33 frames
+  with its plate 0.2 frames early (STAND-IN, one sample).
+- The menu ring's loop is 121 frames (it was 120.75); after the Settings screen it runs a frame ahead (`Nav::ring_skew`).
+
+Left, with causes:
+- The Equipment and Status pages are NOT drawn: while a page is open Barrel shows the pick (the frames from the second A to B). The Equip
+  frame 2150 on has ~860 quads (the layouts `uil_a21_menu_equip`, `uil_a21_item_status`, `uil_a21_menu_chara_status`, text with its
+  nine-copy outline, the item icons, the stat panel); stats need the character growth table (not found, the cards' HP stays the STAND-IN
+  `MAX_HP`).
+- Status 2260 to 2320 (4 mismatches each): after LEFT back to the first card the game's ring and turning ring are 17 frames into their
+  loops (a start at 2243), not at the key's frame; no rule found (not a pause: 97 frames of run before the move).
+- Equip 2590 (3): the cursor glow's closing fade after B at 2580 is 9/255, the fitted `CLOSE_GLOW_*` gives 20/255 (the 2560 fit was
+  taken after a B straight out of the menu).
+- The photo's blur is not drawn (the quad stays in the trace); the page's own backdrop in is not drawn either. A window run was not made.
+- Offscreen, the photo shows white in the menu's pictures already (main too); not looked into.

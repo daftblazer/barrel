@@ -69,8 +69,9 @@ const CLOSE_GLOW_FRAMES: f32 = 8.5;
 const SELECT_SPEED: f32 = 1.5;
 // STAND-IN: The loops run 121 frames (the animation's 120 and a frame at its end), as the Settings screen's cursor blink does (`options::BLINK_LOOP`, read off the same kind of capture); the real thing is the game's own animation clock.
 const LOOP_FRAMES: f32 = 121.0;
-/// The ring's own loop: STAND-IN, 120.75 frames (the capture's ring after the Settings screen, 2440 and 2445, is a frame ahead of the 121 that fits the first loops).
-const RING_LOOP_FRAMES: f32 = 120.75;
+/// The ring's own loop, 121 frames like the glow's (`field-menu`: the first loops; the pick's capture 2150 and 2560 after 4 and 5 loops). After the Settings screen the
+/// ring is a frame ahead (`Nav::ring_skew`: `field-menu` 2440 and 2445).
+const RING_LOOP_FRAMES: f32 = 121.0;
 /// Frames the photo and the cards fade in over (`anm_common_juvenile_fade_in` at speeds 3 and 2).
 const PHOTO_FADE: f32 = 20.0;
 const CARD_FADE: f32 = 30.0;
@@ -432,6 +433,10 @@ pub struct Nav {
     pub in_settings: bool,
     /// The character pick A on Equip or Status leads to.
     pub pick: Option<Pick>,
+    /// When the menu came back from a page (the blurred photo fades out from it).
+    pub blur_out: Option<f32>,
+    /// Frames the cursor's ring runs ahead of its loop (1 after the Settings screen).
+    ring_skew: f32,
 }
 
 /// The character pick (`field-menu-equip`: A on Equip at 2060, the pick's first frame 2102).
@@ -442,9 +447,15 @@ pub struct Pick {
     /// The picked card (an index of the party) and the frame it was picked on (the first frame at the start).
     pub card: usize,
     pub since: f32,
-    /// A on the card (the page it leads to is not drawn yet).
+    /// A on the card: the page (Equipment or Status; not drawn yet, the pick stands in for it) opens.
     pub confirmed: Option<f32>,
+    /// B on the page.
+    pub leaving: Option<f32>,
 }
+
+/// Frames from B on a page to the menu's coming back (`field-menu-equip`: B on 2500; the cards at 6/30 of their fade and the
+/// photo's blur at 24/30 left on 2530, so both ran from 2524).
+pub const PAGE_OUT: f32 = 24.0;
 
 /// Frames from A on Equip or Status to the pick's first frame (`field-menu-equip`: A on 2060; the buttons' tint, the photo's
 /// blur and the extra button pictures all run from 2102), and from the pick's first frame to the card glow's loops (2103).
@@ -470,7 +481,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, blur_out: None, ring_skew: 0.0 }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -489,6 +500,7 @@ impl Nav {
     pub fn back_from_settings(&mut self, at: f32) {
         self.in_settings = false;
         self.chosen = None;
+        self.ring_skew = 1.0;
         self.shown = at + SETTINGS_BACK_LAG;
         self.warm = true;
         self.on = [None; BUTTONS.len()];
@@ -502,7 +514,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None });
         }
     }
 
@@ -525,12 +537,37 @@ impl Nav {
         }
     }
 
-    /// B in the pick: back to the menu (STAND-IN: at once, the capture has no B before the page).
+    /// B in the pick: back to the menu (STAND-IN: at once, the capture has no B before the page); B on the page: the page goes
+    /// and the menu comes back `PAGE_OUT` frames later.
     pub fn pick_back(&mut self, at: f32) {
-        if self.pick.as_ref().is_some_and(|p| at >= p.first && p.confirmed.is_none()) {
-            self.pick = None;
-            self.chosen = None;
+        match self.pick.as_mut() {
+            Some(p) if at >= p.first && p.confirmed.is_none() => {
+                self.pick = None;
+                self.chosen = None;
+            }
+            Some(p) if p.confirmed.is_some_and(|c| at > c) && p.leaving.is_none() => p.leaving = Some(at),
+            _ => {}
         }
+    }
+
+    /// The menu's coming back from a page, once its frame has come (`upto`: the frame the state is wanted at).
+    fn settle(&mut self, upto: f32) {
+        if let Some(back) = self.pick.as_ref().and_then(|p| p.leaving).map(|l| l + PAGE_OUT).filter(|&b| b <= upto) {
+            self.back_from_page(back);
+        }
+    }
+
+    /// The menu's coming back from a page at frame `at`: the cards and buttons come in again over the background and the photo,
+    /// the cursor where it was, as after the Settings screen.
+    fn back_from_page(&mut self, at: f32) {
+        self.pick = None;
+        self.chosen = None;
+        self.shown = at;
+        self.warm = true;
+        self.on = [None; BUTTONS.len()];
+        self.off = [None; BUTTONS.len()];
+        self.on[self.cursor] = Some(self.shown + CURSOR_AT);
+        self.blur_out = Some(at);
     }
 }
 
@@ -579,6 +616,9 @@ pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
     let mut spans: Vec<(f32, Option<f32>)> = Vec::new();
     let mut nav: Option<Nav> = None;
     for &(at, key) in keys {
+        if let Some(n) = nav.as_mut() {
+            n.settle(at);
+        }
         match (key, nav.as_mut()) {
             (Key::Open, None) => {
                 nav = Some(Nav::open(at + OPEN_LAG));
@@ -611,6 +651,9 @@ pub fn replay(keys: &[(f32, Key)], tick: f32, order: &[usize]) -> Option<Nav> {
         if nav.as_ref().and_then(|n| n.closed).is_some_and(|c| c + CLOSE_LAG + BG_FADE <= at.min(tick)) {
             nav = None;
         }
+        if let Some(n) = nav.as_mut() {
+            n.settle(at.min(tick));
+        }
         match (key, nav.as_mut()) {
             (Key::Open, None) if at + OPEN_LAG <= tick => nav = Some(Nav::open(at + OPEN_LAG)),
             // On the Settings screen the keys are the screen's (`options_run`); it ends with `Return`.
@@ -629,6 +672,10 @@ pub fn replay(keys: &[(f32, Key)], tick: f32, order: &[usize]) -> Option<Nav> {
             },
             _ => {}
         }
+    }
+    // The page's B takes the menu back `PAGE_OUT` frames later.
+    if let Some(n) = nav.as_mut() {
+        n.settle(tick);
     }
     nav.filter(|n| n.closed.is_none_or(|c| tick < c + CLOSE_LAG + BG_FADE))
 }
@@ -808,9 +855,12 @@ impl View {
         pen.pic(MENU2, shadow, *shadow_at, *shadow_size, white(180.0 / 255.0));
         let cards = byte(if closing { incubic(CARD_FADE - out, CARD_FADE) } else { incubic(age, CARD_FADE) } * 255.0);
         // The photo blurs in over the pick (the game's blurring quad over the photo's place; it draws as `sys_white` here).
-        if let Some((_, a)) = picked {
+        let blur = picked.map(|(_, a)| incubic(a, BLUR_FRAMES)).or(nav.blur_out.map(|r| incubic(BLUR_FRAMES - (frame - r), BLUR_FRAMES)));
+        if let Some(b) = blur {
             let (at, size, turn) = self.pick.blur;
-            pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], at, size, turn, white(byte(incubic(a, BLUR_FRAMES) * 255.0)));
+            // (STAND-IN: not drawn, only in the trace; the photo stays sharp until a layer can blur a part of itself)
+            pen.hidden.push(pen.out.len());
+            pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], at, size, turn, white(byte(b * 255.0)));
         }
         let (mask_at, mask_size, mask_turn) = &self.mask;
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
@@ -927,7 +977,8 @@ impl View {
             Some(key) => Bar::out(frame - key),
             None => {
                 // (back from Settings it comes up one frame earlier, with its plate a fifth of a frame late, as the screen's own)
-                let (at, late) = if nav.warm { (HELP_AT_BACK, BACK_PLATE_LATE) } else { (HELP_AT, 0.0) };
+                // (and from a page with its plate 0.2 frames early: `field-menu-equip` 2560, opacity 3/15 and the plate 0.50 of the way; STAND-IN, one sample)
+                let (at, late) = if nav.warm { (HELP_AT_BACK, if nav.blur_out.is_some() { -BACK_PLATE_LATE } else { BACK_PLATE_LATE }) } else { (HELP_AT, 0.0) };
                 if !nav.warm && age < FIELD_BAR_HOLD + HELP_FADE {
                     // The field's bar fading out as the menu comes up.
                     self.help_bar(&mut pen, Bar { alpha: 1.0 - (age - FIELD_BAR_HOLD) / HELP_FADE, grow: 1.0, words: true, extra: 0.0, entries: Entries::Field });
@@ -1024,7 +1075,7 @@ impl View {
         part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)]);
         part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
         // The ring runs from the menu's first frame, whichever button has the glow.
-        let t = ((frame - nav.opened) % RING_LOOP_FRAMES) / 60.0;
+        let t = ((frame - nav.opened + nav.ring_skew) % RING_LOOP_FRAMES) / 60.0;
         let ring_alpha = self.ring_loop[0].at(t)[3] / 255.0 * on_alpha;
         let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
         let p = self.ring.pictures[0];
@@ -1179,14 +1230,70 @@ mod tests {
     #[test]
     fn the_script_opens_the_menu_six_frames_after_y_and_walks_the_cursor() {
         let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down)];
-        assert!(replay(&keys, 1905.0).is_none());
-        assert_eq!(replay(&keys, 1906.0).unwrap().opened, 1906.0);
-        assert_eq!(replay(&keys, 2010.0).unwrap().cursor, 1);
-        assert_eq!(replay(&keys, 2100.0).unwrap().cursor, 2);
+        assert!(replay(&keys, 1905.0, &[]).is_none());
+        assert_eq!(replay(&keys, 1906.0, &[]).unwrap().opened, 1906.0);
+        assert_eq!(replay(&keys, 2010.0, &[]).unwrap().cursor, 1);
+        assert_eq!(replay(&keys, 2100.0, &[]).unwrap().cursor, 2);
     }
 
     #[test]
     fn the_cursor_comes_to_its_first_button_once_the_cards_have_faded_in() {
         assert_eq!(Nav::open(1906.0).on[0], Some(1906.0 + CURSOR_AT));
+    }
+
+    const ORDER: [usize; 3] = [1, 0, 2];
+
+    fn pick_keys() -> Vec<(f32, Key)> {
+        use crate::options_run::Key as S;
+        vec![(1900.0, Key::Open), (2000.0, Key::Down), (2060.0, Key::Confirm), (2200.0, Key::Screen(S::Right)), (2260.0, Key::Screen(S::Left)), (2300.0, Key::Screen(S::Left))]
+    }
+
+    #[test]
+    fn a_on_equip_starts_a_pick_of_the_leader_42_frames_later() {
+        let nav = replay(&pick_keys(), 2100.0, &ORDER).unwrap();
+        let pick = nav.pick.unwrap();
+        assert_eq!((pick.first, pick.card), (2102.0, 0));
+    }
+
+    #[test]
+    fn a_on_the_container_button_starts_no_pick() {
+        let keys = [(1900.0, Key::Open), (2060.0, Key::Confirm)]; // (the cursor is on the Container)
+        assert!(replay(&keys, 2200.0, &ORDER).unwrap().pick.is_none());
+    }
+
+    #[test]
+    fn left_and_right_move_the_pick_along_the_cards_and_stop_at_the_ends() {
+        let keys = pick_keys();
+        assert_eq!(replay(&keys, 2210.0, &ORDER).unwrap().pick.unwrap().card, 2);
+        assert_eq!(replay(&keys, 2270.0, &ORDER).unwrap().pick.unwrap().card, 0);
+        // (the second left: from the leader to the card on its left, the third stays)
+        assert_eq!(replay(&keys, 2310.0, &ORDER).unwrap().pick.unwrap().card, 1);
+    }
+
+    #[test]
+    fn keys_before_the_picks_first_frame_do_nothing() {
+        use crate::options_run::Key as S;
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2060.0, Key::Confirm), (2070.0, Key::Screen(S::Right)), (2080.0, Key::Back)];
+        let pick = replay(&keys, 2090.0, &ORDER).unwrap().pick.unwrap();
+        assert_eq!(pick.card, 0);
+    }
+
+    #[test]
+    fn b_on_a_page_brings_the_menu_back_24_frames_later() {
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2060.0, Key::Confirm), (2140.0, Key::Confirm), (2500.0, Key::Back)];
+        assert!(replay(&keys, 2523.0, &ORDER).unwrap().pick.is_some());
+        let nav = replay(&keys, 2524.0, &ORDER).unwrap();
+        assert!(nav.pick.is_none() && nav.warm);
+        assert_eq!((nav.shown, nav.blur_out), (2524.0, Some(2524.0)));
+        // (B on the menu after that closes it)
+        let keys = [keys.as_slice(), &[(2580.0, Key::Back)]].concat();
+        assert!(replay(&keys, 2590.0, &ORDER).unwrap().closed.is_some());
+    }
+
+    #[test]
+    fn the_pick_does_not_close_the_menu_on_b() {
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2060.0, Key::Confirm), (2150.0, Key::Back)];
+        let nav = replay(&keys, 2160.0, &ORDER).unwrap();
+        assert!(nav.closed.is_none() && nav.pick.is_none());
     }
 }

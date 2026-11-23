@@ -2986,6 +2986,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
+            } else if let (Some(back), Some(layer)) = (nav.blur_out, backdrop.as_mut()) {
+                // The menu coming back from a page: the page's blurred picture and vignettes go out from its first frame.
+                let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(0.0, Some(menu_tick - back)), (width, height));
+                if pump.is_some() && !renderer.can_blur_screen() && !quads.is_empty() {
+                    quads.remove(0);
+                }
+                showing_backdrop = !quads.is_empty();
+                layer.set(&gpu, &quads)?;
             }
             // What the screen leaves after its last frame (its caption and help bar going out).
             if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.over_since().is_some()), options_screen.as_mut()) {
