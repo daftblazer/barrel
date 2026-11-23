@@ -414,12 +414,20 @@ pub enum Key {
     Down,
     /// A on the cursor's button.
     Confirm,
-    /// B: the menu closes.
+    /// B: the menu closes (on the Settings screen: the screen's own B).
     Back,
+    /// A key of the Settings screen the menu opened (left, right, the tabs, a held direction's repeat).
+    Screen(crate::options_run::Key),
+    /// The Settings screen was left (its last frame): the menu comes in again.
+    Return,
 }
 
 /// Frames from B on the Settings screen to the menu's coming in again (`field-menu`: B at 2400, the cards from 2402).
 const SETTINGS_BACK_LAG: f32 = 2.0;
+
+/// Frames from A on the Settings button to the Settings screen's first frame (`field-menu`: A at 2220; the screen's background
+/// is at 3/15 of its fade on 2265, so its first frame is 2263).
+pub const SETTINGS_AT: i32 = 43;
 
 /// Frames from Y to the menu's first frame (`field-menu`: Y at 1900, the first frame 1906).
 pub const OPEN_LAG: f32 = 6.0;
@@ -442,7 +450,8 @@ pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
             (Key::Down, Some(n)) if !n.in_settings => n.step(1, at),
             (Key::Up, Some(n)) if !n.in_settings => n.step(-1, at),
             (Key::Confirm, Some(n)) if !n.in_settings => n.choose(at),
-            (Key::Back, Some(n)) if n.in_settings => n.back_from_settings(at),
+            (Key::Return, Some(n)) if n.in_settings => n.back_from_settings(at),
+            (Key::Back, Some(n)) if n.in_settings => {}
             (Key::Back, Some(_)) => {
                 if let Some(last) = spans.last_mut() {
                     last.1 = Some(at + CLOSE_LAG + BG_FADE);
@@ -465,12 +474,13 @@ pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
         }
         match (key, nav.as_mut()) {
             (Key::Open, None) if at + OPEN_LAG <= tick => nav = Some(Nav::open(at + OPEN_LAG)),
-            // Settings is not drawn from the menu yet (docs/ryza/open.md, "Field menu"): B leaves it as it came.
+            // On the Settings screen the keys are the screen's (`options_run`); it ends with `Return`.
             (_, Some(n)) if at <= tick && n.closed.is_none() => match key {
                 Key::Down if !n.in_settings => n.step(1, at),
                 Key::Up if !n.in_settings => n.step(-1, at),
                 Key::Confirm if !n.in_settings => n.choose(at),
-                Key::Back if n.in_settings => n.back_from_settings(at),
+                Key::Return if n.in_settings => n.back_from_settings(at),
+                Key::Back if n.in_settings => {}
                 Key::Back => n.closed = Some(at),
                 _ => {}
             },

@@ -275,7 +275,11 @@ fn args(args: Vec<String>) -> Result<Args> {
                         "down" => Key::Down,
                         "a" => Key::Confirm,
                         "b" => Key::Back,
-                        _ => return Err("--menu-keys F:y,F:down,F:up,F:a,F:b".into()),
+                        "left" => Key::Screen(barrel_ryza::options_run::Key::Left),
+                        "right" => Key::Screen(barrel_ryza::options_run::Key::Right),
+                        "lb" => Key::Screen(barrel_ryza::options_run::Key::TabPrev),
+                        "rb" => Key::Screen(barrel_ryza::options_run::Key::TabNext),
+                        _ => return Err("--menu-keys F:y,F:down,F:up,F:a,F:b,F:left,F:right,F:lb,F:rb".into()),
                     };
                     a.menu_keys.push((frame.parse()?, key));
                 }
@@ -961,6 +965,28 @@ impl Resolved {
 
 /// The settings the player changed go into Barrel's own config (the graphics config's file),
 /// their lines replacing the ones there; the rest of the file stays.
+/// The Settings screen the field's menu opened: its run, the game frame of its first frame and
+/// whether its leaving was told to the menu (`Key::Return`).
+struct SettingsRun {
+    run: barrel_ryza::options_run::Run,
+    first: i32,
+    told: bool,
+}
+
+/// The screen's key for a key of the menu's script.
+fn screen_key(key: barrel_ryza::field_menu::Key) -> Option<barrel_ryza::options_run::Key> {
+    use barrel_ryza::field_menu::Key as M;
+    use barrel_ryza::options_run::Key as S;
+    match key {
+        M::Up => Some(S::Up),
+        M::Down => Some(S::Down),
+        M::Confirm => Some(S::Confirm),
+        M::Back => Some(S::Back),
+        M::Screen(k) => Some(k),
+        M::Open | M::Return => None,
+    }
+}
+
 fn save_options(state: &barrel_ryza::options::State) {
     let Some(path) = barrel_files::config::graphics_path() else { return };
     let text = state.store(&std::fs::read_to_string(&path).unwrap_or_default());
@@ -1931,12 +1957,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut title_input = a.title_input.clone();
     title_input.saves |= !save_slots.is_empty();
     // The Settings screen's own layer and what it shows (the config's values over the defaults).
-    let mut options_screen = match a.title {
+    // The field's menu opens it too (where there is a field HUD to leave).
+    let field_has_menu = (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some();
+    let mut options_screen = match a.title || field_has_menu {
         true => Some(options_layer(&install, &gpu, &renderer)?),
         false => None,
     };
     // The load screen's own layer, with the views of its screens (made after the Settings screen's: its saving notice is drawn over that).
-    let mut load_screen = match a.title {
+    let mut load_screen = match a.title || field_has_menu {
         true => Some(load_layer(&install, &gpu, &renderer)?),
         false => None,
     };
@@ -1982,6 +2010,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // the arrows or the D-pad move, Enter or A chooses, Backspace, Escape or B closes) and whether it is up.
     let mut menu_keys = a.menu_keys.clone();
     let mut menu_up = false;
+    // The Settings screen the menu opened, while it is up (see `SettingsRun`), and the keys' repeat clocks in a window.
+    let mut settings_run: Option<SettingsRun> = None;
+    let mut settings_repeat: [Option<f32>; 2] = [None; 2];
     let mut handoff: Option<std::path::PathBuf> = None;
     let mut showing_load = false;
     // The Settings screen's "Saving..." notice is drawn over it (in the load screen's layer).
@@ -2070,6 +2101,32 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 if !menu_up {
                     if down(K::Tab, Pad::North) {
                         press(MenuKey::Open);
+                    }
+                } else if settings_run.is_some() {
+                    // On the Settings screen: its own keys (the arrows, Q and E, LB and RB, Enter or A, Backspace, Escape or B),
+                    // a held up or down repeating after 30 frames, every 8 (`options::REPEAT`).
+                    use barrel_ryza::options_run::Key as S;
+                    let (up, down_key) = (p.held(K::ArrowUp) || p.pad_down(Pad::Up), p.held(K::ArrowDown) || p.pad_down(Pad::Down));
+                    for (slot, held, tapped, first, repeat) in [(0, up, down(K::ArrowUp, Pad::Up), MenuKey::Up, S::RepeatUp), (1, down_key, down(K::ArrowDown, Pad::Down), MenuKey::Down, S::RepeatDown)] {
+                        if tapped {
+                            press(first);
+                            settings_repeat[slot] = Some(at + barrel_ryza::options::REPEAT.first as f32);
+                        } else if !held {
+                            settings_repeat[slot] = None;
+                        } else if let Some(next) = settings_repeat[slot].filter(|&n| at >= n) {
+                            press(MenuKey::Screen(repeat));
+                            settings_repeat[slot] = Some(next + barrel_ryza::options::REPEAT.next as f32);
+                        }
+                    }
+                    for (k, b, key) in [(K::ArrowLeft, Pad::Left, S::Left), (K::ArrowRight, Pad::Right, S::Right), (K::KeyQ, Pad::LeftShoulder, S::TabPrev), (K::KeyE, Pad::RightShoulder, S::TabNext)] {
+                        if down(k, b) {
+                            press(MenuKey::Screen(key));
+                        }
+                    }
+                    if title_keys.contains(&K::Enter) || pad_pressed.contains(&confirm) {
+                        press(MenuKey::Confirm);
+                    } else if down(K::Backspace, back) || title_keys.contains(&K::Escape) {
+                        press(MenuKey::Back);
                     }
                 } else if down(K::ArrowDown, Pad::Down) {
                     press(MenuKey::Down);
@@ -2783,16 +2840,91 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
         }
         let menu_tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
-        let menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
+        let mut menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
         menu_up = menu_now.is_some();
+        // The Settings screen A on the menu's Settings button opened: it runs on its own clock from its first frame.
+        // (Its leaving is told to the menu as a key, which the menu's state is then replayed with.)
+        loop {
+        match (menu_now.as_ref().filter(|n| n.in_settings).and_then(|n| n.chosen), settings_run.as_mut()) {
+            (Some(c), None) => {
+                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false });
+            }
+            (None, Some(sr)) if sr.run.is_over() => {
+                // Back on the menu: the values the screen left stand.
+                if let Some(done) = settings_run.take() {
+                    options_state = done.run.finish();
+                    options_initial = options_state.clone();
+                }
+            }
+            _ => {}
+        }
+        let mut told_now = false;
+        if let Some(sr) = settings_run.as_mut() {
+            use barrel_ryza::options_run::Cue as C;
+            let now = menu_tick.floor() as i32;
+            while sr.run.frame() < now - sr.first + 1 {
+                let at = sr.first + sr.run.frame();
+                let keys: Vec<_> = menu_keys.iter().filter(|(t, _)| t.floor() as i32 == at).filter_map(|&(_, k)| screen_key(k)).collect();
+                let fx = sr.run.step(&keys);
+                if let Some(sound) = sound.as_mut() {
+                    let when = sound_base + i64::from(at - a.hud_at as i32);
+                    for cue in fx.cues {
+                        let (name, id) = match cue {
+                            C::Cursor => ("cursor", barrel_ryza::sound::CURSOR),
+                            C::Cancel => ("cancel", barrel_ryza::sound::CANCEL),
+                            C::Choose => ("choose", barrel_ryza::sound::CLICK),
+                            C::Page => ("page", barrel_ryza::sound::PAGE),
+                        };
+                        sound.request(name, barrel_ryza::sound::Cue::effect(when, id));
+                    }
+                }
+                if fx.saved {
+                    save_options(&sr.run.state);
+                    apply_settings = true;
+                }
+                if let (false, Some(l)) = (sr.told, sr.run.left_at()) {
+                    told_now = true;
+                    eprintln!("settings: left (game frame {})", sound_base + i64::from(sr.first + l - 1));
+                    menu_keys.push(((sr.first + l - 1) as f32, barrel_ryza::field_menu::Key::Return));
+                    // (the menu's replay takes the keys in time order)
+                    menu_keys.sort_by(|x, y| x.0.total_cmp(&y.0));
+                    sr.told = true;
+                }
+            }
+        }
+        if !told_now {
+            break;
+        }
+        menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
+        menu_up = menu_now.is_some();
+        }
         // The field stands still while the menu is up: its clock leaves the menu's frames out, and
         // its help bar comes up again as at an arrival from the menu's last frame.
         let menu_spans = barrel_ryza::field_menu::spans(&menu_keys);
         let paused: f32 = menu_spans.iter().map(|&(from, to)| (to.map_or(f32::MAX, |t| t + barrel_ryza::field_menu::FIELD_RESUME_LAG).min(menu_tick) - from).max(0.0)).sum();
         let resumed = menu_spans.iter().filter_map(|&(_, to)| to).filter(|&to| to <= menu_tick).last();
+        if title_layer.is_none() {
+            (showing_options, showing_notice) = (false, false);
+        }
         if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {
             let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
             layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
+            // The Settings screen over it, from its first frame.
+            if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.run.frame() >= 1 && !s.run.is_over()), options_screen.as_mut()) {
+                let look = sr.run.look();
+                let mut screen = sr.run.state.screen(strings);
+                screen.leave = look.clone();
+                let (mut quads, clips, glow) = view.quads(&screen, sr.run.moment(), (width, height));
+                if look.cover > 0.0 {
+                    quads.push(flow::cover(look.cover, (width, height), 0));
+                }
+                if let (Some((alpha, age)), Some((notice_layer, _, boot))) = (look.notice, load_screen.as_mut()) {
+                    notice_layer.set(&gpu, &boot.saving_notice(age as f32 / 60.0, alpha, (width, height)))?;
+                    showing_notice = true;
+                }
+                layer.set_blended(&gpu, &quads, &clips, glow)?;
+                showing_options = true;
+            }
         } else if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
             let tick = menu_tick - paused;
             let state = barrel_ryza::field_hud::State {
@@ -2822,8 +2954,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref(), showing_options, options_screen.as_ref()) {
             (true, Some((l, _, _)), _, _) => vec![l],
-            (_, _, true, Some((l, _, _))) if showing_notice => std::iter::once(l).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
-            (_, _, true, Some((l, _, _))) => vec![l],
+            (_, _, true, Some((l, _, _))) if showing_notice && menu_now.is_none() => std::iter::once(l).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
+            (_, _, true, Some((l, _, _))) if menu_now.is_none() => vec![l],
+            _ if menu_now.is_some() && showing_options && showing_notice => field_menu.iter().map(|(l, _)| l).chain(options_screen.as_ref().map(|(l, _, _)| l)).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
+            _ if menu_now.is_some() && showing_options => field_menu.iter().map(|(l, _)| l).chain(options_screen.as_ref().map(|(l, _, _)| l)).collect(),
             _ if menu_now.is_some() => field_menu.iter().map(|(l, _)| l).collect(),
             _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
