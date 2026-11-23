@@ -123,6 +123,12 @@ impl HelpBar {
         HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0 }
     }
 
+    /// The bar as the field comes back from the menu: it fades in the same time after as at an
+    /// arrival, but with its full line and plate at once (it has shown before).
+    pub fn returning() -> HelpBar {
+        HelpBar { shown: HELP_GROW_FROM + HELP_GROW_FRAMES, ..HelpBar::arriving() }
+    }
+
     /// Moves on `frames` frames (60 a second), the move stick out of its dead zone or not.
     pub fn step(&mut self, stick: bool, frames: f32) {
         self.idle = if stick { 0.0 } else { self.idle + frames };

@@ -2758,11 +2758,16 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         let menu_tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
         let menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&a.menu_keys, menu_tick));
+        // The field stands still while the menu is up: its clock leaves the menu's frames out, and
+        // its help bar comes up again as at an arrival from the menu's last frame.
+        let menu_spans = barrel_ryza::field_menu::spans(&a.menu_keys);
+        let paused: f32 = menu_spans.iter().map(|&(from, to)| (to.map_or(f32::MAX, |t| t + barrel_ryza::field_menu::FIELD_RESUME_LAG).min(menu_tick) - from).max(0.0)).sum();
+        let resumed = menu_spans.iter().filter_map(|&(_, to)| to).filter(|&to| to <= menu_tick).last();
         if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {
             let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
             layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
         } else if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
-            let tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
+            let tick = menu_tick - paused;
             let state = barrel_ryza::field_hud::State {
                 at: r.player.at.into(),
                 turn: r.player.turn.to_degrees(),
@@ -2774,7 +2779,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 tick,
                 age: tick - a.hud_arrival,
                 place: barrel_ryza::field_hud::place_names(&a.field),
-                help: if pump.is_none() && a.walk_from.is_none() {
+                help: if let (Some(back), true) = (resumed, pump.is_none()) {
+                    let mut bar = barrel_ryza::field_hud::HelpBar::returning();
+                    (0..(menu_tick - back).max(0.0) as u32).for_each(|_| bar.step(false, 1.0));
+                    bar
+                } else if pump.is_none() && a.walk_from.is_none() {
                     // A still: the bar only where the arrival frame is given (`--hud-arrival`).
                     if a.hud_arrival > 0.0 { replay_help(a.hud_arrival, tick, &a.hud_stick) } else { barrel_ryza::field_hud::HelpBar::arriving() }
                 } else {

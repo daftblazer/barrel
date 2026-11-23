@@ -424,6 +424,37 @@ const SETTINGS_BACK_LAG: f32 = 2.0;
 /// Frames from Y to the menu's first frame (`field-menu`: Y at 1900, the first frame 1906).
 pub const OPEN_LAG: f32 = 6.0;
 
+/// Frames after the menu's last one the field's own clock runs again (`field-menu`: the banner at 2570 stands where it was 4 frames after the field came back, which fits 2568).
+pub const FIELD_RESUME_LAG: f32 = 2.0;
+
+/// The frames the menu took over the field, one span (first frame, frame the field comes back
+/// to, none while it is open) for each time it opened: the field stands still under it (the area
+/// name's banner stops fading and carries on from where it was when the menu closes).
+pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
+    let mut spans: Vec<(f32, Option<f32>)> = Vec::new();
+    let mut nav: Option<Nav> = None;
+    for &(at, key) in keys {
+        match (key, nav.as_mut()) {
+            (Key::Open, None) => {
+                nav = Some(Nav::open(at + OPEN_LAG));
+                spans.push((at + OPEN_LAG, None));
+            }
+            (Key::Down, Some(n)) if !n.in_settings => n.step(1, at),
+            (Key::Up, Some(n)) if !n.in_settings => n.step(-1, at),
+            (Key::Confirm, Some(n)) if !n.in_settings => n.choose(at),
+            (Key::Back, Some(n)) if n.in_settings => n.back_from_settings(at),
+            (Key::Back, Some(_)) => {
+                if let Some(last) = spans.last_mut() {
+                    last.1 = Some(at + CLOSE_LAG + BG_FADE);
+                }
+                nav = None;
+            }
+            _ => {}
+        }
+    }
+    spans
+}
+
 /// The menu at frame `tick` for the script's keys (each with the game frame its button went
 /// down), or none while the field shows: the keys replayed in order, each at its frame.
 pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
