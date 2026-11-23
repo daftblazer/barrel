@@ -452,7 +452,7 @@ does (AE 0), and so do two steps. One more thing a live change must reproduce: t
 the frame it is first asked for, with the casters the view and levels of detail of that frame show (`shown`); on a
 change of the presets it is drawn again from that frame's view (`far_view`, `Frame::far_shown`; the title's boot has the scene
 off in that frame). What is left of Quality Low (a level of detail change) is a few pixels in the trees' shadows
-(about 4000 of 518,400 pixels differ by a few levels): the layer drawn again has the models in the poses of now,
+(51 of 518,400 pixels, 54.6 dB; tools/live-settings.sh passes `low` at 50 dB): the layer drawn again has the models in the poses of now,
 not those of that frame.
 
 ## Controller (Ryza)

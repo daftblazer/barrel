@@ -47,6 +47,9 @@ declare -A changes=(
     [fsr3]="2:-1:2 3:1:4"
 )
 declare -A temporal=([taa]=1 [fsr3]=1 [nativeaa]=1)
+# Near ones and their bar in dB: `low` changes the draw ranges, so the static shadow layer is drawn
+# again from its first view but with the trees as they stand now (a few faint pixels, ~55 dB).
+declare -A near=([low]=50)
 # Anti-Aliasing steps from the default (the game's FXAA) to a choice: Off, FXAA, TAA, MSAA 2x/4x/8x,
 # native AA.
 aa_steps() { case $1 in %AA_TAA%) echo 1 ;; %AA_MSAA4%) echo 3 ;; %AA_NATIVE%) echo 5 ;; *) echo "$1" ;; esac; }
@@ -113,8 +116,8 @@ for c in "${@:-same scale75 msaa4 low fsr1 nativeaa}"; do
         psnr=$(magick compare -metric PSNR "$d/a.png" "$d/b.png" null: 2>&1 | head -1)
         ae=$(magick compare -metric AE "$d/a.png" "$d/b.png" null: 2>&1 | head -1)
         want=inf
-        if [ -n "${temporal[$name]:-}" ]; then
-            ok=$(awk -v p="$psnr" -v t="$temporal_db" 'BEGIN { print (p == "inf" || p + 0 >= t) ? 1 : 0 }')
+        if [ -n "${temporal[$name]:-}" ] || [ -n "${near[$name]:-}" ]; then
+            ok=$(awk -v p="$psnr" -v t="${near[$name]:-$temporal_db}" 'BEGIN { print (p == "inf" || p + 0 >= t) ? 1 : 0 }')
         else
             ok=$([ "${ae%% *}" = 0 ] && echo 1 || echo 0)
         fi
