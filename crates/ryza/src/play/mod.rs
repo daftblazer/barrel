@@ -3047,10 +3047,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
             // The Equipment page over the blurred menu.
             showing_page = false;
+            let menu_help = view.page_help((width, height));
             if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), nav.page(menu_tick).filter(|p| !p.status), party_tables.as_ref()) {
                 if let Some(member) = menu_shown.party.get(pick.card) {
-                    let look = barrel_ryza::field_page::Look { member, item_images: &|i| tables.image(i), slot: pick.slot, age: menu_tick - pick.confirmed.unwrap_or(0.0) - barrel_ryza::field_menu::PAGE_AT };
-                    layer.set(&gpu, &view.quads(&look, (width, height)))?;
+                    let look = barrel_ryza::field_page::Look { member, party: &menu_shown.party, card: pick.card, item_images: &|i| tables.image(i), slot: pick.slot, slot_age: menu_tick - pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_menu::PAGE_AT) + barrel_ryza::field_page::BLINK_LAG, age: menu_tick - pick.confirmed.unwrap_or(0.0) - barrel_ryza::field_menu::PAGE_AT };
+                    let mut quads = view.quads(&look, (width, height));
+                    // The page's own help bar: the menu's plate and words over the page's textures.
+                    quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
+                    layer.set(&gpu, &quads)?;
                     showing_page = true;
                 }
             }

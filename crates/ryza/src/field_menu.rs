@@ -454,6 +454,8 @@ pub struct Pick {
     pub leaving: Option<f32>,
     /// The page's slot under the cursor (Equipment: weapon, armour, the two accessories), moved by up and down.
     pub slot: usize,
+    /// The frame the cursor came to its slot (its blink restarts there); none: the page's first.
+    pub slot_since: Option<f32>,
     /// The Status page (the button was Status) and not the Equipment page.
     pub status: bool,
 }
@@ -523,7 +525,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, status: self.cursor == STATUS });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS });
         }
     }
 
@@ -560,7 +562,11 @@ impl Nav {
         }
         if let Some(p) = self.pick.as_mut() {
             let (col, row) = ((p.slot % 2) as i32 + dx, (p.slot / 2) as i32 + dy);
-            p.slot = (row.clamp(0, 1) * 2 + col.clamp(0, 1)) as usize;
+            let slot = (row.clamp(0, 1) * 2 + col.clamp(0, 1)) as usize;
+            if slot != p.slot {
+                p.slot_since = Some(at);
+            }
+            p.slot = slot;
         }
     }
 
@@ -743,10 +749,15 @@ enum Entries {
     Field,
     Menu,
     Pick,
+    /// The Equipment page's: the pad's cross and "Select", B and "Back", A and "Confirm".
+    Page,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
 const PICK_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_439), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The Equipment page's entries: the cross and "Select" (the table's own words), B and "Back", A and "Confirm".
+const PAGE_ENTRIES: [(char, u32); 3] = [('\u{4e2}', 4_194_366), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
 
 /// Frames the bar holds its opacity after the key that sends it out, and the frames its fade takes (`field-menu`: after A
 /// on 2220 the opacity is 1 on 2225, 2/3 on 2230 and 1/3 on 2235; after B on 2550 the same on 2555, 2560 and 2565).
@@ -883,6 +894,14 @@ fn along(c: &Curve, age: f32, frames: f32) -> [f32; 4] {
 }
 
 impl View {
+    /// The Equipment page's help bar, whole, on a `screen` of pixels; the plate's quads name this layer's `GUIDE` texture.
+    pub fn page_help(&self, screen: (u32, u32)) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra: 0.0, entries: Entries::Page });
+        pen.finish().0
+    }
+
     /// The menu's quads at game frame `frame` (in draw order) on a `screen` of pixels, which of them are drawn additively and
     /// which are only in the trace.
     pub fn quads(&self, nav: &Nav, shown: &Shown, frame: f32, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<usize>) {
@@ -1148,6 +1167,7 @@ impl View {
             Entries::Field => &crate::field_hud::HELP_ENTRIES,
             Entries::Menu => &HELP_ENTRIES,
             Entries::Pick => &PICK_ENTRIES,
+            Entries::Page => &PAGE_ENTRIES,
         };
         let line = entries.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ");
         let s = self.help_text.size * pen.k / ATLAS_SIZE;

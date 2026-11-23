@@ -695,7 +695,7 @@ impl Pen<'_> {
 /// pixels), the middle (`mid` style pixels of source, tiled) and the far margin (`b`); each
 /// piece is (destination start, destination length, source start, source length), `u` pixels
 /// to a style pixel.
-fn segments(total: f32, a: f32, mid: f32, b: f32, u: f32) -> Vec<(f32, f32, f32, f32)> {
+pub(crate) fn segments(total: f32, a: f32, mid: f32, b: f32, u: f32) -> Vec<(f32, f32, f32, f32)> {
     let total = total.max((a + b) * u);
     let mut out = Vec::new();
     if a > 0.0 {

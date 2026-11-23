@@ -1915,3 +1915,35 @@ Left, with causes:
 - A window run was not made (this session had no window): the log of each page is unverified; offscreen `--menu-keys` runs show the
   Equipment page at 2290 and 2410.
 
+
+### Field menu, part 7: the rest of the Equipment page's static parts
+
+Built (`crates/ryza/src/field_page.rs`):
+- The figure's quad is explained: `uis_a21_chara_stand_card.xml` (like `uis_a21_bg.xml`) says `resolution_hd="1080"`, so its style pixels are
+  screen pixels of 1080 lines (1.5 to a layout pixel) and its uvwh over the texture's own size, not the 2160-line files' 3 and 2 (the
+  capture's 1240 x 2078 quad with uv to 2.07: the picture's own 600 pixels and the clamped margin). `Pic` carries the file's scale.
+- `wrap` pictures (`prim_type`, `edge_margin`) are nine-sliced with `options_view::segments`: the stat panel's lines (caps of 25, tiles of
+  140 along the 324 layout pixels).
+- The element resists (`att_d`: six `icon_off` pictures, the arrows and the lit `icon` are for the game's code), the title plate
+  (`uil_a21_caption.xml`, "Equipment" = string 6684752), the party icons with the shoulder buttons' glyphs (`uil_a21_menu_faceicon.xml`: the
+  last places of the nine, the left button's node at the first icon) and the help bar (`field_menu::View::page_help`: the menu's plate and
+  words, entries "Select", "Back", "Confirm", drawn into the page's layer after the page).
+- Text with a node scale of two values (`label_all` "Equip Quality" is 0.92 across): glyph width and advance by the first, height by the second;
+  `align_v="center"` lifts the line.
+- Animations: the cursor's blink (`anm_common_blink`, restarts when the cursor moves to a slot) and the party icon highlight's turn
+  (360 frames, from A on the card) and glow (`expandEff`, 100 frames).
+- 2330 to 2370, 2410 and 2420 of `field-menu-equip` are at 0 (rows in the loop's scratch file, not yet in checks.txt).
+
+STAND-INs: the icons fill the last places of the nine; the button glyphs (U+04E6, U+04EA) are the capture's; `CENTER_LIFT` (0.6875 of the
+font size) is fitted to the two shoulder glyphs; the spacing of a squeezed label takes the square of the squeeze again (fitted to "Equip
+Quality"); the glow's 2.1 frame lag and the blink's 1 frame lag are fitted to 2410.
+
+Left, with causes:
+- The item card (`uil_a21_item_info.xml`, `equip_arms` at the item-info position (354, 7), the paper `gen_a21_item_info02_win_l`, the
+  equipped-by panel `fl_sub2` at (38, 568), the name, level, quality bar, Effect, Status, Role and Potential panels from
+  `uil_a21_item_info_clone_targets.xml`): about 650 of 2290's quads. Not built: it needs the item table's effects, status, roles and the
+  save's item unit (potentials), none of which are read yet; the layouts and styles (`uis_gen_a21_item_info.xml`, loaded) are ready.
+- The cursor blink's clock is one frame behind Barrel's from 2440 on (1 mismatch each: 2430 to 2490), the game's own hitch or a clock rule not
+  found; the character change (2380 to 2400: the figure and name slide, 2 or 3 quads), the page coming in and the card sliding out
+  (2300 to 2320, 2150 to 2200) and going out (2500+) are not animated.
+- The Status page is not drawn.

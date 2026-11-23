@@ -7,8 +7,9 @@
 //! its string, font and colour (with the nine-copy outline of `bold_size`). What the game's code decides (which
 //! nodes show, the numbers, the item pictures) is given to the walker as a list of overrides by node path.
 //!
-//! Only the page's steady state is drawn; the item card, the title plate, the party icons, the help bar, the
-//! element resists and every animation are not (docs/ryza/open.md, "Field menu, part 6").
+//! Drawn: the figure, the four slots, the stat panel with the element resists, the party icons, the title plate and (by
+//! `field_menu::View::page_help`) the help bar, with the cursor's blink and the party icons' animations. Not drawn: the item card, the
+//! slides and fades of the page's coming and going (docs/ryza/open.md, "Field menu, part 7").
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -17,6 +18,7 @@ use barrel_render::text::{Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
 use crate::load_view::TEXT_TOP;
+use crate::options_view::segments;
 use crate::title::{numbers, pair, LAYOUT_HEIGHT};
 
 /// The page layer's textures: the two fonts and the white, then the styles' (`Page::wanted`).
@@ -32,6 +34,29 @@ const STYLE_OVER_TEXTURE: f32 = 2.0;
 /// `STR_UI_nnnn` is the string numbered `STR_UI_BASE + nnnn`.
 const STR_UI_BASE: u32 = 6_619_137;
 const OUTLINE_ALPHA: f32 = 0.5;
+/// The title plate's string ("Equipment"; the game's code names it, the layout's is another).
+/// The help bar's plate: texture 3 of `a21_common.g1t`.
+const HELP_PLATE: usize = 3;
+const EQUIPMENT_TITLE: u32 = 6_684_752;
+/// The party icons' places in the layout.
+const ICON_PLACES: usize = 9;
+// STAND-IN: the shoulder buttons' glyphs (private-use characters of `MainFont00`) are the capture's; the game picks them by the pad's assignment
+// (`STR_QUICK_MENU_DEFINE_331` and `_332`).
+const BUTTON_SIZE: f32 = 24.0;
+const BLINK_FRAMES: f32 = 120.0;
+/// STAND-IN: the cursor's blink is read from the frame before the key's (`field-menu-equip`: DOWN on 2300, the opacity of 217/255 on
+/// 2410, 111 frames into the curve).
+pub const BLINK_LAG: f32 = 1.0;
+/// The icon highlight's animations: a turn in 360 frames; the glow's 100 frames, its opacity peak (frame 2.82, 100 of 255) and a lag
+/// STAND-IN fitted to the capture's opacity of 33/255 on 2410.
+const ROTATION_FRAMES: f32 = 360.0;
+const EFFECT_FRAMES: f32 = 100.0;
+const EFFECT_PEAK: f32 = 2.818_787_6;
+const EFFECT_ALPHA: f32 = 100.0 / 255.0;
+const EFFECT_LAG: f32 = 2.1;
+const CENTER_LIFT: f32 = 0.6875;
+const LEFT_BUTTON: char = '\u{4e6}';
+const RIGHT_BUTTON: char = '\u{4ea}';
 const BROWN: [f32; 4] = [26.0, 0.0, 0.0, 255.0];
 
 /// What the page reads from the game's files, by install path (`\saves\ui_en\...`).
@@ -46,16 +71,26 @@ struct Pic {
     path: String,
     index: usize,
     uvwh: [f32; 4],
+    /// Style pixels to a layout pixel (3 for a style file of `resolution_hd` 2160, 1.5 for 1080) and to a texture pixel (2 or 1).
+    per_layout: f32,
+    over_texture: f32,
+    /// A `wrap` picture's margins (left, top, right, bottom): a nine-slice whose middle repeats.
+    edges: Option<[f32; 4]>,
 }
 
 /// What a page shows: the member whose page it is and the slot under the cursor.
 pub struct Look<'a> {
     pub member: &'a crate::field_menu::Member,
+    /// The party in the menu's order and the place of `member` in it (the party icons at the top right).
+    pub party: &'a [crate::field_menu::Member],
+    pub card: usize,
     pub item_images: &'a dyn Fn(u16) -> usize,
     /// The slot (0 weapon, 1 armour, 2 and 3 accessories) the cursor is on.
     pub slot: usize,
     /// Frames since the page's first.
     pub age: f32,
+    /// Frames the cursor has been on its slot (its blink's clock).
+    pub slot_age: f32,
 }
 
 /// A node the game's code changes: shown or hidden outright, another picture or another text.
@@ -65,6 +100,16 @@ struct Over {
     hide: bool,
     image_no: Option<usize>,
     text: Option<String>,
+    /// A multiplier of the node's own opacity.
+    alpha: Option<f32>,
+    /// Another place for the node, in its parent's layout pixels.
+    at: Option<[f32; 2]>,
+    /// A text's size (layout pixels) and colour (0 to 1) where the layout names none.
+    size: Option<f32>,
+    color: Option<[f32; 4]>,
+    /// The node's turn (degrees clockwise) and scale where an animation sets them.
+    turn: Option<f32>,
+    scale: Option<f32>,
 }
 
 pub struct Page {
@@ -76,11 +121,17 @@ pub struct Page {
     equip: Element,
     chara: Element,
     status: Element,
+    /// The title plate's layout (`uil_a21_caption.xml`) and the party icons' (`uil_a21_menu_faceicon.xml`).
+    caption: Element,
+    faces: Element,
     glyphs: [HashMap<char, Glyph>; 2],
 }
 
 /// The style files the layouts' styles are in.
-const STYLE_FILES: [&str; 9] = [
+const STYLE_FILES: [&str; 12] = [
+    "ui_en\\gen_styles\\uis_gen_a21_item_info.xml",
+    "ui_en\\gen_styles\\uis_gen_a21_caption.xml",
+    "ui_cmn\\etc\\uis_a21_category_image.xml",
     "ui_cmn\\gen_styles\\uis_gen_a21_btl_equip.xml",
     "ui_cmn\\gen_styles\\uis_gen_a21_common.xml",
     "ui_cmn\\gen_styles\\uis_gen_a21_icon.xml",
@@ -92,8 +143,8 @@ const STYLE_FILES: [&str; 9] = [
     "ui_cmn\\etc\\uis_a21_bg.xml",
 ];
 
-fn texture_path(texture: &str) -> String {
-    format!("\\data\\x64\\res_cmn\\{}", texture.replace('/', "\\"))
+fn texture_path(texture: &str, english: bool) -> String {
+    format!("\\data\\x64\\{}\\{}", if english { "res_en" } else { "res_cmn" }, texture.replace('/', "\\"))
 }
 
 impl Page {
@@ -102,12 +153,17 @@ impl Page {
         let read = |p: &str| (files.read)(&format!("\\saves\\{p}"));
         let layout = |name: &str| -> Result<Element, String> { table::parse(&read(&format!("ui_en\\a21_main_menu\\{name}"))?).map_err(|e| format!("{name}: {e}")) };
         let (equip, chara, status) = (layout("uil_a21_menu_equip.xml")?, layout("uil_a21_menu_chara.xml")?, layout("uil_a21_menu_chara_status.xml")?);
+        let faces = layout("uil_a21_menu_faceicon.xml")?;
+        let caption = table::parse(&read("ui_en\\a21_caption\\uil_a21_caption.xml")?).map_err(|e| format!("uil_a21_caption: {e}"))?;
         let mut styles: HashMap<String, Vec<Pic>> = HashMap::new();
         for f in STYLE_FILES {
             let root = table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?;
+            // A style file's `resolution_hd` says which screen height its pixels are for: 2160 (the default) or 1080.
+            let (per_layout, over_texture) = if root.attr("resolution_hd").map(str::trim) == Some("1080") { (PER_LAYOUT / 2.0, 1.0) } else { (PER_LAYOUT, STYLE_OVER_TEXTURE) };
             let pic = |e: &Element| -> Option<Pic> {
                 let uvwh = numbers(e, "uvwh").try_into().ok()?;
-                Some(Pic { path: texture_path(e.attr("texture")?), index: e.attr("texture_index")?.trim().parse().ok()?, uvwh })
+                let edges = (e.attr("prim_type") == Some("wrap")).then(|| numbers(e, "edge_margin")).and_then(|m| m.try_into().ok());
+                Some(Pic { path: texture_path(e.attr("texture")?, f.starts_with("ui_en")), index: e.attr("texture_index")?.trim().parse().ok()?, uvwh, per_layout, over_texture, edges })
             };
             for e in &root.children {
                 let Some(name) = e.attr("name") else { continue };
@@ -118,7 +174,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status] {
+        for doc in [&equip, &chara, &status, &caption, &faces] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -140,6 +196,7 @@ impl Page {
                 }
             }
         }
+        wanted.insert((texture_path("ui/a21_common.g1t", false), HELP_PLATE));
         let wanted: Vec<(String, usize)> = wanted.into_iter().collect();
         let sizes = wanted
             .iter()
@@ -155,9 +212,14 @@ impl Page {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (STR_UI_BASE..STR_UI_BASE + 1000).contains(n) || (262_148..262_188).contains(n))
+            .filter(|(n, _)| (STR_UI_BASE..STR_UI_BASE + 1000).contains(n) || (262_148..262_188).contains(n) || *n == EQUIPMENT_TITLE)
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, glyphs: files.glyphs })
+    }
+
+    /// The layer's texture of the help bar's plate (the menu's GUIDE).
+    pub fn help_texture(&self) -> usize {
+        self.wanted.iter().position(|(p, i)| p.ends_with("a21_common.g1t") && *i == HELP_PLATE).map_or(WHITE, |i| FIXED + i)
     }
 
     /// The layer's textures after the fonts and the white: (install path, texture index).
@@ -168,7 +230,7 @@ impl Page {
     /// The page's quads in draw order on a `screen` of pixels.
     pub fn quads(&self, look: &Look, screen: (u32, u32)) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, out: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
 
         // The character's figure (`uil_a21_menu_chara.xml`'s `chara_image_1`, whose place the equip layout sets: `chara_image_pos`).
@@ -183,6 +245,9 @@ impl Page {
         let names = ["weapon", "armor", "accessory1", "accessory2"];
         if let Some(top) = find(&self.equip, "equip") {
             let slots = |path: &[&str]| -> Over {
+                if let [.., "hilight", "__uimenu_cursor_active"] = path {
+                    return Over { alpha: Some(blink(look.slot_age)), ..Default::default() };
+                }
                 let (slot, part) = match path {
                     [.., s, p] => (names.iter().position(|n| n == s), *p),
                     _ => (None, ""),
@@ -215,36 +280,85 @@ impl Page {
                     [.., "hp", "parent", "current", "value"] => Over { text: Some(s.hp.to_string()), ..Default::default() },
                     [.., "param", "hp", "parent", "max", "now"] => Over { show: true, text: Some(s.hp.to_string()), ..Default::default() },
                     [.., "param", stat, "now"] => Over { text: values.iter().find(|(n, _)| n == stat).map(|(_, v)| v.clone()), ..Default::default() },
-                    [.., "change"] | [.., "role"] | [.., "att_d"] | [.., "role_info"] | [.., "clone_targets"] | [.., "change_template"] | [.., "updown"] => Over { hide: true, ..Default::default() },
+                    [.., "change"] | [.., "role"] | [.., "role_info"] | [.., "clone_targets"] | [.., "change_template"] | [.., "updown"] => Over { hide: true, ..Default::default() },
+                    // The element resists: a picture each (the "off" one and the arrows are for a resist the game's code sets).
+                    [.., "att_d", "resist", "list", _, "icon" | "resist_state_icon"] => Over { hide: true, ..Default::default() },
                     ["top", "status", "text"] => Over { text: Some(name.clone()), ..Default::default() },
                     _ => Over::default(),
                 }
             };
             w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &panel, &HashMap::new());
         }
+
+        // The party's icons, with the shoulder buttons' glyphs at their ends (`uil_a21_menu_faceicon.xml`). The icons fill
+        // the last places of the nine (STAND-IN: the capture's party of three is at the 7th to 9th); the left button's node
+        // goes to the first icon's place.
+        if let Some(top) = find(&self.faces, "top") {
+            let n = look.party.len().min(ICON_PLACES);
+            let first = ICON_PLACES - n;
+            let place = |name: &str| name.strip_prefix("face_icon").and_then(|i| i.parse::<usize>().ok()).and_then(|i| i.checked_sub(1 + first));
+            let first_x = find_pos(&self.faces, &format!("face_icon{:02}", first + 1)).map_or(0.0, |p| p[0]);
+            // The icons' animations run from A on the card (`anm_a21_menu_faceicon_rotation` and `_expandEff`, looping).
+            let clock = look.age + crate::field_menu::PAGE_AT;
+            let eff = (clock - EFFECT_LAG).rem_euclid(EFFECT_FRAMES);
+            let glow = if eff < EFFECT_PEAK { eff / EFFECT_PEAK } else { (EFFECT_FRAMES - eff) / (EFFECT_FRAMES - EFFECT_PEAK) } * EFFECT_ALPHA;
+            let glow = (glow * 255.0).round() / 255.0;
+            let icons = |path: &[&str]| -> Over {
+                match path {
+                    ["top", "icon", icon] if place(icon).is_none_or(|i| i >= n) => Over { hide: true, ..Default::default() },
+                    ["top", "icon", icon, "hilight"] => Over { show: place(icon) == Some(look.card), turn: Some(clock.rem_euclid(ROTATION_FRAMES) * 360.0 / ROTATION_FRAMES), ..Default::default() },
+                    ["top", "icon", _, "hilight", "hilight_eff"] => Over { scale: Some(1.0 + 0.2 * (1.0 - (-10.0 * eff / EFFECT_FRAMES).exp2())), alpha: Some(glow), ..Default::default() },
+                    ["top", "icon", icon, "face"] => Over { image_no: place(icon).and_then(|i| look.party.get(i)).map(|m| usize::from(m.id)), ..Default::default() },
+                    ["top", "btn", "L2_node"] => Over { at: Some([first_x, 16.0]), ..Default::default() },
+                    ["top", "btn", "L2_node", "select_L"] => Over { text: Some(LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                    ["top", "btn", "select_R"] => Over { text: Some(RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                    [_] => Over { show: true, ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &icons, &HashMap::new());
+        }
+
+        // The title plate (`uil_a21_caption.xml`).
+        if let Some(top) = find(&self.caption, "top") {
+            let plate = |path: &[&str]| -> Over {
+                match path {
+                    ["top"] => Over { show: true, ..Default::default() },
+                    [.., "caption_text"] => Over { text: self.strings.get(&EQUIPMENT_TITLE).cloned(), ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new());
+        }
         w.out
     }
 
-    /// A style's picture `n` as its slot in the layer and its place in the atlas as uv.
-    fn picture(&self, style: &str, n: usize) -> Option<(usize, [f32; 4], [f32; 2])> {
+    /// A style's picture `n`, its slot in the layer and its texture's size in style pixels.
+    fn picture(&self, style: &str, n: usize) -> Option<(usize, &Pic, [f32; 2])> {
         let list = self.styles.get(style)?;
         let p = list.get(n).or_else(|| list.first())?;
         let slot = self.wanted.iter().position(|(path, i)| *path == p.path && *i == p.index)?;
         let (tw, th) = self.sizes[slot];
-        let (aw, ah) = (tw as f32 * STYLE_OVER_TEXTURE, th as f32 * STYLE_OVER_TEXTURE);
-        let uv = [p.uvwh[0] / aw, p.uvwh[1] / ah, (p.uvwh[0] + p.uvwh[2]) / aw, (p.uvwh[1] + p.uvwh[3]) / ah];
-        Some((FIXED + slot, uv, [p.uvwh[2] / PER_LAYOUT, p.uvwh[3] / PER_LAYOUT]))
+        Some((FIXED + slot, p, [tw as f32 * p.over_texture, th as f32 * p.over_texture]))
     }
 
     /// The node a `copy` names: its first definition with children, in the equip or status layout.
     fn template(&self, name: &str) -> Option<&Element> {
-        [&self.equip, &self.status].into_iter().find_map(|doc| find_with_children(doc, name))
+        [&self.equip, &self.status, &self.faces].into_iter().find_map(|doc| find_with_children(doc, name))
     }
 
     fn string(&self, id: &str) -> Option<&str> {
         let n: u32 = id.strip_prefix("STR_UI_")?.parse().ok()?;
         self.strings.get(&(STR_UI_BASE + n)).map(String::as_str)
     }
+}
+
+/// `anm_common_blink`: the opacity goes from whole to none and back in 120 frames (a byte's steps), looping.
+fn blink(frames: f32) -> f32 {
+    let t = frames.rem_euclid(BLINK_FRAMES);
+    let half = BLINK_FRAMES / 2.0;
+    let a = if t < half { 1.0 - t / half } else { (t - half) / half };
+    (a * 255.0).round() / 255.0
 }
 
 fn collect_styles(e: &Element, out: &mut BTreeSet<String>) {
@@ -292,6 +406,8 @@ impl Xf {
 
 struct Walker<'a> {
     page: &'a Page,
+    /// Screen pixels to a layout pixel.
+    screen_k: f32,
     out: Vec<Quad>,
 }
 
@@ -316,7 +432,21 @@ impl Walker<'_> {
         let hidden = (e.attr("visible") == Some("false") && !o.show) || o.hide;
         if !hidden && e.name != "usuals" && e.name != "clone_targets" && name != "clone_targets" && name != "usuals" {
             // This node itself: its place from the node's own attributes (the start node's place is the caller's).
-            let me = if path.len() == 1 { xf } else { xf.node(pair(e, "pos", [0.0; 2]), numbers(e, "rot").get(2).copied().unwrap_or(0.0), pair(e, "scale", [1.0; 2])) };
+            let me = if path.len() == 1 {
+                xf
+            } else {
+                let turn = o.turn.unwrap_or_else(|| numbers(e, "rot").get(2).copied().unwrap_or(0.0));
+                let scale = o.scale.map_or_else(|| pair(e, "scale", [1.0; 2]), |s| [s; 2]);
+                let mut at = o.at.unwrap_or_else(|| pair(e, "pos", [0.0; 2]));
+                if e.attr("pivot_pos_preset") == Some("center") {
+                    // Turned and scaled about the picture's centre: the corner moves so the centre stays.
+                    let c = self.node_size(e).map(|v| v / 2.0);
+                    let (sin, cos) = turn.to_radians().sin_cos();
+                    let moved = [cos * scale[0] * c[0] - sin * scale[1] * c[1], sin * scale[0] * c[0] + cos * scale[1] * c[1]];
+                    at = [at[0] + c[0] - moved[0], at[1] + c[1] - moved[1]];
+                }
+                xf.node(at, turn, scale)
+            };
             match e.name.as_str() {
                 "image" => self.image(e, me, &o),
                 "text" => self.text(e, me, &o),
@@ -345,18 +475,50 @@ impl Walker<'_> {
         path.pop();
     }
 
+    /// An image node's size in layout pixels: its own or its picture's.
+    fn node_size(&self, e: &Element) -> [f32; 2] {
+        let natural = e.attr("style").and_then(|st| self.page.picture(st, 0)).map_or([0.0; 2], |(_, p, _)| [p.uvwh[2] / p.per_layout, p.uvwh[3] / p.per_layout]);
+        let wh = numbers(e, "size_wh");
+        [numbers(e, "size_w").first().or(wh.first()).copied().unwrap_or(natural[0]), numbers(e, "size_h").first().or(wh.get(1)).copied().unwrap_or(natural[1])]
+    }
+
     fn image(&mut self, e: &Element, xf: Xf, o: &Over) {
         let Some(style) = e.attr("style") else { return };
         let n = o.image_no.or_else(|| e.attr("image_no").and_then(|v| v.trim().parse().ok())).unwrap_or(0);
-        let Some((texture, uv, natural)) = self.page.picture(style, n) else { return };
+        let Some((texture, p, (aw, ah))) = self.page.picture(style, n).map(|(t, p, a)| (t, p, (a[0], a[1]))) else { return };
+        let natural = [p.uvwh[2] / p.per_layout, p.uvwh[3] / p.per_layout];
         let size = {
             let wh = numbers(e, "size_wh");
             let (w, h) = (numbers(e, "size_w").first().copied(), numbers(e, "size_h").first().copied());
             [w.or(wh.first().copied()).unwrap_or(natural[0]), h.or(wh.get(1).copied()).unwrap_or(natural[1])]
         };
         let c = numbers(e, "color");
-        let color = if c.len() >= 4 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0] } else { [1.0; 4] };
-        let corners = [xf.apply([0.0, 0.0]), xf.apply([size[0], 0.0]), xf.apply(size), xf.apply([0.0, size[1]])];
+        let mut color = if c.len() >= 4 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0] } else { [1.0; 4] };
+        color[3] *= o.alpha.unwrap_or(1.0);
+        match p.edges {
+            // A nine-slice: each margin at its size, the middle repeated (`options_view::segments`), rows then columns.
+            Some([l, t, r, b]) => {
+                let u = 1.0 / p.per_layout;
+                let cols = segments(size[0], l, p.uvwh[2] - l - r, r, u);
+                let rows = segments(size[1], t, p.uvwh[3] - t - b, b, u);
+                for row in &rows {
+                    for col in &cols {
+                        let src = [p.uvwh[0] + col.2, p.uvwh[1] + row.2, col.3, row.3];
+                        let at = [col.0, row.0];
+                        self.piece(xf, at, [col.1, row.1], [src[0] / aw, src[1] / ah, (src[0] + src[2]) / aw, (src[1] + src[3]) / ah], color, texture);
+                    }
+                }
+            }
+            None => {
+                let uv = [p.uvwh[0] / aw, p.uvwh[1] / ah, (p.uvwh[0] + p.uvwh[2]) / aw, (p.uvwh[1] + p.uvwh[3]) / ah];
+                self.piece(xf, [0.0; 2], size, uv, color, texture);
+            }
+        }
+    }
+
+    /// A quad of `size` layout pixels at `at` in the node `xf`.
+    fn piece(&mut self, xf: Xf, at: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4], texture: usize) {
+        let corners = [xf.apply(at), xf.apply([at[0] + size[0], at[1]]), xf.apply([at[0] + size[0], at[1] + size[1]]), xf.apply([at[0], at[1] + size[1]])];
         let (x0, x1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
         let (y0, y1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
         let upright = xf.b.abs() < 1e-6 && xf.c.abs() < 1e-6;
@@ -368,11 +530,14 @@ impl Walker<'_> {
         let Some(string) = string else { return };
         let font = usize::from(e.attr("font") != Some("MainFont01"));
         let glyphs = &self.page.glyphs[font];
-        let k = xf.a.hypot(xf.b);
-        let size = e.attr("font_size").and_then(|v| v.trim().parse().ok()).unwrap_or(17.0);
-        let s = size * k / ATLAS_SIZE;
+        // The node's scale may differ along the two axes (a label squeezed to fit).
+        let (k, ky) = (xf.a.hypot(xf.b), xf.c.hypot(xf.d));
+        let size = e.attr("font_size").and_then(|v| v.trim().parse().ok()).or(o.size).unwrap_or(17.0);
+        let (s, sy) = (size * k / ATLAS_SIZE, size * ky / ATLAS_SIZE);
         // STAND-IN: the glyphs' spacing, as `field_menu`'s text: 0.25 px of 1080 lines for each layout size above 12 times `word_space`.
-        let spacing = e.attr("word_space").and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * 0.25 * (size - 12.0).max(0.0) * k / 1.5;
+        // (A node squeezed to `kx` of the layout scale takes the cube of it: "Equip Quality" at 0.92.)
+        let squeeze = (k / self.screen_k).powi(2);
+        let spacing = e.attr("word_space").and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * 0.25 * (size - 12.0).max(0.0) * k / 1.5 * squeeze;
         let advance = |g: &Glyph| g.advance as f32 * s + spacing;
         let width: f32 = string.chars().filter_map(|c| glyphs.get(&c)).map(advance).sum();
         let [x, y] = xf.apply([0.0, 0.0]);
@@ -381,7 +546,9 @@ impl Walker<'_> {
             Some("right") => x - width,
             _ => x,
         };
-        let top = y + TEXT_TOP * k;
+        // STAND-IN: `align_v="center"` lifts the line by this share of the font size (fitted to the shoulder buttons' glyphs).
+        let lift = if e.attr("align_v") == Some("center") { size * k * CENTER_LIFT } else { 0.0 };
+        let top = y + TEXT_TOP * ky - lift;
         let color = {
             let c = numbers(e, "font_color");
             let c: [f32; 4] = if c.len() >= 4 {
@@ -391,14 +558,14 @@ impl Walker<'_> {
             } else {
                 BROWN
             };
-            c.map(|v| v / 255.0)
+            o.color.filter(|_| numbers(e, "font_color").len() < 4).unwrap_or_else(|| c.map(|v| v / 255.0))
         };
         let mut run = |dx: f32, dy: f32, color: [f32; 4]| {
             let mut pen = left + dx;
             for g in string.chars().filter_map(|c| glyphs.get(&c)) {
                 let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.width as f32, g.height as f32);
-                let (x0, y0) = (pen + g.x_offset as f32 * s, top + dy + g.y_offset as f32 * s);
-                self.out.push(Quad { turn: false, spin: None, rect: [x0, y0, x0 + gw * s, y0 + gh * s], uv: [gx / 4096.0, gy / 2048.0, (gx + gw) / 4096.0, (gy + gh) / 2048.0], color, texture: if font == 0 { FONT01 } else { FONT00 } });
+                let (x0, y0) = (pen + g.x_offset as f32 * s, top + dy + g.y_offset as f32 * sy);
+                self.out.push(Quad { turn: false, spin: None, rect: [x0, y0, x0 + gw * s, y0 + gh * sy], uv: [gx / 4096.0, gy / 2048.0, (gx + gw) / 4096.0, (gy + gh) / 2048.0], color, texture: if font == 0 { FONT01 } else { FONT00 } });
                 pen += advance(g);
             }
         };
@@ -421,4 +588,42 @@ fn find_with_children<'a>(e: &'a Element, name: &str) -> Option<&'a Element> {
         return Some(e);
     }
     e.children.iter().find_map(|c| find_with_children(c, name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blink_goes_down_and_up_in_120_frames() {
+        assert_eq!(blink(0.0), 1.0);
+        assert_eq!(blink(60.0), 0.0);
+        assert_eq!(blink(120.0), 1.0);
+        // `field-menu-equip` 2410: 111 frames in, 217 of 255.
+        assert_eq!(blink(111.0), 217.0 / 255.0);
+        assert_eq!(blink(231.0), blink(111.0));
+    }
+
+    #[test]
+    fn a_turned_node_keeps_its_centre() {
+        let root = Xf { a: 1.0, b: 0.0, c: 0.0, d: 1.0, x: 0.0, y: 0.0 };
+        // A 10 x 10 picture turned 90 degrees about its centre (5, 5): the corner moves to (10, 0).
+        let (turn, c) = (90.0f32, [5.0f32, 5.0]);
+        let (sin, cos) = turn.to_radians().sin_cos();
+        let at = [c[0] - (cos * c[0] - sin * c[1]), c[1] - (sin * c[0] + cos * c[1])];
+        let xf = root.node(at, turn, [1.0; 2]);
+        let centre = xf.apply(c);
+        assert!((centre[0] - 5.0).abs() < 1e-4 && (centre[1] - 5.0).abs() < 1e-4);
+        let corner = xf.apply([0.0, 0.0]);
+        assert!((corner[0] - 10.0).abs() < 1e-4 && corner[1].abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_wrap_picture_repeats_its_middle() {
+        // A line 486 pixels wide (324 layout pixels at 1.5): 25 pixel caps and the middle in tiles of 140.
+        let cols = segments(324.0, 50.0, 100.0, 50.0, 0.5);
+        assert_eq!(cols.first().map(|c| c.1), Some(25.0));
+        assert_eq!(cols.last().map(|c| c.1), Some(25.0));
+        assert!(cols.iter().map(|c| c.1).sum::<f32>() - 324.0 < 0.01);
+    }
 }
