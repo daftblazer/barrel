@@ -141,6 +141,11 @@ struct Stable {
     terrain_layout: vk::DescriptorSetLayout,
     look_ring: ring::Ring,
     black_cube: (vk::Image, vk::DeviceMemory, vk::ImageView),
+    /// The shadow map, its static layer's state and the sun's share, kept when the shadows'
+    /// settings stay: the static layer was drawn when its square last moved (the game's
+    /// semi-static map), and the sun's share eases from the value kept the frame before; made
+    /// again, both would start over and the picture would differ from a run that never changed.
+    shadow: Option<(shadow::ShadowTarget, shadow::Far, flare::Sun)>,
 }
 
 impl Stable {
@@ -219,7 +224,7 @@ impl Stable {
         // A black cube map for the fields that have no specular one.
         let black = [0u8; 48];
         let black_cube = upload_cube(&gpu, pool, &barrel_formats::g1t::Texture { width: 1, height: 1, format: barrel_formats::g1t::Format::Rgba16f, format_code: 0, layers: 6, volume: false, levels: vec![&black[..]] })?;
-        Ok(Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube })
+        Ok(Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube, shadow: None })
     }
 }
 
@@ -492,11 +497,14 @@ impl Renderer {
                 None,
             )?
         };
-        let Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube } = match keep {
+        let Stable { pool, set_layout, instance_layout, terrain_layout, look_ring, black_cube, shadow: kept_shadow } = match keep {
             Some(stable) => stable,
             None => Stable::new(gpu)?,
         };
-        let shadow_target = shadow::ShadowTarget::new(&gpu, settings.shadows)?;
+        let (shadow_target, far_shadow, kept_sun) = match kept_shadow {
+            Some((target, far, sun)) => (target, far, Some(sun)),
+            None => (shadow::ShadowTarget::new(&gpu, settings.shadows)?, shadow::Far::default(), None),
+        };
         let shared = scene_gpu::Shared {
             set_layout,
             sampler,
@@ -625,7 +633,13 @@ impl Renderer {
         write_filter(&gpu, &post_sets, post_sampler, filter.2);
         // The depth of field's three textures (bound for real by `dof.rs`): a placeholder until then.
         write_dof_placeholder(&gpu, &post_sets, post_sampler, filter.2);
-        let sun = flare::Sun::new(&gpu, (shadow_target.view, shadow_target.sampler), post_sampler)?;
+        let sun = match kept_sun {
+            Some(sun) => {
+                sun.rebind(&gpu, (shadow_target.view, shadow_target.sampler), post_sampler);
+                sun
+            }
+            None => flare::Sun::new(&gpu, (shadow_target.view, shadow_target.sampler), post_sampler)?,
+        };
         write_wash(&gpu, &post_sets, post_sampler, &sun);
         let glow_pipelines = glow::Pipelines::new(&gpu, settings.hdr_scene)?;
         let upscale_mode = if settings.upscaler == settings::Upscaler::Gsr1 && settings.upscales() { upscale::Mode::Gsr1 } else { upscale::Mode::Fsr1 };
@@ -1017,7 +1031,7 @@ impl Renderer {
 
 
         write_refraction_set(d, refraction_set, refraction_sampler, targets.refraction_view);
-        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, shadow_opaque_pipelines, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: Default::default(), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
+        Ok(Renderer { reflect, dof, water_passes, refraction_set, refraction_pool, refraction_sampler, forward_pipeline, pool, sampler, set_layout, look_ring, instance_layout, terrain_layout, shadow_target, sun, shared, extent, offscreen, color_view, samples, render_pass, post_pass, post_set_layout, post_pool, post_sets, post_sampler, filter, glow_pipelines, upscale_pipelines, taa_pipelines, gsr2_pipelines, fsr3_pipelines, timer, targets, vs, fs, pipeline_layout, pipeline, pipeline_two_sided, scene_pipelines, sky_pipeline, sky_plane_pipeline, sky_vs, sky_fs, outline_pipeline, shadow_fs, shadow_pipeline, shadow_cascade_fs, shadow_cascade_pipeline, shadow_opaque_pipelines, ao, ao_gbuf_pipeline, ao_gbuf_two_sided_pipeline, ao_gbuf_terrain_pipeline, post_vs, post_fs, post_layout, post_pipeline, black_cube, terrain_gpu, settings, show_motion, far_shadow: std::cell::RefCell::new(far_shadow), cloud_set_layout, cloud_layout, cloud_pipeline, cloud_modules, water_pipeline, water_far_pipeline, water_modules, clouds: Default::default(), fixed_cloud_map: None, dump: dump::Dump::from_env(), upto: std::cell::Cell::new(dump::Stop::Full) })
     }
 
     /// Records a frame into `cb`: the shadow map, the scene, glow and the anti-aliasing or
@@ -1782,7 +1796,7 @@ impl Renderer {
 
     /// Everything it made, gone (the device idle first); the GPU timings reported.
     pub fn destroy(self, gpu: &Gpu) -> Result<()> {
-        let stable = self.release(gpu)?;
+        let stable = self.release(gpu, None)?;
         let d = &gpu.device;
         unsafe {
             d.destroy_descriptor_set_layout(stable.terrain_layout, None);
@@ -1808,7 +1822,7 @@ impl Renderer {
     pub fn apply_settings(self, gpu: &Gpu, presenter: Option<&Presenter>, settings: RenderSettings) -> Result<Renderer> {
         let (width, height, timings, show_motion) = (self.extent.width, self.extent.height, self.timer.is_some(), self.show_motion);
         let fixed_cloud_map = self.fixed_cloud_map.clone();
-        let stable = self.release(gpu)?;
+        let stable = self.release(gpu, Some(settings.shadows))?;
         let mut renderer = Renderer::build(gpu, settings, presenter, width, height, timings, show_motion, Some(stable))?;
         renderer.fixed_cloud_map = fixed_cloud_map;
         Ok(renderer)
@@ -1816,7 +1830,7 @@ impl Renderer {
 
     /// Everything the settings shaped, gone (the device idle first); what they did not shape is
     /// handed back.
-    fn release(mut self, gpu: &Gpu) -> Result<Stable> {
+    fn release(mut self, gpu: &Gpu, next_shadows: Option<shadow::Shadows>) -> Result<Stable> {
         let d = &gpu.device;
         unsafe {
             d.device_wait_idle()?;
@@ -1873,7 +1887,6 @@ impl Renderer {
             if let Some(m) = self.clouds.take() {
                 m.destroy(gpu);
             }
-            self.sun.destroy(gpu);
             d.destroy_pipeline(self.pipeline, None);
             d.destroy_pipeline_layout(self.pipeline_layout, None);
             d.destroy_shader_module(self.vs, None);
@@ -1906,7 +1919,13 @@ impl Renderer {
             }
             d.destroy_sampler(self.sampler, None);
         }
-        self.shadow_target.destroy(gpu);
+        let shadow = if next_shadows == Some(self.settings.shadows) {
+            Some((self.shadow_target, self.far_shadow.into_inner(), self.sun))
+        } else {
+            self.shadow_target.destroy(gpu);
+            self.sun.destroy(gpu);
+            None
+        };
         if let Some(r) = self.reflect.take() {
             r.destroy(gpu);
         }
@@ -1914,7 +1933,7 @@ impl Renderer {
             dof.destroy(gpu);
         }
         self.ao.destroy(gpu);
-        Ok(Stable { pool: self.pool, set_layout: self.set_layout, instance_layout: self.instance_layout, terrain_layout: self.terrain_layout, look_ring: self.look_ring, black_cube: self.black_cube })
+        Ok(Stable { pool: self.pool, set_layout: self.set_layout, instance_layout: self.instance_layout, terrain_layout: self.terrain_layout, look_ring: self.look_ring, black_cube: self.black_cube, shadow })
     }
 }
 

@@ -1763,6 +1763,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut leave = barrel_ryza::leave::Leave::default();
     let mut discard = false;
     let mut apply_settings = false;
+    let reapply_at = std::env::var("BARREL_REAPPLY_AT").ok().and_then(|v| v.parse::<u32>().ok());
     let mut scripted_saved = false;
     let mut was_in_settings = false;
     let mut scripted_holds: Vec<barrel_ryza::title_menu::Hold> = Vec::new();
@@ -1976,6 +1977,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         // The settings were saved with Yes: the render settings and the presets they come to
         // are applied now, in this run (`Renderer::apply_settings`), as a fresh start with the
         // saved config would have them.
+        // `BARREL_REAPPLY_AT=N`: the same settings applied again at frame N, a check that a
+        // renderer made again draws as the one it replaces (tools/live-settings.sh `same`).
+        if reapply_at == Some(frame_no as u32) {
+            let s = renderer.settings;
+            renderer = renderer.apply_settings(&gpu, presenter.as_ref(), s)?;
+            scene.rebind(&gpu, &renderer.shared);
+            eprintln!("settings: applied again (frame {frame_no})");
+        }
         if std::mem::take(&mut apply_settings) {
             let config = read_config();
             let now = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);

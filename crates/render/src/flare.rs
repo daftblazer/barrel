@@ -149,18 +149,25 @@ impl Sun {
             let pool = d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(2).pool_sizes(&sizes), None)?;
             let set_layouts = [set_layout; 2];
             let sets: [vk::DescriptorSet; 2] = d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(pool).set_layouts(&set_layouts))?.try_into().unwrap();
-            // Set 0 reads the kept value, set 1 the value just drawn.
-            for (set, before) in sets.iter().zip([targets[KEPT].view, targets[VALUE].view]) {
-                let map = [vk::DescriptorImageInfo::default().sampler(shadow.1).image_view(shadow.0).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-                let last = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(before).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-                let writes = [
-                    vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&map),
-                    vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&last),
-                ];
-                d.update_descriptor_sets(&writes, &[]);
-            }
             let settings = gpu.buffer(size_of::<Block>() as u64, vk::BufferUsageFlags::UNIFORM_BUFFER | vk::BufferUsageFlags::TRANSFER_DST, false)?;
-            Ok(Sun { pass, set_layout, layout, modules, pipeline, pool, sets, targets, settings, unprepared: std::cell::Cell::new(true), fresh: std::cell::Cell::new(true) })
+            let sun = Sun { pass, set_layout, layout, modules, pipeline, pool, sets, targets, settings, unprepared: std::cell::Cell::new(true), fresh: std::cell::Cell::new(true) };
+            sun.rebind(gpu, shadow, sampler);
+            Ok(sun)
+        }
+    }
+
+    /// Points the sets at `shadow` (the shadow map's array view and its comparison sampler) and
+    /// reads the values through `sampler` (a renderer made again keeps its sun's share).
+    pub fn rebind(&self, gpu: &Gpu, shadow: (vk::ImageView, vk::Sampler), sampler: vk::Sampler) {
+        // Set 0 reads the kept value, set 1 the value just drawn.
+        for (set, before) in self.sets.iter().zip([self.targets[KEPT].view, self.targets[VALUE].view]) {
+            let map = [vk::DescriptorImageInfo::default().sampler(shadow.1).image_view(shadow.0).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+            let last = [vk::DescriptorImageInfo::default().sampler(sampler).image_view(before).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+            let writes = [
+                vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&map),
+                vk::WriteDescriptorSet::default().dst_set(*set).dst_binding(1).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&last),
+            ];
+            unsafe { gpu.device.update_descriptor_sets(&writes, &[]) };
         }
     }
 
