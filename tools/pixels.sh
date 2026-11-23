@@ -30,6 +30,7 @@ left)
 *) echo "no view $view" >&2; exit 2 ;;
 esac
 rm -rf "${out:?}/$view" "${out:?}/$view-pictures"
+mkdir -p "$out"
 # shellcheck disable=SC2086
 env $clocks BARREL_CLOUD_MAP="$dump/${map}_rt1024x1024.27#4.png" BARREL_DUMP_STAGES="$out/$view" SDL_AUDIO_DRIVER=dummy \
     tools/capped.sh "$bin/barrel" "${PIXELS_GAME:?the game's install folder}" s06_t_rasen "$out/$view.png" --size 1920x1080 \
