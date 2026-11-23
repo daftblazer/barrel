@@ -58,7 +58,10 @@ const CURSOR_AT: f32 = 30.0;
 /// the loop's length (`anm_cursor_on_loop`).
 const ON_FRAMES: f32 = 18.0;
 const OFF_FRAMES: f32 = 9.0;
-const LOOP_FRAMES: f32 = 120.0;
+/// The speed of the cursor's select pulse (`anim_ctrl select`).
+const SELECT_SPEED: f32 = 1.5;
+// STAND-IN: The loops run 121 frames (the animation's 120 and a frame at its end), as the Settings screen's cursor blink does (`options::BLINK_LOOP`, read off the same kind of capture); the real thing is the game's own animation clock.
+const LOOP_FRAMES: f32 = 121.0;
 /// Frames the photo and the cards fade in over (`anm_common_juvenile_fade_in` at speeds 3 and 2).
 const PHOTO_FADE: f32 = 20.0;
 const CARD_FADE: f32 = 30.0;
@@ -194,6 +197,7 @@ pub struct View {
     slide: [Curve; 2],
     slide_right: Curve,
     cursor_loop: [Curve; 2],
+    select: [Curve; 2],
     ring_loop: [Curve; 2],
 }
 
@@ -320,6 +324,7 @@ impl View {
             slide: [curve(src.anims, "anm_menu_slide_in", "color")?, curve(src.anims, "anm_menu_slide_in", "pos")?],
             slide_right: curve(src.common_anims, "anm_common_slide_in_right", "pos")?,
             cursor_loop: [curve(src.anims, "anm_cursor_on_loop", "color")?, curve(src.anims, "anm_cursor_on_loop", "scale")?],
+            select: [curve(src.anims, "anm_cursor_select", "color")?, curve(src.anims, "anm_cursor_select", "scale")?],
             ring_loop: [curve(src.anims, "anm_cursor_scale", "color")?, curve(src.anims, "anm_cursor_scale", "scale")?],
         })
     }
@@ -601,22 +606,30 @@ impl View {
             Some(off) => 1.0 - (frame - off) / OFF_FRAMES,
             None => ((frame - nav.on[i].unwrap_or(frame)) / ON_FRAMES).min(1.0),
         };
-        let scale = loop_age.map_or(1.0, |l| self.cursor_loop[1].at(l / 60.0)[0]);
-        let cyan = [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)];
-        pen.additive.push(pen.out.len());
-        let p = self.cursor.pictures[0];
-        let size = [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT];
-        pen.scaled(MENU1, p, at, size, self.pivot, scale, cyan);
-        pen.additive.push(pen.out.len());
-        let p = self.cursor_on.pictures[0];
-        pen.pic(MENU1, p, at, [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
+        let mut scale = loop_age.map_or(1.0, |l| self.cursor_loop[1].at(l / 60.0)[0]);
+        let mut alpha = alpha;
+        if let (Some(chosen), true) = (nav.chosen.filter(|&c| frame >= c), i == nav.cursor) {
+            // A pressed on it: the cursor's own pulse (`anm_cursor_select`, speed 1.5) replaces the loop.
+            let t = (frame - chosen) * SELECT_SPEED / 60.0;
+            alpha = self.select[0].at(t)[3] / 255.0;
+            scale = if t < 0.5 { self.select[1].at(t)[0] } else { 1.0 };
+        }
+        // A part at no opacity is not drawn (the game hides a node a fade has not begun on or has finished).
+        let mut part = |pen: &mut Pen, p: [f32; 4], at: [f32; 2], pivot: [f32; 2], scale: f32, color: [f32; 4]| {
+            if color[3] > 0.0 {
+                pen.additive.push(pen.out.len());
+                pen.scaled(MENU1, p, at, [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], pivot, scale, color);
+            }
+        };
+        part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)]);
+        part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
         // The ring runs from the menu's first frame, whichever button has the glow.
         let t = ((frame - nav.opened) % LOOP_FRAMES) / 60.0;
         let ring_alpha = self.ring_loop[0].at(t)[3] / 255.0 * on_alpha;
         let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
         let p = self.ring.pictures[0];
-        pen.additive.push(pen.out.len());
-        pen.scaled(MENU1, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], [p[2] / PER_LAYOUT / 2.0, p[3] / PER_LAYOUT / 2.0], ring_scale, [1.0, 1.0, 1.0, byte(ring_alpha * slide * 255.0)]);
+        let middle = [p[2] / PER_LAYOUT / 2.0, p[3] / PER_LAYOUT / 2.0];
+        part(pen, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], middle, ring_scale, [1.0, 1.0, 1.0, byte(ring_alpha * slide * 255.0)]);
     }
 
     /// The help bar: the plate and the entries' words, `along` fading in from 0 to 1.

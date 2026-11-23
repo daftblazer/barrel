@@ -672,7 +672,8 @@ struct Setup {
     names: HashMap<String, String>,
     glyphs: Option<Glyphs>,
     /// PARITY_SKIP: texture name prefixes (comma-separated) left out of the comparison on both
-    /// sides, for what a check does not cover yet (e.g. `Data/x64/Effect/` particles)
+    /// sides, for what a check does not cover yet (e.g. `Data/x64/Effect/` particles; a texture the capture
+    /// has no file name for, one the game builds at run time, is named `tex<hash>`: prefix `tex`)
     skip: Vec<String>,
 }
 
@@ -688,7 +689,8 @@ impl Setup {
     }
 
     fn skipped(&self, q: &Q) -> bool {
-        self.skip.iter().any(|p| self.names.get(&q.tex).is_some_and(|n| n.starts_with(p.as_str())))
+        let name = self.tex(&q.tex);
+        self.skip.iter().any(|p| name.starts_with(p.as_str()))
     }
 
     /// The game's quads as compared (hidden ones and skipped textures dropped, text joined),
@@ -776,12 +778,7 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
     let t = Trace { dir: trace.into() };
     let s = Setup::new(idx)?;
     let (g, other) = game_quads(&t, gframe)?;
-    let (mut g, under) = s.game(g);
-    // PARITY_SKIP_SPRITES=1: the sprites a game's effect system draws from textures it builds
-    // at run time (no file, so no name in the index) are not compared (the field menu's sparks).
-    if std::env::var_os("PARITY_SKIP_SPRITES").is_some() {
-        g.retain(|q| !q.tex.starts_with("tex"));
-    }
+    let (g, under) = s.game(g);
     let b = s.barrel(barrel_quads(barrel, bframe)?);
     let bad = compare(&s, &g, &b, |l| println!("{l}"));
     println!("{} game quads, {} Barrel quads, {bad} mismatches ({other} game draws not compared: 3D, render-target reads or transparent; {under} hidden under opaque ones)", g.len(), b.len());
