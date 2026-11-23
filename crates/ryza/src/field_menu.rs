@@ -74,6 +74,15 @@ const SLIDE_MONEY: f32 = 20.0;
 const SLIDE_PUT: f32 = 30.0;
 /// The delay between one button's slide and the next's (`get_in`: 0.04 s).
 const SLIDE_STEP: f32 = 2.4;
+/// Closing: B at frame F takes `CLOSE_LAG` frames to start; the buttons go `SLIDE` frames each, one
+/// `CLOSE_STEP` frames after the one before (`get_out`: 0.02 s), the light's `CLOSE_LIGHT_AT` frames
+/// in; the money and the level plate go at 2.25 times the pace (`get_out_mix`: 1.5 over 1.5), the corner
+/// picture at 3 (`get_out_others`); the menu is gone `BG_FADE` frames in, when the background has faded.
+pub const CLOSE_LAG: f32 = 1.0;
+const CLOSE_STEP: f32 = 1.2;
+const CLOSE_LIGHT_AT: f32 = 8.4;
+const CLOSE_MONEY_SPEED: f32 = 2.25;
+const CLOSE_PUT_SPEED: f32 = 3.0;
 /// The help bar's fade and its start after the menu's.
 const HELP_FADE: f32 = 15.0;
 const HELP_AT: f32 = 34.0;
@@ -342,13 +351,19 @@ impl View {
 /// and left each button.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Nav {
+    /// When the menu's nodes were made: the ring's loop runs from it.
     pub opened: f32,
+    /// When the buttons, cards and plates last began to come in (the first frame; again after the Settings screen), and whether the background and the photo were there already.
+    pub shown: f32,
+    pub warm: bool,
     pub closed: Option<f32>,
     pub cursor: usize,
     on: [Option<f32>; BUTTONS.len()],
     off: [Option<f32>; BUTTONS.len()],
     /// When A was pressed on the cursor's button.
     pub chosen: Option<f32>,
+    /// Whether A went on to the Settings screen (B comes back to the menu).
+    pub in_settings: bool,
 }
 
 impl Nav {
@@ -357,7 +372,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -372,9 +387,21 @@ impl Nav {
         self.cursor = next;
     }
 
+    /// B on the Settings screen at frame `at`: the menu comes in again (the cards and the buttons, over the background and the photo, which stay) with the cursor where it was.
+    pub fn back_from_settings(&mut self, at: f32) {
+        self.in_settings = false;
+        self.chosen = None;
+        self.shown = at + SETTINGS_BACK_LAG;
+        self.warm = true;
+        self.on = [None; BUTTONS.len()];
+        self.off = [None; BUTTONS.len()];
+        self.on[self.cursor] = Some(self.shown + CURSOR_AT);
+    }
+
     /// A on the cursor's button at frame `at`.
     pub fn choose(&mut self, at: f32) {
         self.chosen = Some(at);
+        self.in_settings = self.cursor == SETTINGS;
     }
 }
 
@@ -391,6 +418,9 @@ pub enum Key {
     Back,
 }
 
+/// Frames from B on the Settings screen to the menu's coming in again (`field-menu`: B at 2400, the cards from 2402).
+const SETTINGS_BACK_LAG: f32 = 2.0;
+
 /// Frames from Y to the menu's first frame (`field-menu`: Y at 1900, the first frame 1906).
 pub const OPEN_LAG: f32 = 6.0;
 
@@ -399,19 +429,24 @@ pub const OPEN_LAG: f32 = 6.0;
 pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
     let mut nav: Option<Nav> = None;
     for &(at, key) in keys {
+        if nav.as_ref().and_then(|n| n.closed).is_some_and(|c| c + CLOSE_LAG + BG_FADE <= at.min(tick)) {
+            nav = None;
+        }
         match (key, nav.as_mut()) {
             (Key::Open, None) if at + OPEN_LAG <= tick => nav = Some(Nav::open(at + OPEN_LAG)),
+            // Settings is not drawn from the menu yet (docs/ryza/open.md, "Field menu"): B leaves it as it came.
             (_, Some(n)) if at <= tick && n.closed.is_none() => match key {
-                Key::Down => n.step(1, at),
-                Key::Up => n.step(-1, at),
-                Key::Confirm => n.choose(at),
+                Key::Down if !n.in_settings => n.step(1, at),
+                Key::Up if !n.in_settings => n.step(-1, at),
+                Key::Confirm if !n.in_settings => n.choose(at),
+                Key::Back if n.in_settings => n.back_from_settings(at),
                 Key::Back => n.closed = Some(at),
-                Key::Open => {}
+                _ => {}
             },
             _ => {}
         }
     }
-    nav
+    nav.filter(|n| n.closed.is_none_or(|c| tick < c + CLOSE_LAG + BG_FADE))
 }
 
 /// Opacity from an animation's alpha curve at `t` seconds, as the game's byte.
@@ -507,22 +542,26 @@ impl View {
     pub fn quads(&self, nav: &Nav, shown: &Shown, frame: f32, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new() };
-        let age = frame - nav.opened;
+        let age = frame - nav.shown;
         let white = |a: f32| [1.0, 1.0, 1.0, a];
         let incubic = |a: f32, frames: f32| (a / frames).clamp(0.0, 1.0).powi(3);
         let outcubic = |a: f32, frames: f32| 1.0 - (1.0 - (a / frames).clamp(0.0, 1.0)).powi(3);
-        let bg = (age / BG_FADE).clamp(0.0, 1.0);
+        // Closing: `out` frames since the buttons began to go (the layout's animations run backwards).
+        let out = nav.closed.map_or(-1.0, |c| frame - (c + CLOSE_LAG));
+        let closing = out >= 0.0;
+        let bg = if closing { 1.0 - out / BG_FADE } else if nav.warm { 1.0 } else { age / BG_FADE }.clamp(0.0, 1.0);
         pen.out.push(Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32 * 2.0, screen.1 as f32 * 2.0], uv: [0.0, 0.0, 2.0, 2.0], color: white(byte(bg * 255.0)), texture: BACKGROUND });
 
         // The photo, turned, and the mask drawn for its cards' fade.
         let (photo_at, photo_size, photo_turn, photo_style) = &self.photo;
         let photo_at = *photo_at;
         let uv = pen.uv(PHOTO, photo_style.pictures[0]);
-        pen.turned(PHOTO, uv, photo_at, *photo_size, *photo_turn, white(byte(incubic(age, PHOTO_FADE) * 255.0)));
+        let photo = if closing { incubic(CARD_FADE - out, CARD_FADE) } else if nav.warm { 1.0 } else { incubic(age, PHOTO_FADE) };
+        pen.turned(PHOTO, uv, photo_at, *photo_size, *photo_turn, white(byte(photo * 255.0)));
         let (shadow_at, shadow_size, shadow_style) = &self.shadow;
         let shadow = shadow_style.pictures[0];
         pen.pic(MENU2, shadow, *shadow_at, *shadow_size, white(180.0 / 255.0));
-        let cards = byte(incubic(age, CARD_FADE) * 255.0);
+        let cards = byte(if closing { incubic(CARD_FADE - out, CARD_FADE) } else { incubic(age, CARD_FADE) } * 255.0);
         let (mask_at, mask_size, mask_turn) = &self.mask;
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
 
@@ -542,37 +581,43 @@ impl View {
 
         // The buttons.
         let (light_at, light) = &self.light;
-        let slide_state = |delay: f32| -> (f32, f32) {
-            let t = ((age - delay) / SLIDE).clamp(0.0, 1.0) * self.slide[0].duration();
+        // A button's slide at its place `n` in the order (the light is the first, with no delay; going out each waits less).
+        let slide_state = |n: f32| -> (f32, f32) {
+            let u = if closing { 1.0 - (out - n * CLOSE_STEP) / SLIDE } else { (age - n * SLIDE_STEP) / SLIDE };
+            let t = u.clamp(0.0, 1.0) * self.slide[0].duration();
             (self.slide[0].at(t)[3] / 255.0, self.slide[1].at(t)[0])
         };
-        let (a, dx) = slide_state(0.0);
+        let (a, dx) = if closing { slide_state(CLOSE_LIGHT_AT / CLOSE_STEP) } else { slide_state(0.0) };
         pen.natural(MENU1, light, 0, [light_at[0] + dx, light_at[1]], white(byte(a * 255.0)));
         for (i, at) in self.buttons.iter().enumerate() {
-            let (a, dx) = slide_state(SLIDE_STEP * i as f32);
+            let (a, dx) = slide_state(i as f32);
             let at = [at[0] + dx, at[1]];
             let alpha = byte(a * 255.0);
             pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], white(alpha));
-            self.glow(&mut pen, nav, i, at, alpha, frame);
+            // (the glow goes with the first button's slide)
+            let glow_slide = if closing { byte(slide_state(0.0).0 * 255.0) } else { alpha };
+            self.glow(&mut pen, nav, i, at, glow_slide, frame);
             let image = BUTTONS[i];
             pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], white(alpha));
             pen.natural(MENU1, &self.icons, image, [at[0] + 13.0, at[1] + 14.0], white(alpha));
         }
 
         // The level plate and the money, sliding in from the right, and the corner picture.
-        let right = |frames: f32| along(&self.slide_right, age, frames)[0];
+        // (in: over `frames`; out: at `speed` times the 30 frames' pace)
+        let slid = |frames: f32, speed: f32| if closing { (1.0 - out * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames } else { age };
+        let right = |frames: f32, speed: f32| along(&self.slide_right, slid(frames, speed), frames)[0];
         let (lv_at, lv) = &self.level_plate;
-        let a = byte(outcubic(age, SLIDE_MONEY) * 255.0);
-        pen.natural(MENU1, lv, 0, [lv_at[0] + right(SLIDE_MONEY), lv_at[1]], white(a));
+        let a = byte(outcubic(slid(SLIDE_MONEY, CLOSE_MONEY_SPEED), SLIDE_MONEY) * 255.0);
+        pen.natural(MENU1, lv, 0, [lv_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), lv_at[1]], white(a));
         let (bg_at, bg_size, bg_scale, bg_style) = &self.money_bg;
-        pen.pic(MIX, bg_style.pictures[0], [bg_at[0] + right(SLIDE_MONEY), bg_at[1]], [bg_size[0] * bg_scale, bg_size[1] * bg_scale], white(byte(a * 120.0)));
+        pen.pic(MIX, bg_style.pictures[0], [bg_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), bg_at[1]], [bg_size[0] * bg_scale, bg_size[1] * bg_scale], white(byte(a * 120.0)));
         let (icon_at, icon_scale, icon_style) = &self.money_icon;
         let p = icon_style.pictures[0];
-        pen.pic(ICON, p, [icon_at[0] + right(SLIDE_MONEY), icon_at[1]], [p[2] / PER_LAYOUT * icon_scale, p[3] / PER_LAYOUT * icon_scale], white(a));
-        pen.text(&self.money_text, [right(SLIDE_MONEY), 0.0], &shown.money.to_string(), a);
+        pen.pic(ICON, p, [icon_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), icon_at[1]], [p[2] / PER_LAYOUT * icon_scale, p[3] / PER_LAYOUT * icon_scale], white(a));
+        pen.text(&self.money_text, [right(SLIDE_MONEY, CLOSE_MONEY_SPEED), 0.0], &shown.money.to_string(), a);
         let (put_at, put) = &self.put;
-        pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT), put_at[1]], white(byte(outcubic(age, SLIDE_PUT) * 255.0)));
-        self.help_bar(&mut pen, (age - HELP_AT) / HELP_FADE);
+        pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT, CLOSE_PUT_SPEED), put_at[1]], white(byte(outcubic(slid(SLIDE_PUT, CLOSE_PUT_SPEED), SLIDE_PUT) * 255.0)));
+        self.help_bar(&mut pen, if closing { 1.0 - out / HELP_FADE } else { (age - HELP_AT) / HELP_FADE });
         (pen.out, pen.additive)
     }
 
