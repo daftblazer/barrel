@@ -31,7 +31,10 @@ pub const WHITE: usize = 7;
 pub const MIX: usize = 8;
 pub const ICON: usize = 9;
 pub const GUIDE: usize = 10;
-pub const TEXTURES: usize = 11;
+/// The cut-out figures of the characters (`a21v2_main_menu_image`) and the turning ring of a picked card (`a21_common` 5).
+pub const FIGURES: usize = 11;
+pub const RING: usize = 12;
+pub const TEXTURES: usize = 13;
 
 /// The styles' pixels count three to a layout pixel; the menu's textures hold half the styles'
 /// pixels (`uvwh` runs to twice the texture's size).
@@ -120,8 +123,10 @@ pub struct Sources<'a> {
     pub help_styles: &'a [u8],
     pub strings: &'a [u8],
     pub glyphs: [HashMap<char, Glyph>; 2],
-    /// The textures' sizes in pixels: photo, the three menu atlases, mix, icon, guide.
-    pub sizes: [(u32, u32); 7],
+    /// The styles of the characters' figures (`uis_gen_a21v2_main_menu_image.xml`).
+    pub figure_styles: &'a [u8],
+    /// The textures' sizes in pixels: photo, the three menu atlases, mix, icon, guide, figures, ring.
+    pub sizes: [(u32, u32); 9],
 }
 
 /// A party member the cards show.
@@ -217,6 +222,25 @@ pub struct View {
     cursor_loop: [Curve; 2],
     select: [Curve; 2],
     ring_loop: [Curve; 2],
+    pick: PickLook,
+}
+
+/// What a picked character's card and figure are made of (`uil_a21_main_menu_chara.xml`'s `regular_status` and `chara`).
+#[derive(Clone, Debug)]
+struct PickLook {
+    /// The glow behind the card (`bg_hilight_on`), its ring (`bg_hilight_scale`: place, pivot, scale) and the turning ring (`bg_hilight_roll`: place, picture in `RING`, scale, pivot).
+    glow: ([f32; 2], Style),
+    ring: ([f32; 2], [f32; 2], f32),
+    roll: ([f32; 2], [f32; 4], f32, [f32; 2]),
+    /// The glow over the plate (`selected_bg`): place, pivot and scale.
+    over: ([f32; 2], [f32; 2], f32),
+    /// The blurred photo's quad (`blur_bg`): place, size, degrees.
+    blur: ([f32; 2], [f32; 2], f32),
+    /// The characters' figures by name: place, degrees and picture.
+    figures: HashMap<String, ([f32; 2], f32, [f32; 4])>,
+    blackout: Curve,
+    blink: Curve,
+    rolling: Curve,
 }
 
 fn first(s: &Style) -> Result<[f32; 4], String> {
@@ -238,7 +262,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -298,11 +322,36 @@ impl View {
         };
         let cards = CARD_SLOTS.iter().map(|s| Ok((named(&chara, s)?.1, card.clone()))).collect::<Result<Vec<_>, String>>()?;
 
+        let (glow_node, glow_at) = part("bg_hilight_on")?;
+        let (hl_ring, hl_ring_at) = part("bg_hilight_scale")?;
+        let (hl_roll, hl_roll_at) = part("bg_hilight_roll")?;
+        let (over_node, over_at) = part("selected_bg")?;
+        let (blur_node, blur_at) = named(&chara, "blur_bg")?;
+        let figure_styles = table::parse(src.figure_styles).map_err(|e| format!("uis_gen_a21v2_main_menu_image: {e}"))?;
+        let mut figures = HashMap::new();
+        for who in ["Tao", "Ryza", "Lent"] {
+            let (e, at) = named(&chara, &format!("a21v2_main_menu_image_00_{who}"))?;
+            let picture = first(&style(&figure_styles, e.attr("style").ok_or("a figure: no style")?)?)?;
+            figures.insert(who.to_string(), (at, numbers(e, "rot").get(2).copied().unwrap_or(0.0), picture));
+        }
+        let roll_picture = first(&style(&help_styles, hl_roll.attr("style").ok_or("bg_hilight_roll: no style")?)?)?;
+        let pick = PickLook {
+            glow: (glow_at, style(&styles, glow_node.attr("style").ok_or("bg_hilight_on: no style")?)?),
+            ring: (hl_ring_at, pair(hl_ring, "pivot_pos", [0.0; 2]), pair(hl_ring, "scale", [1.0; 2])[0]),
+            roll: (hl_roll_at, roll_picture, pair(hl_roll, "scale", [1.0; 2])[0], pair(hl_roll, "pivot_pos", [0.0; 2])),
+            over: (over_at, pair(over_node, "pivot_pos", [0.0; 2]), pair(over_node, "scale", [1.0; 2])[0]),
+            blur: (blur_at, [numbers(blur_node, "size_w").first().copied().unwrap_or(0.0), numbers(blur_node, "size_h").first().copied().unwrap_or(0.0)], numbers(blur_node, "rot").get(2).copied().unwrap_or(0.0)),
+            figures,
+            blackout: curve(src.anims, "anm_select_blackout", "color")?,
+            blink: curve(src.anims, "anm_status_blink_loop", "color")?,
+            rolling: curve(src.anims, "anm_cursor_rolling", "rot")?,
+        };
+
         let photo_style = style(&photo_styles, "etc_a21_main_menu_image")?;
         let size_of = |e: &Element| -> [f32; 2] { pair(e, "size_wh", [0.0; 2]) };
         let atlas = |texture: usize, (w, h): (u32, u32)| (texture, (w as f32 * STYLE_OVER_TEXTURE, h as f32 * STYLE_OVER_TEXTURE));
-        let [photo_size, menu0, menu1, menu2, mix_size, icon_size, guide_size] = src.sizes;
-        let atlases = HashMap::from([atlas(PHOTO, photo_size), atlas(MENU0, menu0), atlas(MENU1, menu1), atlas(MENU2, menu2), atlas(MIX, mix_size), atlas(ICON, icon_size), atlas(GUIDE, guide_size)]);
+        let [photo_size, menu0, menu1, menu2, mix_size, icon_size, guide_size, figure_size, ring_size] = src.sizes;
+        let atlases = HashMap::from([atlas(PHOTO, photo_size), atlas(MENU0, menu0), atlas(MENU1, menu1), atlas(MENU2, menu2), atlas(MIX, mix_size), atlas(ICON, icon_size), atlas(GUIDE, guide_size), atlas(FIGURES, figure_size), atlas(RING, ring_size)]);
 
         // The help bar's plate and text (as the load screen's).
         let (help_bg, help_at) = find(&help_layout, "base", [0.0; 2]).ok_or("uil_a21_shade: no base")?;
@@ -344,7 +393,15 @@ impl View {
             cursor_loop: [curve(src.anims, "anm_cursor_on_loop", "color")?, curve(src.anims, "anm_cursor_on_loop", "scale")?],
             select: [curve(src.anims, "anm_cursor_select", "color")?, curve(src.anims, "anm_cursor_select", "scale")?],
             ring_loop: [curve(src.anims, "anm_cursor_scale", "color")?, curve(src.anims, "anm_cursor_scale", "scale")?],
+            pick,
         })
+    }
+
+    /// The first `n` cards' indexes from left to right (the pick moves along them).
+    pub fn card_order(&self, n: usize) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..n.min(self.cards.len())).collect();
+        order.sort_by(|&a, &b| self.cards[a].0[0].total_cmp(&self.cards[b].0[0]));
+        order
     }
 
     fn word(&self, n: u32) -> &str {
@@ -373,7 +430,39 @@ pub struct Nav {
     pub chosen: Option<f32>,
     /// Whether A went on to the Settings screen (B comes back to the menu).
     pub in_settings: bool,
+    /// The character pick A on Equip or Status leads to.
+    pub pick: Option<Pick>,
 }
+
+/// The character pick (`field-menu-equip`: A on Equip at 2060, the pick's first frame 2102).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pick {
+    /// The pick's first frame: the buttons begin to darken and the photo to blur.
+    pub first: f32,
+    /// The picked card (an index of the party) and the frame it was picked on (the first frame at the start).
+    pub card: usize,
+    pub since: f32,
+    /// A on the card (the page it leads to is not drawn yet).
+    pub confirmed: Option<f32>,
+}
+
+/// Frames from A on Equip or Status to the pick's first frame (`field-menu-equip`: A on 2060; the buttons' tint, the photo's
+/// blur and the extra button pictures all run from 2102), and from the pick's first frame to the card glow's loops (2103).
+pub const PICK_AT: f32 = 42.0;
+const PICK_LOOPS_LATER: f32 = 1.0;
+/// Frames from the pick's first frame to its help bar's first frame (the fade from 2106).
+const PICK_BAR_LATER: f32 = 4.0;
+/// The buttons darken over 20 frames (`anm_select_blackout` run at three times its speed), the photo blurs in over 30
+/// (`blur_in`, speed 2) and the extra button pictures fade in over 20.
+const BLACKOUT_FRAMES: f32 = 20.0;
+const BLUR_FRAMES: f32 = 30.0;
+/// The rolling ring turns a full circle in 480 frames (`anm_cursor_rolling`), the card's ring loops in 120 (`anm_cursor_scale`),
+/// the glow over the plate in 120 (`anm_status_blink_loop`).
+const ROLL_FRAMES: f32 = 480.0;
+const LOOP_PICK_FRAMES: f32 = 120.0;
+/// The Equip and Status buttons' places in the cursor order.
+const EQUIP: usize = 1;
+const STATUS: usize = 3;
 
 impl Nav {
     /// The menu opening at frame `opened` (its first frame), the cursor on the first button
@@ -381,7 +470,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -411,6 +500,37 @@ impl Nav {
     pub fn choose(&mut self, at: f32) {
         self.chosen = Some(at);
         self.in_settings = self.cursor == SETTINGS;
+        if matches!(self.cursor, EQUIP | STATUS) {
+            // (the leader's card is picked first)
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None });
+        }
+    }
+
+    /// A key of the pick at frame `at`: left or right moves it along the cards (`order`: the party's cards from left to
+    /// right) and stops at the ends (STAND-IN: not tried at an end); keys before its first frame do nothing.
+    pub fn pick_step(&mut self, way: i32, at: f32, order: &[usize]) {
+        let Some(p) = self.pick.as_mut().filter(|p| at >= p.first && p.confirmed.is_none()) else { return };
+        let Some(rank) = order.iter().position(|&c| c == p.card) else { return };
+        let next = (rank as i32 + way).clamp(0, order.len() as i32 - 1) as usize;
+        if order[next] != p.card {
+            p.card = order[next];
+            p.since = at;
+        }
+    }
+
+    /// A on the picked card.
+    pub fn pick_confirm(&mut self, at: f32) {
+        if let Some(p) = self.pick.as_mut().filter(|p| at >= p.first && p.confirmed.is_none()) {
+            p.confirmed = Some(at);
+        }
+    }
+
+    /// B in the pick: back to the menu (STAND-IN: at once, the capture has no B before the page).
+    pub fn pick_back(&mut self, at: f32) {
+        if self.pick.as_ref().is_some_and(|p| at >= p.first && p.confirmed.is_none()) {
+            self.pick = None;
+            self.chosen = None;
+        }
     }
 }
 
@@ -464,11 +584,13 @@ pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
                 nav = Some(Nav::open(at + OPEN_LAG));
                 spans.push((at + OPEN_LAG, None));
             }
-            (Key::Down, Some(n)) if !n.in_settings => n.step(1, at),
-            (Key::Up, Some(n)) if !n.in_settings => n.step(-1, at),
-            (Key::Confirm, Some(n)) if !n.in_settings => n.choose(at),
+            (Key::Down, Some(n)) if !n.in_settings && n.pick.is_none() => n.step(1, at),
+            (Key::Up, Some(n)) if !n.in_settings && n.pick.is_none() => n.step(-1, at),
+            (Key::Confirm, Some(n)) if !n.in_settings && n.pick.is_none() => n.choose(at),
+            (Key::Confirm, Some(n)) => n.pick_confirm(at),
             (Key::Return, Some(n)) if n.in_settings => n.back_from_settings(at),
             (Key::Back, Some(n)) if n.in_settings => {}
+            (Key::Back, Some(n)) if n.pick.is_some() => n.pick_back(at),
             (Key::Back, Some(_)) => {
                 if let Some(last) = spans.last_mut() {
                     last.1 = Some(at + CLOSE_LAG + BG_FADE);
@@ -483,7 +605,7 @@ pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
 
 /// The menu at frame `tick` for the script's keys (each with the game frame its button went
 /// down), or none while the field shows: the keys replayed in order, each at its frame.
-pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
+pub fn replay(keys: &[(f32, Key)], tick: f32, order: &[usize]) -> Option<Nav> {
     let mut nav: Option<Nav> = None;
     for &(at, key) in keys {
         if nav.as_ref().and_then(|n| n.closed).is_some_and(|c| c + CLOSE_LAG + BG_FADE <= at.min(tick)) {
@@ -493,11 +615,15 @@ pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
             (Key::Open, None) if at + OPEN_LAG <= tick => nav = Some(Nav::open(at + OPEN_LAG)),
             // On the Settings screen the keys are the screen's (`options_run`); it ends with `Return`.
             (_, Some(n)) if at <= tick && n.closed.is_none() => match key {
-                Key::Down if !n.in_settings => n.step(1, at),
-                Key::Up if !n.in_settings => n.step(-1, at),
-                Key::Confirm if !n.in_settings => n.choose(at),
+                Key::Down if !n.in_settings && n.pick.is_none() => n.step(1, at),
+                Key::Up if !n.in_settings && n.pick.is_none() => n.step(-1, at),
+                Key::Confirm if !n.in_settings && n.pick.is_none() => n.choose(at),
+                Key::Confirm => n.pick_confirm(at),
+                Key::Screen(crate::options_run::Key::Left) => n.pick_step(-1, at, order),
+                Key::Screen(crate::options_run::Key::Right) => n.pick_step(1, at, order),
                 Key::Return if n.in_settings => n.back_from_settings(at),
                 Key::Back if n.in_settings => {}
+                Key::Back if n.pick.is_some() => n.pick_back(at),
                 Key::Back => n.closed = Some(at),
                 _ => {}
             },
@@ -516,9 +642,20 @@ struct Bar {
     words: bool,
     /// Layout pixels added to the plate's width (the menu's bar comes in wider than it stays: `open_plate_extra`).
     extra: f32,
-    /// The field's own bar (its seven entries) in place of the menu's five.
-    field: bool,
+    /// Whose entries the line has.
+    entries: Entries,
 }
+
+/// The lines the help bar shows: the field's own seven entries, the menu's five and the pick's three.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Entries {
+    Field,
+    Menu,
+    Pick,
+}
+
+/// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
+const PICK_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_439), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
 
 /// Frames the bar holds its opacity after the key that sends it out, and the frames its fade takes (`field-menu`: after A
 /// on 2220 the opacity is 1 on 2225, 2/3 on 2230 and 1/3 on 2235; after B on 2550 the same on 2555, 2560 and 2565).
@@ -528,7 +665,7 @@ impl Bar {
     /// The bar `age` frames after the key that sends it out: the words go first, the plate shrinks to its shortest
     /// (`load_view`'s fitted rule, the same on this capture: 0.625 of the way at +5) and the plate fades after `BAR_HOLD`.
     fn out(age: f32) -> Bar {
-        Bar { alpha: 1.0 - (age - BAR_HOLD) / HELP_FADE, grow: 1.0 - ((age - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0), words: age < PLATE_LEAVE, extra: 0.0, field: false }
+        Bar { alpha: 1.0 - (age - BAR_HOLD) / HELP_FADE, grow: 1.0 - ((age - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0), words: age < PLATE_LEAVE, extra: 0.0, entries: Entries::Menu }
     }
 }
 
@@ -562,6 +699,8 @@ struct Pen<'a> {
     out: Vec<Quad>,
     /// The quads drawn added to what is under them.
     additive: Vec<usize>,
+    /// The quads that are in the draw trace and not drawn (the game draws them through a blurring shader that Barrel does not have for a part of a layer).
+    hidden: Vec<usize>,
 }
 
 impl Pen<'_> {
@@ -638,11 +777,11 @@ fn along(c: &Curve, age: f32, frames: f32) -> [f32; 4] {
 }
 
 impl View {
-    /// The menu's quads at game frame `frame` (in draw order) on a `screen` of pixels, and
-    /// which of them are drawn additively.
-    pub fn quads(&self, nav: &Nav, shown: &Shown, frame: f32, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>) {
+    /// The menu's quads at game frame `frame` (in draw order) on a `screen` of pixels, which of them are drawn additively and
+    /// which are only in the trace.
+    pub fn quads(&self, nav: &Nav, shown: &Shown, frame: f32, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<usize>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new() };
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         let age = frame - nav.shown;
         let white = |a: f32| [1.0, 1.0, 1.0, a];
         let incubic = |a: f32, frames: f32| (a / frames).clamp(0.0, 1.0).powi(3);
@@ -653,6 +792,8 @@ impl View {
         let out = going.map_or(-1.0, |g| frame - g);
         let closing = out >= 0.0;
         let closed = closing && nav.closed.is_some();
+        // Frames into the character pick (from its first frame).
+        let picked = nav.pick.as_ref().filter(|p| frame >= p.first).map(|p| (p, frame - p.first));
         let bg = if closed { 1.0 - out / BG_FADE } else if nav.warm { 1.0 } else { age / BG_FADE }.clamp(0.0, 1.0);
         pen.out.push(Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32 * 2.0, screen.1 as f32 * 2.0], uv: [0.0, 0.0, 2.0, 2.0], color: white(byte(bg * 255.0)), texture: BACKGROUND });
 
@@ -666,14 +807,42 @@ impl View {
         let shadow = shadow_style.pictures[0];
         pen.pic(MENU2, shadow, *shadow_at, *shadow_size, white(180.0 / 255.0));
         let cards = byte(if closing { incubic(CARD_FADE - out, CARD_FADE) } else { incubic(age, CARD_FADE) } * 255.0);
+        // The photo blurs in over the pick (the game's blurring quad over the photo's place; it draws as `sys_white` here).
+        if let Some((_, a)) = picked {
+            let (at, size, turn) = self.pick.blur;
+            pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], at, size, turn, white(byte(incubic(a, BLUR_FRAMES) * 255.0)));
+        }
         let (mask_at, mask_size, mask_turn) = &self.mask;
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
+        // The picked character's figure, sharp over the blurred photo.
+        if let Some((p, _)) = picked {
+            if let Some(&(at, turn, picture)) = shown.party.get(p.card).and_then(|m| self.pick.figures.get(self.name_of(m.id))) {
+                let uv = pen.uv(FIGURES, picture);
+                pen.turned(FIGURES, uv, at, [picture[2] / PER_LAYOUT, picture[3] / PER_LAYOUT], turn, white(1.0));
+            }
+        }
 
-        for ((at, card), member) in self.cards.iter().zip(&shown.party) {
+        for (n, ((at, card), member)) in self.cards.iter().zip(&shown.party).enumerate() {
             let origin = *at;
             let c = white(cards);
+            let picked_here = picked.filter(|(p, _)| p.card == n);
+            // The picked card's loops run from the pick's second frame, or from the frame before the key that moved the pick here
+            // (`field-menu-status`: RIGHT on 2200, the ring's opacity 4/255 and the glow's 3/255 on 2200).
+            let loops = picked_here.map(|(p, _)| (frame - if p.since == p.first { p.first + PICK_LOOPS_LATER } else { p.since - 1.0 }).max(0.0));
+            if let Some(l) = loops {
+                self.pick_glow(&mut pen, origin, l);
+            }
             pen.natural(MENU0, &card.plate.1, 0, [origin[0] + card.plate.0[0], origin[1] + card.plate.0[1]], c);
             pen.natural(MENU1, &card.icon.1, 0, [origin[0] + card.icon.0[0], origin[1] + card.icon.0[1]], c);
+            if let Some(l) = loops {
+                // The glow over the plate blinks (`anm_status_blink_loop`).
+                let (over_at, pivot, scale) = self.pick.over;
+                let l = (l % LOOP_PICK_FRAMES) / 60.0;
+                let v = self.pick.blink.at(l);
+                pen.additive.push(pen.out.len());
+                let p = card.plate.1.pictures[0];
+                pen.scaled(MENU0, p, [origin[0] + over_at[0], origin[1] + over_at[1]], [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], pivot, scale, [byte(v[0]), byte(v[1]), byte(v[2]), byte(v[3])]);
+            }
             let hp = MAX_HP.iter().find(|m| m.0 == member.id).map_or(0, |m| m.2);
             let number = |n: u32| n.to_string();
             pen.text(&card.hp_value, origin, &number(hp), cards);
@@ -697,19 +866,40 @@ impl View {
             let (a, dx) = slide_state(i as f32);
             let at = [at[0] + dx, at[1]];
             let alpha = byte(a * 255.0);
-            pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], white(alpha));
+            // The pick darkens the buttons (`anm_select_blackout`) and draws each over again through the blur.
+            let (tint, blur) = match picked {
+                Some((_, p)) => {
+                    let v = self.pick.blackout.at((p / BLACKOUT_FRAMES).min(1.0) * self.pick.blackout.duration());
+                    ([byte(v[0]), byte(v[1]), byte(v[2]), alpha], Some(incubic(p, BLACKOUT_FRAMES)))
+                }
+                None => (white(alpha), None),
+            };
+            pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], tint);
             // (the glow goes with the first button's slide; on the way to Settings it goes out by itself over `OFF_FRAMES`:
             // the capture's 142/255 on 2265 is 1 - 4/9)
             let glow_slide = if closed { byte((1.0 - (out - CLOSE_GLOW_AT) / CLOSE_GLOW_FRAMES).clamp(0.0, 1.0) * 255.0) } else if closing { byte((1.0 - out / OFF_FRAMES).clamp(0.0, 1.0) * 255.0) } else { alpha };
-            self.glow(&mut pen, nav, i, at, glow_slide, frame);
+            if picked.is_none() {
+                self.glow(&mut pen, nav, i, at, glow_slide, frame);
+            }
             let image = BUTTONS[i];
-            pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], white(alpha));
-            pen.natural(MENU1, &self.icons, image, [at[0] + 13.0, at[1] + 14.0], white(alpha));
+            pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], tint);
+            pen.natural(MENU1, &self.icons, image, [at[0] + 13.0, at[1] + 14.0], tint);
+            if let Some(b) = blur {
+                pen.hidden.push(pen.out.len());
+                pen.natural(MENU0, &self.names, 0, [at[0] + 2.0, at[1] + 103.0], white(byte(b * 255.0) * alpha));
+                pen.hidden.push(pen.out.len());
+                pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], white(byte(b * 255.0) * alpha));
+            }
         }
 
         // The level plate and the money, sliding in from the right, and the corner picture.
         // (in: over `frames`; out: at `speed` times the 30 frames' pace)
-        let slid = |frames: f32, speed: f32| if closing { (1.0 - out * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames } else { age };
+        // (the pick sends the level plate and the money out the same way, from its first frame)
+        let slid = |frames: f32, speed: f32| match (closing, picked) {
+            (true, _) => (1.0 - out * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames,
+            (_, Some((_, a))) => (1.0 - a * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames,
+            _ => age,
+        };
         let right = |frames: f32, speed: f32| along(&self.slide_right, slid(frames, speed), frames)[0];
         let (lv_at, lv) = &self.level_plate;
         let a = byte(outcubic(slid(SLIDE_MONEY, CLOSE_MONEY_SPEED), SLIDE_MONEY) * 255.0);
@@ -722,27 +912,32 @@ impl View {
         pen.text(&self.money_text, [right(SLIDE_MONEY, CLOSE_MONEY_SPEED), 0.0], &shown.money.to_string(), a);
         let (put_at, put) = &self.put;
         // (it stays where it is on the way to Settings: the capture draws it whole under the blurred picture)
-        if closed || !(closing || nav.warm) {
+        if closed || !(closing || nav.warm || picked.is_some()) {
             pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT, CLOSE_PUT_SPEED), put_at[1]], white(byte(outcubic(slid(SLIDE_PUT, CLOSE_PUT_SPEED), SLIDE_PUT) * 255.0)));
         } else {
             pen.natural(MENU1, put, 0, *put_at, white(1.0));
         }
         // The bar goes out from the key that closes the menu or opens Settings, not with the buttons.
-        let bar = match nav.closed.or(nav.chosen.filter(|_| nav.in_settings)) {
+        let bar = match nav.closed.or(nav.chosen.filter(|_| nav.in_settings || nav.pick.is_some())) {
+            // (the pick's own bar comes in 4 frames after its first frame, its plate growing as it fades in)
+            Some(_) if picked.is_some_and(|(_, a)| a >= PICK_BAR_LATER) => {
+                let a = picked.map_or(0.0, |(_, a)| a) - PICK_BAR_LATER;
+                Bar { alpha: a / HELP_FADE, grow: (a / PLATE_FRAMES).clamp(0.0, 1.0), words: true, extra: 0.0, entries: Entries::Pick }
+            }
             Some(key) => Bar::out(frame - key),
             None => {
                 // (back from Settings it comes up one frame earlier, with its plate a fifth of a frame late, as the screen's own)
                 let (at, late) = if nav.warm { (HELP_AT_BACK, BACK_PLATE_LATE) } else { (HELP_AT, 0.0) };
                 if !nav.warm && age < FIELD_BAR_HOLD + HELP_FADE {
                     // The field's bar fading out as the menu comes up.
-                    self.help_bar(&mut pen, Bar { alpha: 1.0 - (age - FIELD_BAR_HOLD) / HELP_FADE, grow: 1.0, words: true, extra: 0.0, field: true });
+                    self.help_bar(&mut pen, Bar { alpha: 1.0 - (age - FIELD_BAR_HOLD) / HELP_FADE, grow: 1.0, words: true, extra: 0.0, entries: Entries::Field });
                 }
-                Bar { alpha: (age - at) / HELP_FADE, grow: if nav.warm { ((age - at - late) / PLATE_FRAMES).clamp(0.0, 1.0) } else { 1.0 }, words: true, extra: if nav.warm { 0.0 } else { open_plate_extra(age - at) }, field: false }
+                Bar { alpha: (age - at) / HELP_FADE, grow: if nav.warm { ((age - at - late) / PLATE_FRAMES).clamp(0.0, 1.0) } else { 1.0 }, words: true, extra: if nav.warm { 0.0 } else { open_plate_extra(age - at) }, entries: Entries::Menu }
             }
         };
         self.help_bar(&mut pen, bar);
         // A node at no opacity is not drawn (the additive list names quads by place).
-        let Pen { out, additive, .. } = pen;
+        let Pen { out, additive, hidden, .. } = pen;
         let mut places = Vec::with_capacity(out.len());
         let mut kept = 0;
         for q in &out {
@@ -750,7 +945,35 @@ impl View {
             kept += usize::from(q.color[3] > 0.0);
         }
         let additive = additive.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
-        (out.into_iter().filter(|q| q.color[3] > 0.0).collect(), additive)
+        let hidden = hidden.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
+        (out.into_iter().filter(|q| q.color[3] > 0.0).collect(), additive, hidden)
+    }
+
+    /// The glow behind a picked card (the layout's `selected_bg_back`): the glow itself, its ring growing and fading in a loop
+    /// (`anm_cursor_scale`) and the ring that turns (`anm_cursor_rolling`), `loops` frames into their loops; all drawn added.
+    fn pick_glow(&self, pen: &mut Pen, origin: [f32; 2], loops: f32) {
+        let [x, y] = origin;
+        let (glow_at, glow) = &self.pick.glow;
+        pen.additive.push(pen.out.len());
+        pen.natural(MENU1, glow, 0, [x + glow_at[0], y + glow_at[1]], [1.0; 4]);
+        let (ring_at, pivot, scale) = self.pick.ring;
+        let t = (loops % LOOP_PICK_FRAMES) / 60.0;
+        let p = self.ring.pictures[0];
+        pen.additive.push(pen.out.len());
+        pen.scaled(MENU1, p, [x + ring_at[0], y + ring_at[1]], [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], pivot, self.ring_loop[1].at(t)[0] * scale, [1.0, 1.0, 1.0, byte(self.ring_loop[0].at(t)[3])]);
+        // The turning ring: a picture of 160 layout pixels scaled about its middle and turned about it.
+        let (roll_at, picture, scale, pivot) = self.pick.roll;
+        let degrees = self.pick.rolling.at((loops % ROLL_FRAMES) / 60.0)[2];
+        let (w, h) = (picture[2] / PER_LAYOUT * scale * pen.k, picture[3] / PER_LAYOUT * scale * pen.k);
+        let middle = pen.place([x + roll_at[0] + pivot[0], y + roll_at[1] + pivot[1]]);
+        let (s, c) = degrees.to_radians().sin_cos();
+        let corner = |dx: f32, dy: f32| [middle[0] + dx * c - dy * s, middle[1] + dx * s + dy * c];
+        let corners = [corner(-w / 2.0, -h / 2.0), corner(w / 2.0, -h / 2.0), corner(w / 2.0, h / 2.0), corner(-w / 2.0, h / 2.0)];
+        let (left, right) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q[0]), b.max(q[0])));
+        let (top, bottom) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), q| (a.min(q[1]), b.max(q[1])));
+        pen.additive.push(pen.out.len());
+        let uv = pen.uv(RING, picture);
+        pen.out.push(Quad { turn: false, spin: Some(Spin::Corners(corners)), rect: [left, top, right, bottom], uv, color: [0.0, byte(200.0), 1.0, byte(120.0)], texture: RING });
     }
 
     /// A button's glow: the cursor's glow and ring while the cursor is on it and as they fade
@@ -815,7 +1038,11 @@ impl View {
         if alpha <= 0.0 {
             return;
         }
-        let entries: &[(char, u32)] = if bar.field { &crate::field_hud::HELP_ENTRIES } else { &HELP_ENTRIES };
+        let entries: &[(char, u32)] = match bar.entries {
+            Entries::Field => &crate::field_hud::HELP_ENTRIES,
+            Entries::Menu => &HELP_ENTRIES,
+            Entries::Pick => &PICK_ENTRIES,
+        };
         let line = entries.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ");
         let s = self.help_text.size * pen.k / ATLAS_SIZE;
         let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;

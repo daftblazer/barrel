@@ -508,6 +508,8 @@ fn menu_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
         ("\\data\\x64\\res_en\\ui\\a21_mix.g1t", 3),
         ("\\data\\x64\\res_cmn\\ui\\a21_icon.g1t", 0),
         ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_main_menu_image.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 5),
     ];
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -526,7 +528,8 @@ fn menu_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
         help_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
         strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
-        sizes: [size(fm::PHOTO), size(fm::MENU0), size(fm::MENU1), size(fm::MENU2), size(fm::MIX), size(fm::ICON), size(fm::GUIDE)],
+        figure_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_main_menu_image.xml")?,
+        sizes: [size(fm::PHOTO), size(fm::MENU0), size(fm::MENU1), size(fm::MENU2), size(fm::MIX), size(fm::ICON), size(fm::GUIDE), size(fm::FIGURES), size(fm::RING)],
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fm::TEXTURES])?;
     Ok((layer, view))
@@ -2161,6 +2164,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     } else if down(K::Backspace, back) || title_keys.contains(&K::Escape) {
                         press(MenuKey::Back);
                     }
+                } else if down(K::ArrowLeft, Pad::Left) {
+                    press(MenuKey::Screen(barrel_ryza::options_run::Key::Left));
+                } else if down(K::ArrowRight, Pad::Right) {
+                    press(MenuKey::Screen(barrel_ryza::options_run::Key::Right));
                 } else if down(K::ArrowDown, Pad::Down) {
                     press(MenuKey::Down);
                 } else if down(K::ArrowUp, Pad::Up) {
@@ -2873,7 +2880,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
         }
         let menu_tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
-        let mut menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
+        let mut menu_now = field_menu.as_ref().and_then(|(_, v)| barrel_ryza::field_menu::replay(&menu_keys, menu_tick, &v.card_order(menu_shown.party.len())));
         if menu_now.is_some() != menu_up {
             eprintln!("menu: {} (game frame {})", if menu_now.is_some() { "open" } else { "closed" }, menu_tick.floor());
         }
@@ -2949,7 +2956,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if !told_now {
             break;
         }
-        menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
+        menu_now = field_menu.as_ref().and_then(|(_, v)| barrel_ryza::field_menu::replay(&menu_keys, menu_tick, &v.card_order(menu_shown.party.len())));
         menu_up = menu_now.is_some();
         }
         // The field stands still while the menu is up: its clock leaves the menu's frames out, and
@@ -2961,8 +2968,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (showing_options, showing_notice) = (false, false);
         }
         if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {
-            let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
-            layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
+            let (quads, additive, hidden) = view.quads(nav, &menu_shown, menu_tick, (width, height));
+            // (a quad only in the trace is the mask of a clip that draws nothing)
+            let clips: Vec<text::Clip> = hidden.iter().map(|&mask| text::Clip { mask, quads: 0..0 }).collect();
+            layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
             // The blurred menu and the vignettes over it, from the menu's going out to the screen's last frame (and out after it).
             // The first quad is the blurred picture of what the menu drew (the renderer's `screen_blur`); a window whose swapchain cannot be copied from has only the vignettes.
             showing_backdrop = false;
