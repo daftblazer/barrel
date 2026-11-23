@@ -1978,6 +1978,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         true => Some(menu_layer(&install, &gpu, &renderer)?),
         false => None,
     };
+    // The menu's keys so far (the script's offscreen; a window adds the player's: Tab or Y opens it,
+    // the arrows or the D-pad move, Enter or A chooses, Backspace, Escape or B closes) and whether it is up.
+    let mut menu_keys = a.menu_keys.clone();
+    let mut menu_up = false;
     let mut handoff: Option<std::path::PathBuf> = None;
     let mut showing_load = false;
     // The Settings screen's "Saving..." notice is drawn over it (in the load screen's layer).
@@ -2056,8 +2060,29 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let pad_pressed;
             (title_keys, pad_pressed) = p.take_input();
             pad_any = !pad_pressed.is_empty();
+            if field_menu.is_some() {
+                use barrel_ryza::field_menu::Key as MenuKey;
+                use barrel_render::pad::Pad;
+                let at = a.hud_at + started.elapsed().as_secs_f32() * 60.0;
+                let down = |k: K, b: Pad| title_keys.contains(&k) || pad_pressed.contains(&b);
+                let (confirm, back) = play.buttons();
+                let mut press = |key| menu_keys.push((at, key));
+                if !menu_up {
+                    if down(K::Tab, Pad::North) {
+                        press(MenuKey::Open);
+                    }
+                } else if down(K::ArrowDown, Pad::Down) {
+                    press(MenuKey::Down);
+                } else if down(K::ArrowUp, Pad::Up) {
+                    press(MenuKey::Up);
+                } else if title_keys.contains(&K::Enter) || pad_pressed.contains(&confirm) {
+                    press(MenuKey::Confirm);
+                } else if down(K::Backspace, back) || title_keys.contains(&K::Escape) {
+                    press(MenuKey::Back);
+                }
+            }
             p.set_script_frame(sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64);
-            if !p.pump() || (title_keys.contains(&K::Escape) && !showing_options) || a.frames.is_some_and(|n| sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 >= i64::from(n)) {
+            if !p.pump() || (title_keys.contains(&K::Escape) && !showing_options && !menu_up) || a.frames.is_some_and(|n| sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 >= i64::from(n)) {
                 break;
             }
             let now = std::time::Instant::now();
@@ -2084,7 +2109,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         } else {
             None
         };
-        if let Some((dt, mut sticks, zoom)) = drive {
+        // The field stands still under the menu.
+        if let (Some((dt, mut sticks, zoom)), false) = (drive, menu_up) {
             let length = (sticks.left[0] * sticks.left[0] + sticks.left[1] * sticks.left[1]).sqrt();
             help_bar.step(length > barrel_ryza::walk::MOVE_DEAD_ZONE, dt * 60.0);
             let full = if pump.as_ref().is_some_and(|p| p.held(winit::keyboard::KeyCode::ShiftLeft) || p.held(winit::keyboard::KeyCode::ShiftRight)) { SHIFT_LEAN } else { 1.0 };
@@ -2757,10 +2783,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
         }
         let menu_tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
-        let menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&a.menu_keys, menu_tick));
+        let menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&menu_keys, menu_tick));
+        menu_up = menu_now.is_some();
         // The field stands still while the menu is up: its clock leaves the menu's frames out, and
         // its help bar comes up again as at an arrival from the menu's last frame.
-        let menu_spans = barrel_ryza::field_menu::spans(&a.menu_keys);
+        let menu_spans = barrel_ryza::field_menu::spans(&menu_keys);
         let paused: f32 = menu_spans.iter().map(|&(from, to)| (to.map_or(f32::MAX, |t| t + barrel_ryza::field_menu::FIELD_RESUME_LAG).min(menu_tick) - from).max(0.0)).sum();
         let resumed = menu_spans.iter().filter_map(|&(_, to)| to).filter(|&to| to <= menu_tick).last();
         if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {

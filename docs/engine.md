@@ -607,6 +607,11 @@ mistake for a day). `u46` in the events does not play its movie yet.
 
 (Ryza's graphics settings apply live from the Settings screen's Yes: `Renderer::apply_settings`, docs/renderer.md "Rebuilding for new settings".)
 
+- **Ryza's field menu opens on Tab or the pad's Y in a window.** The game's keyboard map is not read;
+  the arrows move, Enter chooses, Backspace or Escape closes (as the title's keys), and the field
+  stands still under the menu (the walk takes no sticks). Offscreen the script's pad frames
+  (`--menu-keys`) drive it.
+
 - **Ryza's run loop enters at a fitted phase.** When her run motion takes over from the start
   motion it begins 0.35 s into its loop (`player::RUN_LOOP_PHASE`, a stand-in: the game's
   hand-over is not read); with 0 the pelvis's cloth pins were 3.1 cm off the game's over the

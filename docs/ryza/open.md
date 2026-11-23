@@ -224,6 +224,74 @@ bar being replayed from them):
   capture's (STAND-IN, as the load screen's).
 - Also: the glows are not drawn while their pulse is at 0 (`hud-walk` 1800).
 
+## Field menu (Y in the field)
+
+Built (2026-11-23, `crates/ryza/src/field_menu.rs`; its layer replaces the HUD's while the menu is
+up). Answer key: ryza-recomp scenario `field-menu` (Y at 1900 after the arrival of `hud-walk`, five
+D-pad downs 2000 to 2160, A on Settings 2220, B 2400, B 2550). Barrel runs it offscreen with
+`--menu-keys 1900:y,2000:down,...,2220:a,2400:b,2550:b` (the pad's game frames, with `--hud-at`; keys
+`y up down a b`); in a window Tab or Y opens it, the arrows or the D-pad move, Enter or A chooses,
+Backspace, Escape or B closes (Escape quits only with the menu down), and the field stands still under
+it. From the layouts `uil_a21_main_menu.xml` (buttons, level plate, money, corner picture),
+`uil_a21_main_menu_chara.xml` (photo, cards), `uia_a21_main_menu.xml` (animations),
+`uis_gen_a21_main_menu.xml`, `uis_a21_main_menu_image.xml` (the photo), `uis_gen_a21_mix.xml` and
+`uis_gen_a21_icon.xml` (money plate and icon), `uil_a21_shade.xml` (the help bar).
+
+What the capture shows (all read, not in a table):
+- The menu's first frame is 6 frames after Y (`OPEN_LAG`; 1906). From it: the background fades in
+  over 15 frames, the photo over 20 and the cards and the mask over 30 (`anm_common_juvenile_fade_in`,
+  cubic, at speeds 3 and 2), the buttons slide in 12 frames each 2.4 frames after the one before
+  (`anm_menu_slide_in`, `get_in`), the level plate and money 20 frames and the corner picture 30
+  (`anm_common_slide_in_right`, outcubic, speeds 1.5 and 1), the help bar fades in from 34.
+- The picture is `a21_main_menu_image_00` (image 0 of 26 by story progress: STAND-IN, the rule that
+  picks it is not read) turned 2.01 degrees, the three cards at the layout's `list_0` places 0, 2, 3
+  (a party of three), each `status_bg`, `battle_join`, HP, name and level text; level from the save's
+  header, HP maximum is the capture's (STAND-IN `MAX_HP`: Ryza's save does not store it, 37, 57, 31 at
+  level 3). The money is the header's. Draw order: background, photo, shadow, mask, the cards, the light,
+  the buttons (base, glow, glow on, ring, name, icon), level plate, money, corner picture, help bar.
+- The cursor: on the first button 30 frames after the menu's first frame; a move at the pad frame itself
+  (no lag) takes the glow off the old button (9 frames) and on the new one (18, `anm_cursor_on`, then
+  `anm_cursor_on_loop`: opacity 255 to 50 to 255 and scale 1 to 1.05 over 120 frames, which run 121:
+  STAND-IN as the Settings blink). The ring (`bg_hilight_scale`) runs from the menu's first frame whichever
+  button has the glow, times the glow's opacity. A on a button runs `anm_cursor_select` (speed 1.5) over
+  the loop. Nodes at no opacity are not drawn. The cursor's order is the layout's (Container, Equip,
+  Gathering Tools, Status, Guide, Settings; pictures 1, 3, 4, 6, 7, 8 of the name and icon lists: read off
+  the uv), a move wraps (not tried: up, left and right).
+- B closes with 1 frame of lag (2551): the background fades out over 15 frames, the cards and the photo
+  back over 30 (cubic), the buttons go as they came in, one every 1.2 frames, the plates at 2.25 and the
+  corner picture at 3 times the pace. The menu is gone when the background has faded (2566).
+- The field's clock stands still under the menu: its banner (fading out when Y was pressed) goes on
+  where it was (`FIELD_RESUME_LAG`, 2 frames after the menu's last), and the help bar comes up again as
+  at an arrival (idle 114), its full line at once.
+- A on Settings and B on the Options screen (2220 to 2440): B brings the cards and buttons in again from
+  2402 (2 frames of lag), over the background and the photo, and the cursor's glow starts again 30 frames
+  later (`Nav::back_from_settings`).
+
+Rows (`field-menu-F`, local file `checks-menu.txt`, `PARITY_SKIP=tex` leaves out the sparks the game's
+effect system draws from textures it builds at run time, the glow's ~40 sprites a frame; the parity
+tool names an unindexed texture `tex<hash>`): 22 frames at 0 mismatches: 1930 to 2220 (opening done,
+the five moves, A on Settings), 2500, 2570, 2590 to 2650 (the field back).
+
+Left (each a listed cause):
+- Settings is not drawn from the menu: A on Settings runs the select pulse and B comes back, but
+  the Options screen is not shown (the capture's 2225 to 2440: the buttons go out, the Options screen
+  fades in over the closing menu from 2265, and fades out over the coming back to 2440). It needs the
+  title's Options code (`play::run_once`, the `Stage` and `leave` replay) moved out of the title's
+  frame clock; rows 2225 to 2445 fail on it.
+- The help bar's transients: the field's bar fading out over the opening (1909 to 1925, 1910 and 1920
+  rows), the menu's bar growing in (1940 and 1945, its plate first 828 px then 1125), the menu's
+  bar going out as the menu closes (2555 to 2565: the plate and words go in steps) and after it the
+  field's coming back (2575 to 2585: a short plate first). All at full width in Barrel.
+- The Settings button's glow while the menu closes (2555 to 2565: the game's goes out 2 frames after
+  the slide's, over 9, from full) and its ring and glow a pixel off in the loops after returning
+  from Settings (2460 to 2550: the animation clock's 121 is a fit, a frame off now and then).
+- The other five buttons: A runs the select pulse and does nothing else (Container, Equip, Gathering
+  Tools, Status, Guide are not built; the game's "not available" cue is not read). Left, right,
+  X, Y, LB, RB and the other photos (ids by story) are not tried in the game.
+- The photo image 0 only; the cards for a party of three only (`list_0`); no Gold Coin plate (the
+  capture draws none); money and level from the save, HP a stand-in.
+- A window's Tab and Y key are Barrel's choice (the game's keyboard map is not read, `docs/engine.md`).
+
 ## The load screen (title menu, Load Game)
 
 Built (2026-11-20, `crates/ryza/src/{load,saves}.rs`, `title_menu.rs`, `play/mod.rs`): the button on
