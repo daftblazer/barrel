@@ -1198,8 +1198,10 @@ to World Map?" question is `question.rs`.
 `Renderer::apply_settings(self, gpu, presenter, settings)` consumes the renderer and returns one for the new
 settings: `release` destroys everything the settings shaped and hands back the `Stable` parts (command pool,
 descriptor set layouts, the lighting ring, the black cube), which `build` takes in place of making them. A scene's
-uploads and sets stay valid; the sampler and the shadow map are new, so the caller calls `SceneGpu::rebind` with
-`renderer.shared`. Escha does not use it (it restarts).
+uploads and sets stay valid; the sampler is new (and the shadow map, when its settings change), so the caller
+calls `SceneGpu::rebind` with `renderer.shared`. With the shadows' settings unchanged `Stable` also carries the shadow
+map, the static far layer's state and the sun's share (`flare::Sun::rebind` points it at the new sampler), so the
+picture goes on as if nothing was rebuilt. Escha does not use it (it restarts).
 
 ## Graphics settings
 

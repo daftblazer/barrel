@@ -436,9 +436,13 @@ pass stays compatible with the text layers, and `SceneGpu::rebind` writes the sa
 scene's sets again. Temporal history starts over. The presets' per-frame values (shadow reach, bloom, level-of-detail
 distances, draw ranges, grass fade) are read from a cell each frame, so they change at once too.
 `tools/live-settings.sh ENV_FILE [CASE]` compares a live change with a cold start of the saved config (see its header).
-Known residual: the live picture differs from the cold one by about 0.3% of the pixels (31 dB; sparse small
-differences in the sun's share, also with the same settings applied again: the renderer's state after a rebuild is
-not yet the first one's, cause not found); Quality Low's plants and textures need the next start.
+When the shadows' settings stay, the rebuild keeps the shadow map, its static far layer (drawn when its square
+last moved, the game's semi-static map) and the sun's share (eased from the value kept the frame before): made
+again they started over and the picture differed from a run that never changed. Results (2026-11-23): the same
+settings applied again mid-run, Render Scale 75%, MSAA 4x and FSR 1 at 75% draw exactly the cold start's picture;
+the temporal ones (FSR native AA, TAA, FSR 3.1: history restarts) 43-47 dB. The title's event draws its waits and
+actions from the clock as the game does, so the check fixes them (`BARREL_EVENT_DRAWS`); without that about one run
+in five differs whatever the settings. Quality Low's plants and textures still need the next start.
 
 ## Controller (Ryza)
 
