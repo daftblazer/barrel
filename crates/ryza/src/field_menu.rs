@@ -62,6 +62,8 @@ const OFF_FRAMES: f32 = 9.0;
 const SELECT_SPEED: f32 = 1.5;
 // STAND-IN: The loops run 121 frames (the animation's 120 and a frame at its end), as the Settings screen's cursor blink does (`options::BLINK_LOOP`, read off the same kind of capture); the real thing is the game's own animation clock.
 const LOOP_FRAMES: f32 = 121.0;
+/// The ring's own loop: STAND-IN, 120.75 frames (the capture's ring after the Settings screen, 2440 and 2445, is a frame ahead of the 121 that fits the first loops).
+const RING_LOOP_FRAMES: f32 = 120.75;
 /// Frames the photo and the cards fade in over (`anm_common_juvenile_fade_in` at speeds 3 and 2).
 const PHOTO_FADE: f32 = 20.0;
 const CARD_FADE: f32 = 30.0;
@@ -86,6 +88,9 @@ const CLOSE_PUT_SPEED: f32 = 3.0;
 /// The help bar's fade and its start after the menu's.
 const HELP_FADE: f32 = 15.0;
 const HELP_AT: f32 = 34.0;
+/// The same after the Settings screen (`field-menu`: 1/3 of the fade on 2440, the menu's frames from 2402), and the frames its plate starts later.
+const HELP_AT_BACK: f32 = 33.0;
+const BACK_PLATE_LATE: f32 = 0.2;
 
 // STAND-IN: The help bar's button glyphs (private-use characters of `mainfont01`) are the capture's; the game picks them by the pad's assignment. The words are the string table's.
 const HELP_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', 4_194_467), ('\u{4eb}', 4_194_451), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
@@ -691,7 +696,7 @@ impl View {
         pen.text(&self.money_text, [right(SLIDE_MONEY, CLOSE_MONEY_SPEED), 0.0], &shown.money.to_string(), a);
         let (put_at, put) = &self.put;
         // (it stays where it is on the way to Settings: the capture draws it whole under the blurred picture)
-        if closed || !closing {
+        if closed || !(closing || nav.warm) {
             pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT, CLOSE_PUT_SPEED), put_at[1]], white(byte(outcubic(slid(SLIDE_PUT, CLOSE_PUT_SPEED), SLIDE_PUT) * 255.0)));
         } else {
             pen.natural(MENU1, put, 0, *put_at, white(1.0));
@@ -699,7 +704,11 @@ impl View {
         // The bar goes out from the key that closes the menu or opens Settings, not with the buttons.
         let bar = match nav.closed.or(nav.chosen.filter(|_| nav.in_settings)) {
             Some(key) => Bar::out(frame - key),
-            None => Bar { alpha: (age - HELP_AT) / HELP_FADE, grow: 1.0, words: true },
+            None => {
+                // (back from Settings it comes up one frame earlier, with its plate a fifth of a frame late, as the screen's own)
+                let (at, late) = if nav.warm { (HELP_AT_BACK, BACK_PLATE_LATE) } else { (HELP_AT, 0.0) };
+                Bar { alpha: (age - at) / HELP_FADE, grow: if nav.warm { ((age - at - late) / PLATE_FRAMES).clamp(0.0, 1.0) } else { 1.0 }, words: true }
+            }
         };
         self.help_bar(&mut pen, bar);
         // A node at no opacity is not drawn (the additive list names quads by place).
@@ -762,7 +771,7 @@ impl View {
         part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)]);
         part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
         // The ring runs from the menu's first frame, whichever button has the glow.
-        let t = ((frame - nav.opened) % LOOP_FRAMES) / 60.0;
+        let t = ((frame - nav.opened) % RING_LOOP_FRAMES) / 60.0;
         let ring_alpha = self.ring_loop[0].at(t)[3] / 255.0 * on_alpha;
         let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
         let p = self.ring.pictures[0];
@@ -821,11 +830,19 @@ const VIGNETTES: [([f32; 4], [f32; 4], f32); 2] = [
     ([-9.0, 525.0, 1941.0, 1087.5], [0.0625, 0.0107421875, 0.328125, 0.9951172], 0.34509805),
 ];
 
-/// The blurred picture of the menu and the vignettes over it, `age` frames after the menu began to go out for the Settings
-/// screen, on a `screen` of pixels. The first quad is the picture's (the renderer draws it from the blur of what the layers
+/// The blurred picture's opacity `age` frames after the menu began to go out for the Settings screen, or, once the screen
+/// was left, `out` frames after its last frame (`field-menu`: whole on 2400, 0.467 on 2405: the same 7.5 frames going out).
+pub fn backdrop_fade(age: f32, out: Option<f32>) -> f32 {
+    match out {
+        Some(out) => 1.0 - out / BACKDROP_FRAMES,
+        None => age / BACKDROP_FRAMES,
+    }
+    .clamp(0.0, 1.0)
+}
+
+/// The blurred picture of the menu and the vignettes over it at `fade` opacity, on a `screen` of pixels. The first quad is the picture's (the renderer draws it from the blur of what the layers
 /// before it drew); its colour is white with the fade as opacity.
-pub fn backdrop(age: f32, screen: (u32, u32)) -> Vec<Quad> {
-    let fade = (age / BACKDROP_FRAMES).clamp(0.0, 1.0);
+pub fn backdrop(fade: f32, screen: (u32, u32)) -> Vec<Quad> {
     if fade <= 0.0 {
         return Vec::new();
     }
@@ -845,12 +862,14 @@ mod tests {
     #[test]
     fn the_blurred_picture_is_whole_by_its_eighth_frame_and_the_vignettes_follow_it() {
         assert!(backdrop(0.0, (1920, 1080)).is_empty());
-        let q = backdrop(4.0, (1920, 1080));
+        assert_eq!(backdrop_fade(4.0, None), 4.0 / 7.5);
+        assert!((backdrop_fade(0.0, Some(4.0)) - 0.4667).abs() < 1e-3);
+        let q = backdrop(backdrop_fade(4.0, None), (1920, 1080));
         assert_eq!(q.len(), 3);
         assert_eq!(q[0].rect, [0.0, 0.0, 1920.0, 1080.0]);
         assert!((q[0].color[3] * 255.0 - 136.0).abs() < 0.01);
         assert!((q[1].color[3] * 255.0 - 80.0).abs() < 0.01);
-        assert_eq!(backdrop(9.0, (1920, 1080))[0].color[3], 1.0);
+        assert_eq!(backdrop(backdrop_fade(9.0, None), (1920, 1080))[0].color[3], 1.0);
     }
 
     #[test]

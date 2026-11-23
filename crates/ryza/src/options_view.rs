@@ -72,6 +72,9 @@ const HELP_AT: f32 = 2.0;
 /// and the frames its plate starts later than the fade (the plate is 3/4 of the way on 2270: STAND-IN, fitted to that one frame).
 const MENU_HELP_AT: f32 = 3.0;
 const MENU_PLATE_LATE: f32 = 0.2;
+/// The frames the bar holds before it fades out after the key that leaves (as the menu's own, `field_menu`'s `BAR_HOLD`) and the frames after it the words go and the plate starts to shrink.
+const MENU_BAR_HOLD: f32 = 5.0;
+const PLATE_LEAVE: f32 = crate::load_view::PLATE_LEAVE;
 /// The help plate's shortest width, and the frames it takes to grow (as the load screen's).
 const PLATE_MIN: f32 = 376.5 / 1.5;
 const PLATE_FRAMES: f32 = 6.4;
@@ -813,20 +816,10 @@ impl View {
             pen.out.push(Quad { turn: false, spin: None, rect: big, uv: [0.0, 0.0, 2.0, 2.0], color: [1.0, 1.0, 1.0, fade], texture });
         }
         let look = |l: &Label, centred: Option<f32>| Look { size: l.size, small: l.small, align: l.align, centred };
-        let caption = |pen: &mut Pen| {
-            // (from the menu: it comes down as it fades in, both by the one curve)
-            let (fade, drop) = if moment.from_menu {
-                let e = 1.0 - (1.0 - ((moment.age as f32 + CAPTION_LEAD) / CAPTION_FRAMES).clamp(0.0, 1.0)).powi(3);
-                (byte(e), -CAPTION_DROP * (1.0 - e))
-            } else {
-                (fade, 0.0)
-            };
-            let at = [self.caption_at[0], self.caption_at[1] + drop];
-            pen.natural(CAPTION, &self.caption, 0, at, [1.0, 1.0, 1.0, fade]);
-            pen.text(&look(&self.caption_text, None), [at[0] + self.caption_text.at[0], at[1] + self.caption_text.at[1]], &s.caption, brown(fade), None);
-        };
+        // (from the menu: it comes down as it fades in, both by the one curve, and is drawn after the page)
+        let coming = 1.0 - (1.0 - ((moment.age as f32 + CAPTION_LEAD) / CAPTION_FRAMES).clamp(0.0, 1.0)).powi(3);
         if !moment.from_menu {
-            caption(&mut pen);
+            self.caption(&mut pen, s, fade, 0.0);
         }
 
         // The tabs.
@@ -874,7 +867,7 @@ impl View {
         // The leave dialog over the page, then the help bar (the list's, or the dialog's own as the dialog comes and goes).
         self.ask(&mut pen, s);
         if moment.from_menu {
-            caption(&mut pen);
+            self.caption(&mut pen, s, byte(coming), -CAPTION_DROP * (1.0 - coming));
         }
         let (help_at, plate_late) = if moment.from_menu { (MENU_HELP_AT, MENU_PLATE_LATE) } else { (HELP_AT, 0.0) };
         let by_age = (((moment.age as f32 - help_at) / FADE_FRAMES).clamp(0.0, 1.0), ((moment.age as f32 - help_at - plate_late) / PLATE_FRAMES).clamp(0.0, 1.0));
@@ -886,6 +879,31 @@ impl View {
             self.help_bar(&mut pen, &s.ask.help, plate, plate.1 >= 1.0);
         }
         (pen.out, pen.clips, pen.glow)
+    }
+
+    /// The caption at `fade` opacity, `drop` layout pixels below its place.
+    fn caption(&self, pen: &mut Pen, s: &Screen, fade: f32, drop: f32) {
+        let look = Look { size: self.caption_text.size, small: self.caption_text.small, align: self.caption_text.align, centred: None };
+        let at = [self.caption_at[0], self.caption_at[1] + drop];
+        pen.natural(CAPTION, &self.caption, 0, at, [1.0, 1.0, 1.0, fade]);
+        pen.text(&look, [at[0] + self.caption_text.at[0], at[1] + self.caption_text.at[1]], &s.caption, Self::rgba(BROWN, fade), None);
+    }
+
+    /// What the field menu's screen leaves on the picture after its last frame, `age` frames after it (0 on the frame
+    /// after): the caption goes up and out over `CAPTION_FRAMES` (the way it came in, backwards) and the help bar goes out
+    /// as the menu's does (`field-menu` 2401 to 2425, B on 2400).
+    pub fn remnants(&self, s: &Screen, age: f32, window: (u32, u32)) -> Vec<Quad> {
+        let k = window.1 as f32 / LAYOUT_HEIGHT;
+        let left = (window.0 as f32 - 1280.0 * k) * 0.5;
+        let mut pen = Pen { view: self, k, left, out: Vec::new(), clips: Vec::new(), glow: 0..0 };
+        let gone = (age / CAPTION_FRAMES).clamp(0.0, 1.0).powi(3);
+        if gone < 1.0 {
+            self.caption(&mut pen, s, byte(1.0 - gone), -CAPTION_DROP * gone);
+        }
+        let key = age + 1.0;
+        let plate = 1.0 - ((key - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0);
+        self.help_bar(&mut pen, &s.help, ((1.0 - (key - MENU_BAR_HOLD) / FADE_FRAMES).clamp(0.0, 1.0), plate), key < PLATE_LEAVE);
+        pen.out
     }
 
     /// The description panel: the item's name over its text.

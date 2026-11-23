@@ -982,6 +982,17 @@ struct SettingsRun {
     told: bool,
 }
 
+/// Frames after the Settings screen's last one its caption and help bar take to go out (`field-menu`: the caption by 2431,
+/// 30 frames from 2401), counted on from the frame after the last.
+const SETTINGS_AFTER: f32 = 31.0;
+
+impl SettingsRun {
+    /// The game frame after the screen's last, once it is over.
+    fn over_since(&self) -> Option<i32> {
+        self.run.left_at().filter(|_| self.run.is_over()).map(|l| self.first + l)
+    }
+}
+
 /// The screen's key for a key of the menu's script.
 fn screen_key(key: barrel_ryza::field_menu::Key) -> Option<barrel_ryza::options_run::Key> {
     use barrel_ryza::field_menu::Key as M;
@@ -2865,7 +2876,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (Some(c), None) => {
                 settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false });
             }
-            (None, Some(sr)) if sr.run.is_over() => {
+            // A on Settings again while the last screen's remnants are still going out: a new screen.
+            (Some(c), Some(sr)) if sr.over_since().is_some() => {
+                if let Some(done) = settings_run.take() {
+                    options_state = done.run.finish();
+                    options_initial = options_state.clone();
+                }
+                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false });
+            }
+            (None, Some(sr)) if sr.over_since().is_some_and(|over| menu_tick >= over as f32 + SETTINGS_AFTER) => {
                 // Back on the menu: the values the screen left stand.
                 if let Some(done) = settings_run.take() {
                     options_state = done.run.finish();
@@ -2925,13 +2944,27 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {
             let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
             layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
-            // The blurred menu and the vignettes over it, from the menu's going out to the screen's last frame.
+            // The blurred menu and the vignettes over it, from the menu's going out to the screen's last frame (and out after it).
+            // In a window the blurred picture itself is not drawn yet (the renderer has no blur of the layers before it): only the vignettes.
             showing_backdrop = false;
-            if let (Some(sr), Some(layer)) = (settings_run.as_ref().filter(|s| !s.run.is_over()), backdrop.as_mut()) {
-                let age = menu_tick - (sr.first as f32 - barrel_ryza::field_menu::BACKDROP_BEFORE);
-                let quads = barrel_ryza::field_menu::backdrop(age, (width, height));
+            if let (Some(sr), Some(layer)) = (settings_run.as_ref(), backdrop.as_mut()) {
+                let fade = match sr.over_since() {
+                    Some(over) => barrel_ryza::field_menu::backdrop_fade(0.0, Some(menu_tick - over as f32)),
+                    None => barrel_ryza::field_menu::backdrop_fade(menu_tick - (sr.first as f32 - barrel_ryza::field_menu::BACKDROP_BEFORE), None),
+                };
+                let mut quads = barrel_ryza::field_menu::backdrop(fade, (width, height));
+                if pump.is_some() && !quads.is_empty() {
+                    quads.remove(0);
+                }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
+            }
+            // What the screen leaves after its last frame (its caption and help bar going out).
+            if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.over_since().is_some()), options_screen.as_mut()) {
+                let age = menu_tick - sr.over_since().unwrap_or(0) as f32;
+                let quads = view.remnants(&sr.run.state.screen(strings), age, (width, height));
+                layer.set_blended(&gpu, &quads, &[], 0..0)?;
+                showing_options = !quads.is_empty();
             }
             // The Settings screen over it, from its first frame.
             if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.run.frame() >= 1 && !s.run.is_over()), options_screen.as_mut()) {

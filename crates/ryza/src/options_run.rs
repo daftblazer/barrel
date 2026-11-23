@@ -183,7 +183,9 @@ impl Run {
     pub fn moment(&self) -> Moment {
         let frame = self.frame;
         let stood = self.leave.stood(frame);
-        let age = self.blinks.age(frame, stood).unwrap_or(frame - stood);
+        // (B with nothing changed: the cursor stands still from the key's own frame, which is the last drawn: `field-menu` 2400)
+        let still = i32::from(self.leave.left_at() == Some(frame));
+        let age = self.blinks.age(frame, stood).unwrap_or(frame - stood) - still;
         Moment { age: frame, blink: options::blink_clock(age, options::blink_speed(self.state.tab)), from_menu: true }
     }
 
