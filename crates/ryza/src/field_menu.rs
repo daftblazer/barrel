@@ -16,7 +16,7 @@ use barrel_formats::table::{self, Element};
 use barrel_render::text::{Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
-use crate::load_view::{style, Style, TEXT_TOP};
+use crate::load_view::{style, Style, PLATE_FRAMES, PLATE_LEAVE, PLATE_MIN, TEXT_TOP};
 use crate::title::{curve, find, numbers, pair, Curve, LAYOUT_HEIGHT};
 
 /// The textures of the menu's layer, in this order.
@@ -429,6 +429,14 @@ const SETTINGS_BACK_LAG: f32 = 2.0;
 /// is at 3/15 of its fade on 2265, so its first frame is 2263).
 pub const SETTINGS_AT: i32 = 43;
 
+/// Frames from A on the Settings button to the first of the menu's going out (the buttons, the plates and the cards as on B,
+/// the background and the photo stay): the Settings screen's first frame less 2 (`field-menu`: the cards at 0.65 of their
+/// opacity on 2265, which is (1 - 4/30)^3, so the going out began on 2261).
+const SETTINGS_OUT_AT: f32 = SETTINGS_AT as f32 - BACKDROP_BEFORE;
+
+/// Frames the going out (and the blurred picture) begins before the Settings screen's first frame.
+pub const BACKDROP_BEFORE: f32 = 2.0;
+
 /// Frames from Y to the menu's first frame (`field-menu`: Y at 1900, the first frame 1906).
 pub const OPEN_LAG: f32 = 6.0;
 
@@ -488,6 +496,27 @@ pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
         }
     }
     nav.filter(|n| n.closed.is_none_or(|c| tick < c + CLOSE_LAG + BG_FADE))
+}
+
+/// How the help bar looks: its opacity (outside 0 to 1 it is clamped), the share of its plate's width between the shortest
+/// and the full and whether its words are drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Bar {
+    alpha: f32,
+    grow: f32,
+    words: bool,
+}
+
+/// Frames the bar holds its opacity after the key that sends it out, and the frames its fade takes (`field-menu`: after A
+/// on 2220 the opacity is 1 on 2225, 2/3 on 2230 and 1/3 on 2235; after B on 2550 the same on 2555, 2560 and 2565).
+const BAR_HOLD: f32 = 5.0;
+
+impl Bar {
+    /// The bar `age` frames after the key that sends it out: the words go first, the plate shrinks to its shortest
+    /// (`load_view`'s fitted rule, the same on this capture: 0.625 of the way at +5) and the plate fades after `BAR_HOLD`.
+    fn out(age: f32) -> Bar {
+        Bar { alpha: 1.0 - (age - BAR_HOLD) / HELP_FADE, grow: 1.0 - ((age - PLATE_LEAVE) / PLATE_FRAMES).clamp(0.0, 1.0), words: age < PLATE_LEAVE }
+    }
 }
 
 /// Opacity from an animation's alpha curve at `t` seconds, as the game's byte.
@@ -587,17 +616,20 @@ impl View {
         let white = |a: f32| [1.0, 1.0, 1.0, a];
         let incubic = |a: f32, frames: f32| (a / frames).clamp(0.0, 1.0).powi(3);
         let outcubic = |a: f32, frames: f32| 1.0 - (1.0 - (a / frames).clamp(0.0, 1.0)).powi(3);
-        // Closing: `out` frames since the buttons began to go (the layout's animations run backwards).
-        let out = nav.closed.map_or(-1.0, |c| frame - (c + CLOSE_LAG));
+        // Closing: `out` frames since the buttons began to go (the layout's animations run backwards), on B and on A on
+        // Settings (which leaves the background and the photo).
+        let going = nav.closed.map(|c| c + CLOSE_LAG).or(nav.chosen.filter(|_| nav.in_settings).map(|c| c + SETTINGS_OUT_AT));
+        let out = going.map_or(-1.0, |g| frame - g);
         let closing = out >= 0.0;
-        let bg = if closing { 1.0 - out / BG_FADE } else if nav.warm { 1.0 } else { age / BG_FADE }.clamp(0.0, 1.0);
+        let closed = closing && nav.closed.is_some();
+        let bg = if closed { 1.0 - out / BG_FADE } else if nav.warm { 1.0 } else { age / BG_FADE }.clamp(0.0, 1.0);
         pen.out.push(Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32 * 2.0, screen.1 as f32 * 2.0], uv: [0.0, 0.0, 2.0, 2.0], color: white(byte(bg * 255.0)), texture: BACKGROUND });
 
         // The photo, turned, and the mask drawn for its cards' fade.
         let (photo_at, photo_size, photo_turn, photo_style) = &self.photo;
         let photo_at = *photo_at;
         let uv = pen.uv(PHOTO, photo_style.pictures[0]);
-        let photo = if closing { incubic(CARD_FADE - out, CARD_FADE) } else if nav.warm { 1.0 } else { incubic(age, PHOTO_FADE) };
+        let photo = if closed { incubic(CARD_FADE - out, CARD_FADE) } else if nav.warm { 1.0 } else { incubic(age, PHOTO_FADE) };
         pen.turned(PHOTO, uv, photo_at, *photo_size, *photo_turn, white(byte(photo * 255.0)));
         let (shadow_at, shadow_size, shadow_style) = &self.shadow;
         let shadow = shadow_style.pictures[0];
@@ -635,8 +667,9 @@ impl View {
             let at = [at[0] + dx, at[1]];
             let alpha = byte(a * 255.0);
             pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], white(alpha));
-            // (the glow goes with the first button's slide)
-            let glow_slide = if closing { byte(slide_state(0.0).0 * 255.0) } else { alpha };
+            // (the glow goes with the first button's slide; on the way to Settings it goes out by itself over `OFF_FRAMES`:
+            // the capture's 142/255 on 2265 is 1 - 4/9)
+            let glow_slide = if closed { byte(slide_state(0.0).0 * 255.0) } else if closing { byte((1.0 - out / OFF_FRAMES).clamp(0.0, 1.0) * 255.0) } else { alpha };
             self.glow(&mut pen, nav, i, at, glow_slide, frame);
             let image = BUTTONS[i];
             pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], white(alpha));
@@ -657,9 +690,28 @@ impl View {
         pen.pic(ICON, p, [icon_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), icon_at[1]], [p[2] / PER_LAYOUT * icon_scale, p[3] / PER_LAYOUT * icon_scale], white(a));
         pen.text(&self.money_text, [right(SLIDE_MONEY, CLOSE_MONEY_SPEED), 0.0], &shown.money.to_string(), a);
         let (put_at, put) = &self.put;
-        pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT, CLOSE_PUT_SPEED), put_at[1]], white(byte(outcubic(slid(SLIDE_PUT, CLOSE_PUT_SPEED), SLIDE_PUT) * 255.0)));
-        self.help_bar(&mut pen, if closing { 1.0 - out / HELP_FADE } else { (age - HELP_AT) / HELP_FADE });
-        (pen.out, pen.additive)
+        // (it stays where it is on the way to Settings: the capture draws it whole under the blurred picture)
+        if closed || !closing {
+            pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT, CLOSE_PUT_SPEED), put_at[1]], white(byte(outcubic(slid(SLIDE_PUT, CLOSE_PUT_SPEED), SLIDE_PUT) * 255.0)));
+        } else {
+            pen.natural(MENU1, put, 0, *put_at, white(1.0));
+        }
+        // The bar goes out from the key that closes the menu or opens Settings, not with the buttons.
+        let bar = match nav.closed.or(nav.chosen.filter(|_| nav.in_settings)) {
+            Some(key) => Bar::out(frame - key),
+            None => Bar { alpha: (age - HELP_AT) / HELP_FADE, grow: 1.0, words: true },
+        };
+        self.help_bar(&mut pen, bar);
+        // A node at no opacity is not drawn (the additive list names quads by place).
+        let Pen { out, additive, .. } = pen;
+        let mut places = Vec::with_capacity(out.len());
+        let mut kept = 0;
+        for q in &out {
+            places.push(kept);
+            kept += usize::from(q.color[3] > 0.0);
+        }
+        let additive = additive.into_iter().filter(|&i| out[i].color[3] > 0.0).map(|i| places[i]).collect();
+        (out.into_iter().filter(|q| q.color[3] > 0.0).collect(), additive)
     }
 
     /// A button's glow: the cursor's glow and ring while the cursor is on it and as they fade
@@ -718,9 +770,9 @@ impl View {
         part(pen, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], middle, ring_scale, [1.0, 1.0, 1.0, byte(ring_alpha * slide * 255.0)]);
     }
 
-    /// The help bar: the plate and the entries' words, `along` fading in from 0 to 1.
-    fn help_bar(&self, pen: &mut Pen, along: f32) {
-        let alpha = along.clamp(0.0, 1.0);
+    /// The help bar: the plate and the entries' words as `bar` says.
+    fn help_bar(&self, pen: &mut Pen, bar: Bar) {
+        let alpha = bar.alpha.clamp(0.0, 1.0);
         if alpha <= 0.0 {
             return;
         }
@@ -728,7 +780,8 @@ impl View {
         let s = self.help_text.size * pen.k / ATLAS_SIZE;
         let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
         // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`).
-        let width = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let width = PLATE_MIN + (full - PLATE_MIN) * bar.grow;
         let [x, y, w, h] = self.help.pictures[0];
         let [ml, mr] = self.help.margins.unwrap_or([0.0; 2]);
         let (cap_l, cap_r, height) = (ml / PER_LAYOUT, mr / PER_LAYOUT, h / PER_LAYOUT);
@@ -744,14 +797,74 @@ impl View {
             left -= part;
         }
         pen.pic(GUIDE, [x + w - mr, y, mr, h], [at_x, at[1]], [cap_r, height], color);
-        let label = Label { color: [1.0, 1.0, 1.0], ..self.help_text };
-        pen.text(&label, [1280.0, 720.0], &line, byte(alpha * 255.0));
+        if bar.words {
+            let label = Label { color: [1.0, 1.0, 1.0], ..self.help_text };
+            pen.text(&label, [1280.0, 720.0], &line, byte(alpha * 255.0));
+        }
     }
+}
+
+/// The backdrop layer's textures: `sys_white` (the blurred menu is drawn through its quad) and `a21_common` picture 1 (the two
+/// vignettes).
+pub const BACKDROP_WHITE: usize = 0;
+pub const BACKDROP_VIGNETTE: usize = 1;
+pub const BACKDROP_TEXTURES: usize = 2;
+
+/// Frames the blurred picture and its vignettes take to come in, counted from the menu's first going out (`field-menu`:
+/// 8/15 of their opacity on 2265, four frames on, and whole on 2270). STAND-IN: one sample on the way, a line is fitted.
+const BACKDROP_FRAMES: f32 = 7.5;
+
+/// The vignettes' places on the 1920 x 1080 screen, their pictures' uv and opacity at full (read off the capture's quads; the
+/// layout that holds them is not found, the game draws them over the blurred picture of any menu behind its sub-screens).
+const VIGNETTES: [([f32; 4], [f32; 4], f32); 2] = [
+    ([-9.0, -7.5, 1941.0, 1132.5], [0.3671875, 0.0107421875, 0.6015625, 0.06933594], 0.5882353),
+    ([-9.0, 525.0, 1941.0, 1087.5], [0.0625, 0.0107421875, 0.328125, 0.9951172], 0.34509805),
+];
+
+/// The blurred picture of the menu and the vignettes over it, `age` frames after the menu began to go out for the Settings
+/// screen, on a `screen` of pixels. The first quad is the picture's (the renderer draws it from the blur of what the layers
+/// before it drew); its colour is white with the fade as opacity.
+pub fn backdrop(age: f32, screen: (u32, u32)) -> Vec<Quad> {
+    let fade = (age / BACKDROP_FRAMES).clamp(0.0, 1.0);
+    if fade <= 0.0 {
+        return Vec::new();
+    }
+    let (w, h) = (screen.0 as f32, screen.1 as f32);
+    let (sx, sy) = (w / 1920.0, h / 1080.0);
+    let mut quads = vec![Quad { turn: false, spin: None, rect: [0.0, 0.0, w, h], uv: [0.0, 0.0, 0.125, 0.125], color: [1.0, 1.0, 1.0, byte(fade * 255.0)], texture: BACKDROP_WHITE }];
+    for (r, uv, alpha) in VIGNETTES {
+        quads.push(Quad { turn: false, spin: None, rect: [r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy], uv, color: [1.0, 1.0, 1.0, byte(fade * alpha * 255.0)], texture: BACKDROP_VIGNETTE });
+    }
+    quads
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_blurred_picture_is_whole_by_its_eighth_frame_and_the_vignettes_follow_it() {
+        assert!(backdrop(0.0, (1920, 1080)).is_empty());
+        let q = backdrop(4.0, (1920, 1080));
+        assert_eq!(q.len(), 3);
+        assert_eq!(q[0].rect, [0.0, 0.0, 1920.0, 1080.0]);
+        assert!((q[0].color[3] * 255.0 - 136.0).abs() < 0.01);
+        assert!((q[1].color[3] * 255.0 - 80.0).abs() < 0.01);
+        assert_eq!(backdrop(9.0, (1920, 1080))[0].color[3], 1.0);
+    }
+
+    #[test]
+    fn the_bar_goes_out_as_the_capture_shows_it() {
+        // A on 2220, frames 2225, 2230 and 2235
+        let b = Bar::out(5.0);
+        assert_eq!((b.alpha, b.words), (1.0, false));
+        assert!((b.grow - 0.625).abs() < 1e-6);
+        let b = Bar::out(10.0);
+        assert!((b.alpha - 2.0 / 3.0).abs() < 1e-6);
+        assert_eq!(b.grow, 0.0);
+        assert!((Bar::out(15.0).alpha - 1.0 / 3.0).abs() < 1e-6);
+        assert!(Bar::out(1.0).words);
+    }
 
     #[test]
     fn the_cursor_walks_the_buttons_in_order_and_wraps() {

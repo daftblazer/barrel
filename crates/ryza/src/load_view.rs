@@ -418,9 +418,9 @@ impl Pen<'_> {
 
 /// The help plate's shortest width (376.5 px of the capture at 1.5 px a layout pixel), the frames
 /// its grow and shrink take, and the frames after the choice the shrink starts at (fitted).
-const PLATE_MIN: f32 = 376.5 / 1.5;
-const PLATE_FRAMES: f32 = 6.4;
-const PLATE_LEAVE: f32 = 2.6;
+pub(crate) const PLATE_MIN: f32 = 376.5 / 1.5;
+pub(crate) const PLATE_FRAMES: f32 = 6.4;
+pub(crate) const PLATE_LEAVE: f32 = 2.6;
 
 impl View {
     /// The help bar's line: each entry's button glyph, then its words.

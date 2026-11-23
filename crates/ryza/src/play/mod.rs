@@ -532,6 +532,15 @@ fn menu_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
     Ok((layer, view))
 }
 
+/// The layer of the blurred menu picture and the vignettes over it (`barrel_ryza::field_menu::backdrop`).
+fn backdrop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<text::Layer> {
+    let wanted = [("\\data\\x64\\res_cmn\\ui\\sys_white.g1t", 0), ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 1)];
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..barrel_ryza::field_menu::BACKDROP_TEXTURES])?)
+}
+
 /// The load screen's layer (the textures of `barrel_ryza::load_view`), its view and the saving
 /// notice drawn over the black while saves are read and one loads.
 fn load_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::load_view::View, barrel_ryza::boot::Boot)> {
@@ -1956,6 +1965,22 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut pad_any = false;
     let mut title_input = a.title_input.clone();
     title_input.saves |= !save_slots.is_empty();
+    // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
+    let mut hud = match (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some() {
+        true => Some(hud_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
+    // The field's menu (Y): its layer where there is a field HUD to leave, and the blurred picture of it the Settings
+    // screen is drawn over (made right after it and before the screen's: the layers draw, and the draw trace lists them, in
+    // the order they were made).
+    let mut field_menu = match hud.is_some() {
+        true => Some(menu_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
+    let mut backdrop = match hud.is_some() {
+        true => Some(backdrop_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
     // The Settings screen's own layer and what it shows (the config's values over the defaults).
     // The field's menu opens it too (where there is a field HUD to leave).
     let field_has_menu = (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some();
@@ -1996,16 +2021,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The Settings tab and row last printed (`settings: tab N row M`).
     let mut shown_row: Option<(usize, usize)> = None;
     let mut showing_options = false;
-    // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
-    let mut hud = match (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some() {
-        true => Some(hud_layer(&install, &gpu, &renderer)?),
-        false => None,
-    };
-    // The field's menu (Y): its layer where there is a field HUD to leave.
-    let mut field_menu = match hud.is_some() {
-        true => Some(menu_layer(&install, &gpu, &renderer)?),
-        false => None,
-    };
+    let mut showing_backdrop = false;
     // The menu's keys so far (the script's offscreen; a window adds the player's: Tab or Y opens it,
     // the arrows or the D-pad move, Enter or A chooses, Backspace, Escape or B closes) and whether it is up.
     let mut menu_keys = a.menu_keys.clone();
@@ -2806,7 +2822,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         let look = leave.look(frame);
                         let mut screen = options_state.screen(strings);
                         screen.leave = look.clone();
-                        (quads, clips, glow) = view.quads(&screen, barrel_ryza::options_view::Moment { age, blink }, (width, height));
+                        (quads, clips, glow) = view.quads(&screen, barrel_ryza::options_view::Moment { age, blink, from_menu: false }, (width, height));
                         // The black over the screen as it is saved, and the notice over that (in the load screen's layer, which holds its pictures).
                         if look.cover > 0.0 {
                             quads.push(flow::cover(look.cover, (width, height), 0));
@@ -2909,6 +2925,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {
             let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
             layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
+            // The blurred menu and the vignettes over it, from the menu's going out to the screen's last frame.
+            showing_backdrop = false;
+            if let (Some(sr), Some(layer)) = (settings_run.as_ref().filter(|s| !s.run.is_over()), backdrop.as_mut()) {
+                let age = menu_tick - (sr.first as f32 - barrel_ryza::field_menu::BACKDROP_BEFORE);
+                let quads = barrel_ryza::field_menu::backdrop(age, (width, height));
+                showing_backdrop = !quads.is_empty();
+                layer.set(&gpu, &quads)?;
+            }
             // The Settings screen over it, from its first frame.
             if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.run.frame() >= 1 && !s.run.is_over()), options_screen.as_mut()) {
                 let look = sr.run.look();
@@ -2956,9 +2980,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (true, Some((l, _, _)), _, _) => vec![l],
             (_, _, true, Some((l, _, _))) if showing_notice && menu_now.is_none() => std::iter::once(l).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
             (_, _, true, Some((l, _, _))) if menu_now.is_none() => vec![l],
-            _ if menu_now.is_some() && showing_options && showing_notice => field_menu.iter().map(|(l, _)| l).chain(options_screen.as_ref().map(|(l, _, _)| l)).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
-            _ if menu_now.is_some() && showing_options => field_menu.iter().map(|(l, _)| l).chain(options_screen.as_ref().map(|(l, _, _)| l)).collect(),
-            _ if menu_now.is_some() => field_menu.iter().map(|(l, _)| l).collect(),
+            _ if menu_now.is_some() => field_menu
+                .iter()
+                .map(|(l, _)| l)
+                .chain(backdrop.as_ref().filter(|_| showing_backdrop))
+                .chain(options_screen.as_ref().filter(|_| showing_options).map(|(l, _, _)| l))
+                .chain(load_screen.as_ref().filter(|_| showing_options && showing_notice).map(|(n, _, _)| n))
+                .collect(),
             _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
         // The view-projection drawn with: shifted by this frame's sub-pixel jitter when TAA or a

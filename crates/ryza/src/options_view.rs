@@ -68,6 +68,10 @@ const ROWS_SHOWN: usize = 12;
 const FADE_FRAMES: f32 = 15.0;
 /// The help bar fades in from this many frames after the screen starts (capture: 9/15 at age 11).
 const HELP_AT: f32 = 2.0;
+/// The same on the field menu's screen (`field-menu`: 1/3 of the fade on 2270, 5 frames on from 2265, the screen's frame 3),
+/// and the frames its plate starts later than the fade (the plate is 3/4 of the way on 2270: STAND-IN, fitted to that one frame).
+const MENU_HELP_AT: f32 = 3.0;
+const MENU_PLATE_LATE: f32 = 0.2;
 /// The help plate's shortest width, and the frames it takes to grow (as the load screen's).
 const PLATE_MIN: f32 = 376.5 / 1.5;
 const PLATE_FRAMES: f32 = 6.4;
@@ -206,7 +210,16 @@ pub struct Moment {
     pub age: i32,
     /// The cursor's blink in frames (`anm_common_blink`'s 120).
     pub blink: f32,
+    /// The screen was opened from the field's menu: its caption comes down from above over `CAPTION_FRAMES`, 2 frames before
+    /// the screen's first, and is drawn after the page (the title's is drawn first and fades in with the rest).
+    pub from_menu: bool,
 }
+
+/// The caption's coming in on the field menu's screen (`field-menu` 2265 to 2285): opacity as outcubic over this many frames
+/// from `CAPTION_LEAD` frames before the screen's first, and the height it comes down from, in layout pixels.
+const CAPTION_FRAMES: f32 = 30.0;
+const CAPTION_LEAD: f32 = 1.0;
+const CAPTION_DROP: f32 = 30.0;
 
 struct Template {
     mask: [f32; 2],
@@ -799,9 +812,22 @@ impl View {
         for texture in [BG_08, BG_05] {
             pen.out.push(Quad { turn: false, spin: None, rect: big, uv: [0.0, 0.0, 2.0, 2.0], color: [1.0, 1.0, 1.0, fade], texture });
         }
-        pen.natural(CAPTION, &self.caption, 0, self.caption_at, [1.0, 1.0, 1.0, fade]);
         let look = |l: &Label, centred: Option<f32>| Look { size: l.size, small: l.small, align: l.align, centred };
-        pen.text(&look(&self.caption_text, None), [self.caption_at[0] + self.caption_text.at[0], self.caption_at[1] + self.caption_text.at[1]], &s.caption, brown(fade), None);
+        let caption = |pen: &mut Pen| {
+            // (from the menu: it comes down as it fades in, both by the one curve)
+            let (fade, drop) = if moment.from_menu {
+                let e = 1.0 - (1.0 - ((moment.age as f32 + CAPTION_LEAD) / CAPTION_FRAMES).clamp(0.0, 1.0)).powi(3);
+                (byte(e), -CAPTION_DROP * (1.0 - e))
+            } else {
+                (fade, 0.0)
+            };
+            let at = [self.caption_at[0], self.caption_at[1] + drop];
+            pen.natural(CAPTION, &self.caption, 0, at, [1.0, 1.0, 1.0, fade]);
+            pen.text(&look(&self.caption_text, None), [at[0] + self.caption_text.at[0], at[1] + self.caption_text.at[1]], &s.caption, brown(fade), None);
+        };
+        if !moment.from_menu {
+            caption(&mut pen);
+        }
 
         // The tabs.
         pen.wrap(V2_COMMON, &self.tab_line, self.tab_line_at, self.tab_line_size, white);
@@ -847,7 +873,11 @@ impl View {
 
         // The leave dialog over the page, then the help bar (the list's, or the dialog's own as the dialog comes and goes).
         self.ask(&mut pen, s);
-        let by_age = (((moment.age as f32 - HELP_AT) / FADE_FRAMES).clamp(0.0, 1.0), ((moment.age as f32 - HELP_AT) / PLATE_FRAMES).clamp(0.0, 1.0));
+        if moment.from_menu {
+            caption(&mut pen);
+        }
+        let (help_at, plate_late) = if moment.from_menu { (MENU_HELP_AT, MENU_PLATE_LATE) } else { (HELP_AT, 0.0) };
+        let by_age = (((moment.age as f32 - help_at) / FADE_FRAMES).clamp(0.0, 1.0), ((moment.age as f32 - help_at - plate_late) / PLATE_FRAMES).clamp(0.0, 1.0));
         let list = s.leave.list_help.unwrap_or(by_age);
         if list.0 > 0.0 {
             self.help_bar(&mut pen, &s.help, list, true);

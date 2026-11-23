@@ -184,7 +184,7 @@ impl Run {
         let frame = self.frame;
         let stood = self.leave.stood(frame);
         let age = self.blinks.age(frame, stood).unwrap_or(frame - stood);
-        Moment { age: frame, blink: options::blink_clock(age, options::blink_speed(self.state.tab)) }
+        Moment { age: frame, blink: options::blink_clock(age, options::blink_speed(self.state.tab)), from_menu: true }
     }
 
     /// The tab a key turns to is the state's; whether a change is unsaved.
