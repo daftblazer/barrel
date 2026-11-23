@@ -53,6 +53,9 @@ pub struct Play {
     pub swap_confirm: bool,
     /// The Map Rotation row on (value 0; Off, 1, is the default): the minimap turns with the camera.
     pub map_rotation: bool,
+    /// The Zoom Controls row's second choice (Inverted): Barrel's zoom keys swap. The game's own
+    /// zoom input is not read, so this flips Barrel's keys only.
+    pub zoom_inverted: bool,
 }
 
 impl Play {
@@ -69,6 +72,7 @@ impl Play {
             feel: Feel::of(value("camera_horizontal", 0) != 0, value("camera_vertical", 0) != 0, value("camera_horizontal_speed", 5), value("camera_vertical_speed", 5)),
             swap_confirm: value("confirm_button", 0) != 0,
             map_rotation: value("map_rotation", 1) == 0,
+            zoom_inverted: value("zoom_controls", 0) != 0,
         }
     }
 
@@ -127,5 +131,11 @@ mod tests {
         assert!(!Play::from_config(None).map_rotation);
         assert!(Play::from_config(Some("option_map_rotation 0\n")).map_rotation);
         assert!(!Play::from_config(Some("option_map_rotation 1\n")).map_rotation);
+    }
+
+    #[test]
+    fn zoom_controls_inverted_is_value_one() {
+        assert!(!Play::from_config(None).zoom_inverted);
+        assert!(Play::from_config(Some("option_zoom_controls 1\n")).zoom_inverted);
     }
 }

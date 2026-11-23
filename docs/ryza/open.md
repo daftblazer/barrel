@@ -376,8 +376,10 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     over the walk, the follow's full sideways lean included, so Off does not stop the follow (Barrel's
     `walk::Camera::follow` stays on for both values). The reset behind her never happens on that route
     with it On either; what sets it off (standing still? a button?) is not found, so Barrel has none
-    and both values draw the same as the game on every route measured. Zoom controls,
-    Difficulty,
+    and both values draw the same as the game on every route measured. Zoom Controls Inverted swaps
+    Barrel's zoom keys (= and -; the game's own zoom input is not read, `preferences::Play::zoom_inverted`),
+    live on Yes like the camera rows.
+  - Still stored only: Difficulty,
     Dash (string 4522107: hold the dash button to sprint, or press it to toggle sprinting; Barrel has no
     sprint yet), Event Autoplay, Subtitle Size, Autosave, Vibration, Item Auto Select, Save Order, Toggle
     Icons, Cursor Speed (each belongs to code the field or the events do not have yet). Their

@@ -1971,7 +1971,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 left: [key(K::KeyD) - key(K::KeyA) + left[0] + a.lean[0], key(K::KeyW) - key(K::KeyS) + left[1] + a.lean[1]],
                 right: [key(K::ArrowRight) - key(K::ArrowLeft) + right[0], right[1] - (key(K::ArrowUp) - key(K::ArrowDown))],
             };
-            Some((dt, sticks, key(K::Equal) - key(K::Minus)))
+            let zoom = key(K::Equal) - key(K::Minus);
+            Some((dt, sticks, if play.zoom_inverted { -zoom } else { zoom }))
         } else if let (Some(from), Some(script), true) = (a.walk_from, &walk_script, rig.is_some()) {
             let (_, left, right) = script.at(i64::from(from) + i64::from(frame_no));
             Some((1.0 / 60.0, barrel_ryza::walk::Sticks { left, right }, 0.0))
