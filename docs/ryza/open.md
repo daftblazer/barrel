@@ -370,8 +370,13 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     `tools/options-effects.sh ENV_FILE` (a field walk with the right stick held, and the title's volumes line).
     Not live-checked through the screen's Yes (the apply path is the start path's `Play::from_config`).
   - Still stored only: Camera Auto-correct (its description, string 4522104: "Set to On to
-    automatically reset the camera behind your character", so a swing back behind her on top of the
-    follow, which is on at the row's default; when and how fast it swings is not read), Zoom controls,
+    automatically reset the camera behind your character"). Measured (ryza-recomp scenario
+    autocorrect-off, the hud-walk route with Map Rotation On so the minimap shows the camera's yaw,
+    against map-rotation): with it Off the camera's yaw is the same to the last digit at nine frames
+    over the walk, the follow's full sideways lean included, so Off does not stop the follow (Barrel's
+    `walk::Camera::follow` stays on for both values). The reset behind her never happens on that route
+    with it On either; what sets it off (standing still? a button?) is not found, so Barrel has none
+    and both values draw the same as the game on every route measured. Zoom controls,
     Difficulty,
     Dash (string 4522107: hold the dash button to sprint, or press it to toggle sprinting; Barrel has no
     sprint yet), Event Autoplay, Subtitle Size, Autosave, Vibration, Item Auto Select, Save Order, Toggle
