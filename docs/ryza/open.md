@@ -344,12 +344,27 @@ rows' words are `str_option_define.xml`, `str_ui.xml`, `str_quick_menu_define.xm
     pad's buttons), and show no key names. Texture Filtering, Shadow Draw Distance, Water Quality and LOD Distance are
     `graphics::Item`s the presets read. Frames the capture did not cover (the list's scroll back
     up, a tab's cursor after Escape) follow the same rules, unchecked.
-  - Every Game, Camera and Audio value is stored only: nothing reads them (volumes too, here: the
-    title's sound has no volume setting yet; Difficulty, Dash, camera inversion ... belong to the
-    field and the event code). Their order and descriptions on the Camera and Audio tabs are the
-    string tables', not captured (the capture shows the Game tab only); Difficulty offers five
-    levels of the seven strings (Charismatic and Legendary left out, unverified); the volumes'
-    range 0-10 and defaults are guesses.
+  - **Audio, Camera and Game values that act (2026-11-23, `preferences.rs`; saved on Yes they
+    apply at once, and at a start):** the BGM, Sound Effects and Voice volumes set the mixer's
+    gain of their category (`Sound::set_volumes`, logged as `sound: volumes ...`; the effects
+    play nothing yet, their codec being silent), the Movie volume is held for the video player
+    (the game's videos do not play yet); the two camera inversions flip and the two speeds scale
+    the right stick's turn and pitch (`walk::Feel`; the follow after walking is not scaled);
+    the Confirm Button's second choice swaps the pad's A and B in the menus. Defaults change
+    nothing. STAND-IN: the volumes' curve (row 5 = today's level, 6 dB a step down to -24 dB at
+    1, silence at 0, 1.2 dB a step up to +6 dB at 10) and the speeds (linear, 5 = the measured
+    rate) are Barrel's, the game's are not read; the volumes' range 0-10 and defaults remain guesses.
+    Tests: `preferences::tests`, `walk::tests::the_camera_rows_flip_and_scale_the_right_stick`,
+    `tools/options-effects.sh ENV_FILE` (a field walk with the right stick held, and the title's volumes line).
+    Not live-checked through the screen's Yes (the apply path is the start path's `Play::from_config`).
+  - Still stored only: Camera Auto-correct (its meaning is unread: the follow after walking is on
+    in the captures at the row's default, so it is not simply that), Zoom controls, Map Rotation
+    (the minimap is drawn fixed-north only; turning it with the camera is not built), Difficulty,
+    Dash, Event Autoplay, Subtitle Size, Autosave, Vibration, Item Auto Select, Save Order, Toggle
+    Icons, Cursor Speed (each belongs to code the field or the events do not have yet). Their
+    order and descriptions on the Camera and Audio tabs are the string tables', not captured
+    (the capture shows the Game tab only); Difficulty offers five levels of the seven strings
+    (Charismatic and Legendary left out, unverified).
   - Leaving: see "Leaving the screen" below (built).
   - Unexplained, fitted (named constants in `options_view.rs`): the names Vibration, Dash and
     Autosave sit 3.0 px (Autosave 3.7) lower than the others in the rows and in the description's

@@ -613,6 +613,11 @@ mistake for a day). `u46` in the events does not play its movie yet.
   run, with 0.35 1.0 cm. Her position does not depend on it (she moves at the lean's speed).
   Lockstep checks on her walk see the pose of the run differ in phase, not the path.
 
+- **Ryza's volume and camera-speed rows follow Barrel's curves.** The Audio rows' volumes step in
+  decibels about the default (`preferences::volume_gain`: 6 dB a step below row 5, 1.2 above, row 0
+  silent) and the Camera rows' speeds are linear in the stick's rate (`walk::Feel::of`), stand-ins:
+  the game's curves are not read. At the defaults both are exactly as before.
+
 - **Ryza's Fullscreen is borderless.** The Window Settings row's Borderless and Fullscreen both open a
   borderless window on the window's screen (the saved `fullscreen on`); the Screen Resolution row sizes the
   window only. Frame Rate Limit sleeps the loop to its interval (30, 60, 120, 144 or none) before each present;
