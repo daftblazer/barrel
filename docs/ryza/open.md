@@ -345,6 +345,23 @@ Left (each a listed cause):
   capture draws none); money and level from the save, HP a stand-in.
 - A window's Tab and Y key are Barrel's choice (the game's keyboard map is not read, `docs/engine.md`).
 
+### Field menu: what is left (2026-11-23)
+
+Built and at 0 (91 field-menu-* rows): opening and closing from the field, the cursor, the help bar and its transients,
+Settings from the menu there and back (with the blurred menu under it), the character pick on Equip and Status, B back from
+a page, the Equipment page without its item card (2330-2370, 2410, 2420). The party's numbers come from the game's table
+(`party_stats.rs`). Left, in the order worth doing:
+- Equipment page: the item card (`uil_a21_item_info.xml` `equip_arms`, frame at layout (354, 7); it needs the item table's
+  effects, status and roles and the save's potentials, none read yet: about 650 quads at 2290), the slides and fades on a
+  slot or character change (2380-2400: 2-3 mismatches), the page coming in and going out (2500, 2510: about 260), the cursor
+  blink one frame behind from 2440 (1 mismatch each to 2490). Sections "part 6", "part 7" below.
+- Status page: not drawn (A on a Status card shows the pick). Answer key field-menu-status 2320-2620.
+- Container, Gathering Tools, Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540).
+- The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
+- No window run of the pages yet; offscreen pixel pictures of the menu show the photo white (not looked into).
+- Check `title-3d-1135` (checks.txt) left three offscreen barrel runs hung for hours on 2026-11-23 (killed by hand; cause
+  not looked into).
+
 ## The load screen (title menu, Load Game)
 
 Built (2026-11-20, `crates/ryza/src/{load,saves}.rs`, `title_menu.rs`, `play/mod.rs`): the button on
