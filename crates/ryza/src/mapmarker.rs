@@ -43,15 +43,6 @@ pub fn current<'a>(rows: &'a [MapMarker], story: &Story) -> Option<&'a MapMarker
     rows.iter().find(|r| story.done(&r.start) && !r.ends.iter().any(|e| story.done(e)))
 }
 
-// STAND-IN: Which exit leads to which field is not in the tables (a `FIELDMAP_CHANGE_EX` row has no target; the game keeps it in the executable); this is the one read off the capture: the destination `S08_T_BODEN`'s marker points at Rasenboden's exit 6 (the five frames' pointing rays of `hud-walk` cross within 15 units of it).
-/// (field, destination field, the field's exit `fixID` toward it).
-const EXITS_TOWARD: [(&str, &str, u32); 1] = [("S06_T_RASEN", "S08_T_BODEN", 6)];
-
-/// The `fixID` of the exit of `field` that leads toward the field `to`, where known.
-pub fn exit_toward(field: &str, to: &str) -> Option<u32> {
-    EXITS_TOWARD.iter().find(|(f, t, _)| f.eq_ignore_ascii_case(field) && t.eq_ignore_ascii_case(to)).map(|e| e.2)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2564,9 +2564,9 @@ test as a span, "Ryza DX: story spans") is where the story goes next, `fieldMapT
 (`S08_T_BODEN`), `targetX` and `targetZ` a place in metres when it is in that map (451, 249.22 in
 Rasenboden); the other rows have none and the marker points at the exit toward that field. Events
 are named without `EVENT_`. The save in Rasenboden (`MM00_010` played, `MM00_020` not) is at the
-first row, Boden. The minimap draws it (docs/ryza/open.md, "Field HUD"). Which exit leads where is
-not in any table read (`FIELDMAP_CHANGE_EX` rows carry no target); Barrel has the one pair read off
-the capture (Rasenboden's exit 6 toward Boden).
+first row, Boden. The minimap draws it (docs/ryza/open.md, "Field HUD"). Which exit leads where:
+a `FIELDMAP_CHANGE_EX` row's first `<Value>` is its destination field (`FIELDMAP_S08_T_BODEN`;
+Rasenboden's exit 6 is Boden, as the capture had it), the next values look like a place there and an angle (not read).
 
 ## Ryza DX: story spans
 

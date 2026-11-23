@@ -161,12 +161,16 @@ north mark, then the destination and its two glows, over the frame and not clipp
   (Rasenboden at the capture's save: fixID 13, 6, 9; 15 waits for `MM00_030`, 43 for `MM02_100`).
 - Townsfolk: the people standing at the hour of the save's clock (the clock's own periods, not
   the scene's `--time`) whose `npcpeople` row says `talk="1"` (`Npc::talk`): NPC24A_00 and the two
-  boys, 3 of the 22 standing. The ones that walk a path have no place read (0, 0, 0): they are
-  not marked, whether the game marks them is not checked.
+  boys, 3 of the 22 standing. The walkers are not marked, and the rule explains it: Rasenboden has
+  10 walkers (`move_data`) and none has `talk="1"` (8 people do, all standing), so a marker for
+  `talk` people alone gives the game's counts (the 58 frames diffed against the draws have the
+  same townsfolk quads as Barrel, 3 each, 0 mismatches). Whether a walker with `talk="1"` would be marked is not
+  testable in this field.
 - Destination: `mapmarker::current` (docs/tables.md, "Ryza DX: map markers"): a place of this
-  field when the row has one, else the exit toward the row's field. That map is a STAND-IN
-  (`EXITS_TOWARD`: only Rasenboden to Boden, exit 6, read off the capture; the exits' targets
-  are not in the tables). It sits on the ring of 80 layout pixels (`DESTINATION_RING`) when
+  field when the row has one, else the exit toward the row's field: each exit's destination is
+  the first `<Value>` of its row's `<Parameter>` (`FIELDMAP_S08_T_BODEN`; `gimmick::Exit::to`,
+  read from the text since the table reader drops it; Rasenboden's exit 6 is Boden, as the
+  capture had it; 13 Livingroom, 43 Secretbase 02, 15 Highway 01, 9 Pasture). It sits on the ring of 80 layout pixels (`DESTINATION_RING`) when
   farther than that from the arrow, else where it is.
 - Glows: `a21_field.g1t#1` pictures 2 and 3 (80 and 72 pixels), additive (`Layer::set_blended`, the
   render layer's second pipeline: source alpha, destination one), colour (155, 255, 255), both with
@@ -184,20 +188,41 @@ Left:
   (50 to the hour fits the one capture: 493 shows AM 10; the game's clock does not advance in the
   50 seconds walked), the clock picture by period (picture 2 for 10 AM; the others guessed), the
   tool (the first) and the arrow's middle (1729, 886 on 1080 lines, read off the capture).
-- The popups (identified 2026-11-20 from `hud-walk` 1800 and 3500, not built):
-  - 1760-1930, the area banner: a picture of `a21_field#3` (402, -3, 1522, 267 on 1080 lines, uv 0 to 0.547 x 0.132) with
-    "Kurken Island" in `mainfont01` at (833, 113) and drawn as ten copies (the shadow, alpha 0.5
-    then 1), and under it a second plate (591, 159, 1331, 359; alpha 0.34 at frame 1800, uv
-    0.5518 to 0.913 x 0 to 0.098) with "Rasen District" at (845, 245) in the same ten copies. They fade in and out
-    (alphas 0.17 to 1 at 1800). Taken from the field layout set (`uil_a21_*` the area-name file,
-    the strings in `str_ui`); the layout file is not read yet.
-  - from 3430, the button help bar along the bottom (729 to 1920, y 1026 to 1092): seven pieces
-    of `a21_common#3` (a stretched plate like the load screen's help bar, `load_view`'s
-    `help_bar`) with the words "Event Log", "Full Map", "Photo Mode", "Memo", "Swing Menu",
-    "PC Menu" and a button glyph before each (private-use characters of `mainfont01`), 66 glyphs
-    and the clock's two `mainfont00` texts: the help bar shared with the load screen, here
-    listing the field's keys. Not built: the layout file and where the words come from are not
-    read.
+- The popups are built (below); their STAND-INs are the field's names, the help bar's glyphs and
+  its first showing.
+
+The popups (2026-11-23, `field_hud`: rows `hud-popups-1750` ... `3710`, 23 frames of `hud-walk`, at
+0 mismatches; 1740 differs only by the game's scene fade and lens flares; `--hud-arrival 1728
+--hud-stick SPANS` give a still its arrival frame and the pad script's stick spans, the help
+bar being replayed from them):
+- The area name's banner (`uil_a21_fm01.xml`, `current_place`: `area_neme_bg` and `map_name_bg`
+  plates of `a21_field#3`, the texts centred, `MainFont01` 23 and 20, colour 25 0 0 with the
+  layout's `bold_size` 1 as nine copies at half alpha, then the text; drawn first of the HUD).
+  Alpha is `anm_common_juvenile_fade_in` (`uia_common.xml`: 60 frames, cubic in, in whole 1/255
+  steps) from the arrival frame (1728, the frame of the field's environment set), held to 151
+  frames, then the same animation backwards; the map plate 30 frames behind (the layout's
+  `fade_in_with_area` `delay` 0.5 s). The texts are the string table's: the area's
+  (`2228225 + n`, "Kurken Island") and the map's (`917505 + n`, "Rasen District").
+  STAND-IN: `place_names` has Rasenboden only (area 0, map 5). The game's own record is the info
+  object at `0x141a940f0` (a run-time table: no file of the archives names a field's area or map):
+  72-byte map records (area index at +0, the name's string number at +0x38) and 8-byte area
+  records (string number at +0), read by `0x14019bbf0`; the file that fills it is not found, and
+  the map names are not simply `917505 + field` after the town (917601 ... are others).
+- The button help bar (the load screen's `uil_a21_shade.xml` and `gen_a21_cmn03_help`, a tiled
+  plate of `a21_common#3`, right aligned at the screen's lower right): 7 entries "glyph + words"
+  joined by spaces: Event Log, Full Map, Run, Photo Mode, Memo, Swing, "Menu / PC Menu" (the
+  menu-define strings `4194353`, `4194351`, `4194338`, `4194341`, `4194451`, `4194559`; Photo
+  Mode `720900`, one of three equal strings). It comes up 121 frames after the move stick's
+  last frame outside its dead zone (`MOVE_DEAD_ZONE`; the pad script's frame reaches the field 2
+  frames later), fading 1/15 a frame (`anm_common_fade_in`), and goes at the stick's first frame
+  at the same rate, from wherever it is. The camera stick does not count; a pad-script stick
+  of 6000 (inside the dead zone) does not either. At the arrival it comes up 6 frames after the
+  banner (STAND-IN: the idle count starts at 114) with a short line ("Run Swing") and the
+  shortest plate (376.5 px), the full line from 11 frames in and the plate grown over 16 more
+  (STAND-IN: fitted to 3 frames, 1740/1750/1760; the game's own tween is not read: denser frames
+  1735-1765 would settle it); later showings are full at once. Glyph characters are the
+  capture's (STAND-IN, as the load screen's).
+- Also: the glows are not drawn while their pulse is at 0 (`hud-walk` 1800).
 
 ## The load screen (title menu, Load Game)
 

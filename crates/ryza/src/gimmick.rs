@@ -95,11 +95,15 @@ pub struct Exit {
     pub position: [f32; 3],
     /// The stretch of the story it is open for (`startEvent` to `endEvent`).
     pub story: Span,
+    /// The field it leads to, as the maps' names spell it (`S08_T_BODEN`): the first value of
+    /// the row's `Parameter` (`FIELDMAP_S08_T_BODEN`).
+    pub to: String,
 }
 
 /// The exits of a field, from the table's bytes: `FIELDMAP_CHANGE_EX` rows, with or without a model.
 pub fn exits(bytes: &[u8]) -> Result<Vec<Exit>, String> {
     let root = table::parse(bytes).map_err(|e| format!("gimmick: {e}"))?;
+    let mut targets = first_values(&table::decode_text(bytes));
     let mut out = Vec::new();
     for row in root.children.iter().filter(|e| e.name == "Property" && e.attr("gimmickTypeTag") == Some("FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX")) {
         let [x, y, z] = numbers(row.attr("position"), [0.0; 3])?;
@@ -107,9 +111,27 @@ pub fn exits(bytes: &[u8]) -> Result<Vec<Exit>, String> {
             id: row.attr("fixID").and_then(|v| v.trim().parse().ok()).ok_or("gimmick: no fixID")?,
             position: [x * 100.0, y * 100.0, z * 100.0],
             story: Span::new(row.attr("startEvent"), row.attr("endEvent")),
+            to: row.attr("fixID").and_then(|id| targets.remove(id.trim())).unwrap_or_default(),
         });
     }
     Ok(out)
+}
+
+/// Each row's first `<Value>` (an exit's destination: `FIELDMAP_S08_T_BODEN` becomes
+/// `S08_T_BODEN`) by its `fixID`, scanned from the text, which the table reader drops.
+fn first_values(text: &str) -> std::collections::HashMap<String, String> {
+    let attr = |row: &str, name: &str| -> Option<String> {
+        let at = row.find(&format!("{name}=\""))? + name.len() + 2;
+        Some(row[at..].split('"').next()?.to_string())
+    };
+    text.split("<Property ")
+        .skip(1)
+        .filter_map(|row| {
+            let id = attr(row, "fixID")?;
+            let value = row.split("<Value>").nth(1)?.split("</Value>").next()?.trim();
+            Some((id, value.strip_prefix("FIELDMAP_").unwrap_or(value).to_string()))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -132,9 +154,9 @@ mod tests {
 
     #[test]
     fn exits_by_type() {
-        let xml = r#"<Root><Property fixID="1" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_MAP_CHANGE_INFO" position="1,2,3"/><Property fixID="9" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX" position="4.5,0.5,2" startEvent="EVENT_X"/></Root>"#;
+        let xml = r#"<Root><Property fixID="1" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_MAP_CHANGE_INFO" position="1,2,3"/><Property fixID="9" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX" position="4.5,0.5,2" startEvent="EVENT_X"><Parameter><Value>FIELDMAP_S08_T_BODEN</Value><Value>79.84</Value></Parameter></Property></Root>"#;
         let e = exits(xml.as_bytes()).unwrap();
-        assert_eq!((e.len(), e[0].id, e[0].position, e[0].story.start.as_deref()), (1, 9, [450.0, 50.0, 200.0], Some("X")));
+        assert_eq!((e.len(), e[0].id, e[0].position, e[0].story.start.as_deref(), e[0].to.as_str()), (1, 9, [450.0, 50.0, 200.0], Some("X"), "S08_T_BODEN"));
     }
 
     #[test]

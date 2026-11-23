@@ -632,7 +632,7 @@ fn minimap_markers(install: &barrel_ryza::install::Install, field: &str, story: 
     let rows = install.read("\\saves\\mapmarker\\mapmarker.xml").map_err(|e| e.to_string()).and_then(|b| mapmarker::read(&b)).unwrap_or_default();
     let destination = mapmarker::current(&rows, story).and_then(|row| match row.target {
         Some(at) if row.field.eq_ignore_ascii_case(field) => Some(at),
-        _ => mapmarker::exit_toward(field, &row.field).and_then(|id| exits.iter().find(|x| x.id == id)).map(|x| [x.position[0], x.position[2]]),
+        _ => exits.iter().find(|x| x.to.eq_ignore_ascii_case(&row.field)).map(|x| [x.position[0], x.position[2]]),
     });
     barrel_ryza::field_hud::Markers {
         exits: exits.iter().map(|x| [x.position[0], x.position[2]]).collect(),
