@@ -776,7 +776,12 @@ fn diff(trace: &Path, gframe: u64, barrel: &Path, bframe: u64, idx: Option<&str>
     let t = Trace { dir: trace.into() };
     let s = Setup::new(idx)?;
     let (g, other) = game_quads(&t, gframe)?;
-    let (g, under) = s.game(g);
+    let (mut g, under) = s.game(g);
+    // PARITY_SKIP_SPRITES=1: the sprites a game's effect system draws from textures it builds
+    // at run time (no file, so no name in the index) are not compared (the field menu's sparks).
+    if std::env::var_os("PARITY_SKIP_SPRITES").is_some() {
+        g.retain(|q| !q.tex.starts_with("tex"));
+    }
     let b = s.barrel(barrel_quads(barrel, bframe)?);
     let bad = compare(&s, &g, &b, |l| println!("{l}"));
     println!("{} game quads, {} Barrel quads, {bad} mismatches ({other} game draws not compared: 3D, render-target reads or transparent; {under} hidden under opaque ones)", g.len(), b.len());

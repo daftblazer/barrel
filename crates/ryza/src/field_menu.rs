@@ -1,0 +1,694 @@
+//! The field's menu (Y): the six buttons down the left, the party's photo with its three cards,
+//! the money and level plate at the top right and the help bar, from the game's own layouts
+//! (`uil_a21_main_menu.xml` for the buttons, the plates and the money, `uil_a21_main_menu_chara.xml`
+//! for the photo and the cards, `uia_a21_main_menu.xml` for the glows' and slides' animations,
+//! the styles of `uis_gen_a21_main_menu.xml`).
+//!
+//! Positions are in the 1280 x 720 layout and scale by `screen height / 720`, the layout centred
+//! across the width (as the HUD's). Times are in the capture's game frames: [`Nav`] holds when
+//! the menu opened, where the cursor is and when it came to or left each button, and
+//! [`View::quads`] draws any frame from that (a window steps it with the keys, an offscreen run
+//! replays the script's keys).
+
+use std::collections::HashMap;
+
+use barrel_formats::table::{self, Element};
+use barrel_render::text::{Glyph, Quad, Spin};
+
+use crate::font::ATLAS_SIZE;
+use crate::load_view::{style, Style, TEXT_TOP};
+use crate::title::{curve, find, numbers, pair, Curve, LAYOUT_HEIGHT};
+
+/// The textures of the menu's layer, in this order.
+pub const FONT01: usize = 0;
+pub const FONT00: usize = 1;
+pub const BACKGROUND: usize = 2;
+pub const PHOTO: usize = 3;
+pub const MENU0: usize = 4;
+pub const MENU1: usize = 5;
+pub const MENU2: usize = 6;
+pub const WHITE: usize = 7;
+pub const MIX: usize = 8;
+pub const ICON: usize = 9;
+pub const GUIDE: usize = 10;
+pub const TEXTURES: usize = 11;
+
+/// The styles' pixels count three to a layout pixel; the menu's textures hold half the styles'
+/// pixels (`uvwh` runs to twice the texture's size).
+const PER_LAYOUT: f32 = 3.0;
+const STYLE_OVER_TEXTURE: f32 = 2.0;
+/// The first of the string table's UI strings (`STR_UI_0000`).
+const STR_UI_BASE: u32 = 6_619_137;
+/// The first character name (Ryza); a character's id counts up from it.
+const CHARACTER_NAMES: u32 = 262_148;
+const CHARACTERS: u32 = 40;
+const BROWN: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
+
+/// The six buttons in cursor order, each with the picture of the name and icon lists
+/// (`image_no`) the game shows on it: Container, Equip, Gathering Tools, Status, Guide, Settings.
+// STAND-IN: The pictures' numbers are read off the capture's uv (the game sets each button's `image_no` in code); the order is the capture's cursor order.
+pub const BUTTONS: [usize; 6] = [1, 3, 4, 6, 7, 8];
+/// The Settings button's place in the cursor order.
+pub const SETTINGS: usize = 5;
+
+/// Frames from the menu's first frame to the cursor's first coming to its button (the cards'
+/// fade has run out).
+const CURSOR_AT: f32 = 30.0;
+/// Frames the cursor's glow takes to come on (`anm_cursor_on`) and go (`anm_cursor_off`), and
+/// the loop's length (`anm_cursor_on_loop`).
+const ON_FRAMES: f32 = 18.0;
+const OFF_FRAMES: f32 = 9.0;
+const LOOP_FRAMES: f32 = 120.0;
+/// Frames the photo and the cards fade in over (`anm_common_juvenile_fade_in` at speeds 3 and 2).
+const PHOTO_FADE: f32 = 20.0;
+const CARD_FADE: f32 = 30.0;
+/// Frames the background fades in over (`anm_common_fade_in`), the buttons slide in over
+/// (`anm_menu_slide_in`) and the money plates (`anm_common_slide_in_right` at speed 1.5) and the
+/// corner picture (speed 1).
+const BG_FADE: f32 = 15.0;
+const SLIDE: f32 = 12.0;
+const SLIDE_MONEY: f32 = 20.0;
+const SLIDE_PUT: f32 = 30.0;
+/// The delay between one button's slide and the next's (`get_in`: 0.04 s).
+const SLIDE_STEP: f32 = 2.4;
+/// The help bar's fade and its start after the menu's.
+const HELP_FADE: f32 = 15.0;
+const HELP_AT: f32 = 34.0;
+
+// STAND-IN: The help bar's button glyphs (private-use characters of `mainfont01`) are the capture's; the game picks them by the pad's assignment. The words are the string table's.
+const HELP_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', 4_194_467), ('\u{4eb}', 4_194_451), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+/// The help bar's plate and text come from the load screen's bar (`uil_a21_shade.xml`).
+const MENU_WORDS: [u32; 5] = [HELP_ENTRIES[0].1, HELP_ENTRIES[1].1, HELP_ENTRIES[2].1, HELP_ENTRIES[3].1, HELP_ENTRIES[4].1];
+
+// STAND-IN: The three cards' maximum HP (character, level 3) are the capture's; the game's own value is the character's growth row and equipment, which Ryza's save does not store.
+const MAX_HP: [(u8, u8, u32); 3] = [(0, 3, 37), (2, 3, 57), (3, 3, 31)];
+/// The card's place in the photo's list (`list_0`: the clones 0, 2 and 3 for a party of three).
+const CARD_SLOTS: [&str; 3] = ["clone_regular_status_0", "clone_regular_status_2", "clone_regular_status_3"];
+
+/// What the menu reads of the game's files.
+pub struct Sources<'a> {
+    pub layout: &'a [u8],
+    pub chara: &'a [u8],
+    pub styles: &'a [u8],
+    pub photo_styles: &'a [u8],
+    pub mix_styles: &'a [u8],
+    pub icon_styles: &'a [u8],
+    pub anims: &'a [u8],
+    pub common_anims: &'a [u8],
+    pub help: &'a [u8],
+    pub help_styles: &'a [u8],
+    pub strings: &'a [u8],
+    pub glyphs: [HashMap<char, Glyph>; 2],
+    /// The textures' sizes in pixels: photo, the three menu atlases, mix, icon, guide.
+    pub sizes: [(u32, u32); 7],
+}
+
+/// A party member the cards show.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Member {
+    pub id: u8,
+    pub level: u8,
+}
+
+/// What the menu shows of the play.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shown {
+    pub party: Vec<Member>,
+    pub money: u32,
+}
+
+/// A text node: where, how big, its font (0 is `MainFont01`), how aligned and spaced.
+#[derive(Clone, Copy, Debug)]
+struct Label {
+    at: [f32; 2],
+    size: f32,
+    /// The node's own scale (it scales the line's top offset too).
+    scale: f32,
+    font: usize,
+    center: bool,
+    right: bool,
+    spacing: f32,
+    color: [f32; 3],
+}
+
+impl Label {
+    fn of(e: &Element, parent: [f32; 2]) -> Label {
+        let p = pair(e, "pos", [0.0; 2]);
+        let c = numbers(e, "font_color");
+        Label {
+            at: [parent[0] + p[0], parent[1] + p[1]],
+            size: e.attr("font_size").and_then(|v| v.trim().parse().ok()).unwrap_or(17.0) * pair(e, "scale", [1.0; 2])[0],
+            scale: pair(e, "scale", [1.0; 2])[0],
+            font: usize::from(e.attr("font") != Some("MainFont01")),
+            center: e.attr("align") == Some("center"),
+            right: e.attr("align") == Some("right"),
+            spacing: e.attr("word_space").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
+            color: if c.len() >= 3 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0] } else { BROWN },
+        }
+    }
+}
+
+/// A card's parts, within the card's node.
+#[derive(Clone, Debug)]
+struct Card {
+    plate: ([f32; 2], Style),
+    icon: ([f32; 2], Style),
+    hp: Label,
+    hp_value: Label,
+    hp_slash: Label,
+    hp_max: Label,
+    name: Label,
+    level: Label,
+}
+
+pub struct View {
+    glyphs: [HashMap<char, Glyph>; 2],
+    /// The atlases in style pixels (the textures' sizes twice over), indexed by texture.
+    atlases: HashMap<usize, (f32, f32)>,
+    strings: HashMap<u32, String>,
+    buttons: Vec<[f32; 2]>,
+    light: ([f32; 2], Style),
+    base: Style,
+    cursor: Style,
+    cursor_on: Style,
+    ring: Style,
+    names: Style,
+    icons: Style,
+    ring_at: [f32; 2],
+    ring_scale: f32,
+    pivot: [f32; 2],
+    base_size: f32,
+    level_plate: ([f32; 2], Style),
+    money_bg: ([f32; 2], [f32; 2], f32, Style),
+    money_icon: ([f32; 2], f32, Style),
+    money_text: Label,
+    put: ([f32; 2], Style),
+    shadow: ([f32; 2], [f32; 2], Style),
+    photo: ([f32; 2], [f32; 2], f32, Style),
+    mask: ([f32; 2], [f32; 2], f32),
+    cards: Vec<([f32; 2], Card)>,
+    help: Style,
+    help_at: [f32; 2],
+    help_text: Label,
+    help_left: f32,
+    slide: [Curve; 2],
+    slide_right: Curve,
+    cursor_loop: [Curve; 2],
+    ring_loop: [Curve; 2],
+}
+
+fn first(s: &Style) -> Result<[f32; 4], String> {
+    s.pictures.first().copied().ok_or_else(|| "a style without a picture".to_string())
+}
+
+impl View {
+    pub fn read(src: Sources) -> Result<View, String> {
+        let layout = table::parse(src.layout).map_err(|e| format!("uil_a21_main_menu: {e}"))?;
+        let chara = table::parse(src.chara).map_err(|e| format!("uil_a21_main_menu_chara: {e}"))?;
+        let styles = table::parse(src.styles).map_err(|e| format!("uis_gen_a21_main_menu: {e}"))?;
+        let photo_styles = table::parse(src.photo_styles).map_err(|e| format!("uis_a21_main_menu_image: {e}"))?;
+        let mix = table::parse(src.mix_styles).map_err(|e| format!("uis_gen_a21_mix: {e}"))?;
+        let icons = table::parse(src.icon_styles).map_err(|e| format!("uis_gen_a21_icon: {e}"))?;
+        let help_layout = table::parse(src.help).map_err(|e| format!("uil_a21_shade: {e}"))?;
+        let help_styles = table::parse(src.help_styles).map_err(|e| format!("uis_gen_a21_common: {e}"))?;
+        let strings_root = table::parse(src.strings).map_err(|e| format!("strcombineall: {e}"))?;
+        let strings = strings_root
+            .children
+            .iter()
+            .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n))
+            .collect();
+        let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
+        fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
+            find(e, name, [0.0; 2]).ok_or_else(|| format!("uil_a21_main_menu: no {name}"))
+        }
+        let at = |name: &str| -> Result<[f32; 2], String> { Ok(named(&layout, name)?.1) };
+        let style_of = |e: &Element, name: &str| -> Result<Style, String> { style(&styles, e.attr("style").ok_or(format!("{name}: no style"))?) };
+
+        // The buttons: the first one's parts and every button's place.
+        let (first_button, _) = named(&layout, "menu_node")?;
+        let in_button = |name: &str| -> Result<(&Element, [f32; 2]), String> { find(first_button, name, [0.0; 2]).ok_or_else(|| missing(name)) };
+        let (bg, _) = in_button("bg")?;
+        let (cursor, _) = in_button("bg_hilight")?;
+        let (cursor_on, _) = in_button("bg_hilight_on")?;
+        let (ring, ring_at) = in_button("bg_hilight_scale")?;
+        let (name, name_at) = in_button("name")?;
+        let (icon, icon_at) = in_button("icon")?;
+        let buttons = (0..BUTTONS.len()).map(|i| at(&format!("select_{i}"))).collect::<Result<Vec<_>, String>>()?;
+        let _ = (name_at, icon_at);
+        let light_node = named(&layout, "menu_select_bg")?;
+        let level_node = named(&layout, "status_bg_def")?;
+        let money_node = named(&layout, "money_bg")?;
+        // (`find` adds the starting node's own place: start from where its parent is.)
+        let money_base = {
+            let own = pair(money_node.0, "pos", [0.0; 2]);
+            [money_node.1[0] - own[0], money_node.1[1] - own[1]]
+        };
+        let (money_bg, money_bg_at) = find(money_node.0, "bg", money_base).ok_or_else(|| missing("money bg"))?;
+        let (money_icon, money_icon_at) = find(money_node.0, "icon", money_base).ok_or_else(|| missing("money icon"))?;
+        let (money_param, money_param_at) = find(money_node.0, "param", money_base).ok_or_else(|| missing("money param"))?;
+        let put_node = named(&layout, "mm_put")?;
+
+        // The photo and its cards.
+        let (photo_node, photo_at) = named(&chara, "photo")?;
+        let (back_node, back_at) = named(&chara, "back")?;
+        let (mask_node, mask_at) = named(&chara, "character_mask")?;
+        let (regular, _) = named(&chara, "regular_status")?;
+        let part = |name: &str| -> Result<(&Element, [f32; 2]), String> { find(regular, name, [0.0; 2]).ok_or_else(|| format!("uil_a21_main_menu_chara: no {name}")) };
+        let (plate_node, plate_at) = part("status_bg")?;
+        let (icon_node, icon_node_at) = part("battle_join")?;
+        let (hp, hp_at) = part("hp")?;
+        let label_in = |parent: &Element, parent_at: [f32; 2], name: &str| -> Result<Label, String> {
+            let (e, _) = find(parent, name, [0.0; 2]).ok_or_else(|| format!("uil_a21_main_menu_chara: no {name}"))?;
+            Ok(Label::of(e, parent_at))
+        };
+        let (name_node, _) = part("chara_name")?;
+        let (level_text, _) = part("Lv_value")?;
+        let card = Card {
+            plate: (plate_at, style(&styles, plate_node.attr("style").ok_or("status_bg: no style")?)?),
+            icon: (icon_node_at, style(&styles, icon_node.attr("style").ok_or("battle_join: no style")?)?),
+            hp: Label::of(hp, [0.0; 2]),
+            hp_value: label_in(hp, hp_at, "HP_value")?,
+            hp_slash: label_in(hp, hp_at, "HP_slash")?,
+            hp_max: label_in(hp, hp_at, "MHP_value")?,
+            name: Label::of(name_node, [0.0; 2]),
+            level: Label::of(level_text, [0.0; 2]),
+        };
+        let cards = CARD_SLOTS.iter().map(|s| Ok((named(&chara, s)?.1, card.clone()))).collect::<Result<Vec<_>, String>>()?;
+
+        let photo_style = style(&photo_styles, "etc_a21_main_menu_image")?;
+        let size_of = |e: &Element| -> [f32; 2] { pair(e, "size_wh", [0.0; 2]) };
+        let atlas = |texture: usize, (w, h): (u32, u32)| (texture, (w as f32 * STYLE_OVER_TEXTURE, h as f32 * STYLE_OVER_TEXTURE));
+        let [photo_size, menu0, menu1, menu2, mix_size, icon_size, guide_size] = src.sizes;
+        let atlases = HashMap::from([atlas(PHOTO, photo_size), atlas(MENU0, menu0), atlas(MENU1, menu1), atlas(MENU2, menu2), atlas(MIX, mix_size), atlas(ICON, icon_size), atlas(GUIDE, guide_size)]);
+
+        // The help bar's plate and text (as the load screen's).
+        let (help_bg, help_at) = find(&help_layout, "base", [0.0; 2]).ok_or("uil_a21_shade: no base")?;
+        let (_, left_side) = crate::load_view::inside(help_bg, "left_side", [0.0; 2]).ok_or("uil_a21_shade: no left_side")?;
+        let (help_node, _) = find(&help_layout, "bg", [0.0; 2]).ok_or("uil_a21_shade: no bg")?;
+        let (help_text_node, help_text_at) = crate::load_view::inside(help_node, "text", [0.0; 2]).ok_or("uil_a21_shade: no text")?;
+
+        Ok(View {
+            glyphs: src.glyphs,
+            atlases,
+            strings,
+            buttons,
+            light: (light_node.1, style_of(light_node.0, "menu_select_bg")?),
+            base: style_of(bg, "bg")?,
+            cursor: style_of(cursor, "bg_hilight")?,
+            cursor_on: style_of(cursor_on, "bg_hilight_on")?,
+            ring: style_of(ring, "bg_hilight_scale")?,
+            names: style_of(name, "name")?,
+            icons: style_of(icon, "icon")?,
+            ring_at,
+            ring_scale: pair(ring, "scale", [1.0; 2])[0],
+            pivot: pair(cursor, "pivot_pos", [0.0; 2]),
+            base_size: size_of(bg)[0],
+            level_plate: (level_node.1, style_of(level_node.0, "status_bg_def")?),
+            money_bg: (money_bg_at, size_of(money_bg), pair(money_bg, "scale", [1.0; 2])[0], style(&mix, money_bg.attr("style").ok_or("money bg: no style")?)?),
+            money_icon: (money_icon_at, pair(money_icon, "scale", [1.0; 2])[0], style(&icons, money_icon.attr("style").ok_or("money icon: no style")?)?),
+            money_text: Label::of(money_param, [money_param_at[0] - pair(money_param, "pos", [0.0; 2])[0], money_param_at[1] - pair(money_param, "pos", [0.0; 2])[1]]),
+            put: (put_node.1, style_of(put_node.0, "mm_put")?),
+            shadow: (back_at, size_of(back_node), style(&styles, back_node.attr("style").ok_or("back: no style")?)?),
+            photo: (photo_at, size_of(photo_node), numbers(photo_node, "rot").get(2).copied().unwrap_or(0.0), photo_style),
+            mask: (mask_at, [numbers(mask_node, "size_w").first().copied().unwrap_or(0.0), numbers(mask_node, "size_h").first().copied().unwrap_or(0.0)], numbers(mask_node, "rot").get(2).copied().unwrap_or(0.0)),
+            cards,
+            help: style(&help_styles, help_bg.attr("style").ok_or("uil_a21_shade: base has no style")?)?,
+            help_at,
+            help_text: Label { at: help_text_at, ..Label::of(help_text_node, [0.0; 2]) },
+            help_left: left_side[0],
+            slide: [curve(src.anims, "anm_menu_slide_in", "color")?, curve(src.anims, "anm_menu_slide_in", "pos")?],
+            slide_right: curve(src.common_anims, "anm_common_slide_in_right", "pos")?,
+            cursor_loop: [curve(src.anims, "anm_cursor_on_loop", "color")?, curve(src.anims, "anm_cursor_on_loop", "scale")?],
+            ring_loop: [curve(src.anims, "anm_cursor_scale", "color")?, curve(src.anims, "anm_cursor_scale", "scale")?],
+        })
+    }
+
+    fn word(&self, n: u32) -> &str {
+        self.strings.get(&n).map_or("", String::as_str)
+    }
+
+    fn name_of(&self, id: u8) -> &str {
+        self.word(CHARACTER_NAMES + u32::from(id))
+    }
+}
+
+/// Where the player is in the menu: when it opened and closed, the cursor and when it came to
+/// and left each button.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Nav {
+    pub opened: f32,
+    pub closed: Option<f32>,
+    pub cursor: usize,
+    on: [Option<f32>; BUTTONS.len()],
+    off: [Option<f32>; BUTTONS.len()],
+    /// When A was pressed on the cursor's button.
+    pub chosen: Option<f32>,
+}
+
+impl Nav {
+    /// The menu opening at frame `opened` (its first frame), the cursor on the first button
+    /// once the cards have faded in.
+    pub fn open(opened: f32) -> Nav {
+        let mut on = [None; BUTTONS.len()];
+        on[0] = Some(opened + CURSOR_AT);
+        Nav { opened, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None }
+    }
+
+    /// The cursor moves `way` buttons (wrapping) at frame `at`.
+    pub fn step(&mut self, way: i32, at: f32) {
+        let next = (self.cursor as i32 + way).rem_euclid(BUTTONS.len() as i32) as usize;
+        if next == self.cursor {
+            return;
+        }
+        self.off[self.cursor] = Some(at);
+        self.on[next] = Some(at);
+        self.off[next] = None;
+        self.cursor = next;
+    }
+
+    /// A on the cursor's button at frame `at`.
+    pub fn choose(&mut self, at: f32) {
+        self.chosen = Some(at);
+    }
+}
+
+/// A key of the menu's script.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Key {
+    /// Y in the field: the menu opens.
+    Open,
+    Up,
+    Down,
+    /// A on the cursor's button.
+    Confirm,
+    /// B: the menu closes.
+    Back,
+}
+
+/// Frames from Y to the menu's first frame (`field-menu`: Y at 1900, the first frame 1906).
+pub const OPEN_LAG: f32 = 6.0;
+
+/// The menu at frame `tick` for the script's keys (each with the game frame its button went
+/// down), or none while the field shows: the keys replayed in order, each at its frame.
+pub fn replay(keys: &[(f32, Key)], tick: f32) -> Option<Nav> {
+    let mut nav: Option<Nav> = None;
+    for &(at, key) in keys {
+        match (key, nav.as_mut()) {
+            (Key::Open, None) if at + OPEN_LAG <= tick => nav = Some(Nav::open(at + OPEN_LAG)),
+            (_, Some(n)) if at <= tick && n.closed.is_none() => match key {
+                Key::Down => n.step(1, at),
+                Key::Up => n.step(-1, at),
+                Key::Confirm => n.choose(at),
+                Key::Back => n.closed = Some(at),
+                Key::Open => {}
+            },
+            _ => {}
+        }
+    }
+    nav
+}
+
+/// Opacity from an animation's alpha curve at `t` seconds, as the game's byte.
+fn byte(a: f32) -> f32 {
+    (a.round() / 255.0).clamp(0.0, 1.0)
+}
+
+struct Pen<'a> {
+    v: &'a View,
+    k: f32,
+    left: f32,
+    out: Vec<Quad>,
+    /// The quads drawn added to what is under them.
+    additive: Vec<usize>,
+}
+
+impl Pen<'_> {
+    fn place(&self, at: [f32; 2]) -> [f32; 2] {
+        [self.left + at[0] * self.k, at[1] * self.k]
+    }
+
+    fn uv(&self, texture: usize, p: [f32; 4]) -> [f32; 4] {
+        let (aw, ah) = self.v.atlases[&texture];
+        [p[0] / aw, p[1] / ah, (p[0] + p[2]) / aw, (p[1] + p[3]) / ah]
+    }
+
+    /// A picture `size` layout pixels at `at`.
+    fn pic(&mut self, texture: usize, p: [f32; 4], at: [f32; 2], size: [f32; 2], color: [f32; 4]) {
+        let [l, t] = self.place(at);
+        let uv = self.uv(texture, p);
+        self.out.push(Quad { turn: false, spin: None, rect: [l, t, l + size[0] * self.k, t + size[1] * self.k], uv, color, texture });
+    }
+
+    /// A picture at its natural size.
+    fn natural(&mut self, texture: usize, s: &Style, n: usize, at: [f32; 2], color: [f32; 4]) {
+        let p = s.pictures[n];
+        self.pic(texture, p, at, [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], color);
+    }
+
+    /// A picture scaled by `scale` about `pivot` (layout pixels within the picture).
+    fn scaled(&mut self, texture: usize, p: [f32; 4], at: [f32; 2], size: [f32; 2], pivot: [f32; 2], scale: f32, color: [f32; 4]) {
+        let at = [at[0] + pivot[0] * (1.0 - scale), at[1] + pivot[1] * (1.0 - scale)];
+        self.pic(texture, p, at, [size[0] * scale, size[1] * scale], color);
+    }
+
+    /// A picture turned `degrees` clockwise about its top left.
+    fn turned(&mut self, texture: usize, uv: [f32; 4], at: [f32; 2], size: [f32; 2], degrees: f32, color: [f32; 4]) {
+        let [l, t] = self.place(at);
+        let (w, h) = (size[0] * self.k, size[1] * self.k);
+        let (s, c) = degrees.to_radians().sin_cos();
+        let corner = |x: f32, y: f32| [l + x * c - y * s, t + x * s + y * c];
+        let corners = [corner(0.0, 0.0), corner(w, 0.0), corner(w, h), corner(0.0, h)];
+        let (min_x, max_x) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
+        let (min_y, max_y) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+        self.out.push(Quad { turn: false, spin: Some(Spin::Corners(corners)), rect: [min_x, min_y, max_x, max_y], uv, color, texture });
+    }
+
+    fn text(&mut self, l: &Label, origin: [f32; 2], text: &str, alpha: f32) {
+        let glyphs = &self.v.glyphs[l.font];
+        let s = l.size * self.k / ATLAS_SIZE;
+        // STAND-IN: The glyphs' spacing (`word_space`) comes out as 0.25 px of 1080 lines for each layout size above 12 times the node's value, fitted to the capture's HP (size 15: 0.75 px) and money (size 16: 1 px) figures; the real thing is the game's own text rule.
+        let spacing = l.spacing * 0.25 * (l.size - 12.0).max(0.0) * self.k / 1.5;
+        let advance = |g: &Glyph| g.advance as f32 * s + spacing;
+        let width: f32 = text.chars().filter_map(|c| glyphs.get(&c)).map(advance).sum();
+        let x = self.left + (origin[0] + l.at[0]) * self.k;
+        let mut pen = if l.center {
+            x - width / 2.0
+        } else if l.right {
+            x - width
+        } else {
+            x
+        };
+        let top = (origin[1] + l.at[1] + TEXT_TOP * l.scale) * self.k;
+        let (aw, ah) = (4096.0, 2048.0);
+        let color = [l.color[0], l.color[1], l.color[2], alpha];
+        for g in text.chars().filter_map(|c| glyphs.get(&c)) {
+            let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.width as f32, g.height as f32);
+            let (x0, y0) = (pen + g.x_offset as f32 * s, top + g.y_offset as f32 * s);
+            self.out.push(Quad { turn: false, spin: None, rect: [x0, y0, x0 + gw * s, y0 + gh * s], uv: [gx / aw, gy / ah, (gx + gw) / aw, (gy + gh) / ah], color, texture: if l.font == 0 { FONT01 } else { FONT00 } });
+            pen += advance(g);
+        }
+    }
+}
+
+/// How far an `ease`d pair of curves is at `age` frames over `frames`.
+fn along(c: &Curve, age: f32, frames: f32) -> [f32; 4] {
+    c.at((age / frames).clamp(0.0, 1.0) * c.duration())
+}
+
+impl View {
+    /// The menu's quads at game frame `frame` (in draw order) on a `screen` of pixels, and
+    /// which of them are drawn additively.
+    pub fn quads(&self, nav: &Nav, shown: &Shown, frame: f32, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new() };
+        let age = frame - nav.opened;
+        let white = |a: f32| [1.0, 1.0, 1.0, a];
+        let incubic = |a: f32, frames: f32| (a / frames).clamp(0.0, 1.0).powi(3);
+        let outcubic = |a: f32, frames: f32| 1.0 - (1.0 - (a / frames).clamp(0.0, 1.0)).powi(3);
+        let bg = (age / BG_FADE).clamp(0.0, 1.0);
+        pen.out.push(Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32 * 2.0, screen.1 as f32 * 2.0], uv: [0.0, 0.0, 2.0, 2.0], color: white(byte(bg * 255.0)), texture: BACKGROUND });
+
+        // The photo, turned, and the mask drawn for its cards' fade.
+        let (photo_at, photo_size, photo_turn, photo_style) = &self.photo;
+        let photo_at = *photo_at;
+        let uv = pen.uv(PHOTO, photo_style.pictures[0]);
+        pen.turned(PHOTO, uv, photo_at, *photo_size, *photo_turn, white(byte(incubic(age, PHOTO_FADE) * 255.0)));
+        let (shadow_at, shadow_size, shadow_style) = &self.shadow;
+        let shadow = shadow_style.pictures[0];
+        pen.pic(MENU2, shadow, *shadow_at, *shadow_size, white(180.0 / 255.0));
+        let cards = byte(incubic(age, CARD_FADE) * 255.0);
+        let (mask_at, mask_size, mask_turn) = &self.mask;
+        pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
+
+        for ((at, card), member) in self.cards.iter().zip(&shown.party) {
+            let origin = *at;
+            let c = white(cards);
+            pen.natural(MENU0, &card.plate.1, 0, [origin[0] + card.plate.0[0], origin[1] + card.plate.0[1]], c);
+            pen.natural(MENU1, &card.icon.1, 0, [origin[0] + card.icon.0[0], origin[1] + card.icon.0[1]], c);
+            let hp = MAX_HP.iter().find(|m| m.0 == member.id).map_or(0, |m| m.2);
+            let number = |n: u32| n.to_string();
+            pen.text(&card.hp_value, origin, &number(hp), cards);
+            pen.text(&card.hp_slash, origin, "/", cards);
+            pen.text(&card.hp_max, origin, &number(hp), cards);
+            pen.text(&card.name, origin, self.name_of(member.id), cards);
+            pen.text(&card.level, origin, &member.level.to_string(), cards);
+        }
+
+        // The buttons.
+        let (light_at, light) = &self.light;
+        let slide_state = |delay: f32| -> (f32, f32) {
+            let t = ((age - delay) / SLIDE).clamp(0.0, 1.0) * self.slide[0].duration();
+            (self.slide[0].at(t)[3] / 255.0, self.slide[1].at(t)[0])
+        };
+        let (a, dx) = slide_state(0.0);
+        pen.natural(MENU1, light, 0, [light_at[0] + dx, light_at[1]], white(byte(a * 255.0)));
+        for (i, at) in self.buttons.iter().enumerate() {
+            let (a, dx) = slide_state(SLIDE_STEP * i as f32);
+            let at = [at[0] + dx, at[1]];
+            let alpha = byte(a * 255.0);
+            pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], white(alpha));
+            self.glow(&mut pen, nav, i, at, alpha, frame);
+            let image = BUTTONS[i];
+            pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], white(alpha));
+            pen.natural(MENU1, &self.icons, image, [at[0] + 13.0, at[1] + 14.0], white(alpha));
+        }
+
+        // The level plate and the money, sliding in from the right, and the corner picture.
+        let right = |frames: f32| along(&self.slide_right, age, frames)[0];
+        let (lv_at, lv) = &self.level_plate;
+        let a = byte(outcubic(age, SLIDE_MONEY) * 255.0);
+        pen.natural(MENU1, lv, 0, [lv_at[0] + right(SLIDE_MONEY), lv_at[1]], white(a));
+        let (bg_at, bg_size, bg_scale, bg_style) = &self.money_bg;
+        pen.pic(MIX, bg_style.pictures[0], [bg_at[0] + right(SLIDE_MONEY), bg_at[1]], [bg_size[0] * bg_scale, bg_size[1] * bg_scale], white(byte(a * 120.0)));
+        let (icon_at, icon_scale, icon_style) = &self.money_icon;
+        let p = icon_style.pictures[0];
+        pen.pic(ICON, p, [icon_at[0] + right(SLIDE_MONEY), icon_at[1]], [p[2] / PER_LAYOUT * icon_scale, p[3] / PER_LAYOUT * icon_scale], white(a));
+        pen.text(&self.money_text, [right(SLIDE_MONEY), 0.0], &shown.money.to_string(), a);
+        let (put_at, put) = &self.put;
+        pen.natural(MENU1, put, 0, [put_at[0] + right(SLIDE_PUT), put_at[1]], white(byte(outcubic(age, SLIDE_PUT) * 255.0)));
+        self.help_bar(&mut pen, (age - HELP_AT) / HELP_FADE);
+        (pen.out, pen.additive)
+    }
+
+    /// A button's glow: the cursor's glow and ring while the cursor is on it and as they fade
+    /// after it left.
+    fn glow(&self, pen: &mut Pen, nav: &Nav, i: usize, at: [f32; 2], slide: f32, frame: f32) {
+        let (alpha, loop_age) = match (nav.on[i], nav.off[i]) {
+            (Some(on), None) => {
+                let age = frame - on;
+                if age < 0.0 {
+                    return;
+                }
+                if age < ON_FRAMES {
+                    (age / ON_FRAMES, None)
+                } else {
+                    let l = (age - ON_FRAMES) % LOOP_FRAMES;
+                    (self.cursor_loop[0].at(l / 60.0)[3] / 255.0, Some(l))
+                }
+            }
+            (Some(on), Some(off)) => {
+                let age = frame - off;
+                if age >= OFF_FRAMES || frame < on {
+                    return;
+                }
+                let held = ((off - on) - ON_FRAMES).max(0.0) % LOOP_FRAMES;
+                (1.0 - age / OFF_FRAMES, (off - on > ON_FRAMES).then_some(held))
+            }
+            _ => return,
+        };
+        let on_alpha = match nav.off[i] {
+            Some(off) => 1.0 - (frame - off) / OFF_FRAMES,
+            None => ((frame - nav.on[i].unwrap_or(frame)) / ON_FRAMES).min(1.0),
+        };
+        let scale = loop_age.map_or(1.0, |l| self.cursor_loop[1].at(l / 60.0)[0]);
+        let cyan = [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)];
+        pen.additive.push(pen.out.len());
+        let p = self.cursor.pictures[0];
+        let size = [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT];
+        pen.scaled(MENU1, p, at, size, self.pivot, scale, cyan);
+        pen.additive.push(pen.out.len());
+        let p = self.cursor_on.pictures[0];
+        pen.pic(MENU1, p, at, [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
+        // The ring runs from the menu's first frame, whichever button has the glow.
+        let t = ((frame - nav.opened) % LOOP_FRAMES) / 60.0;
+        let ring_alpha = self.ring_loop[0].at(t)[3] / 255.0 * on_alpha;
+        let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
+        let p = self.ring.pictures[0];
+        pen.additive.push(pen.out.len());
+        pen.scaled(MENU1, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], [p[2] / PER_LAYOUT / 2.0, p[3] / PER_LAYOUT / 2.0], ring_scale, [1.0, 1.0, 1.0, byte(ring_alpha * slide * 255.0)]);
+    }
+
+    /// The help bar: the plate and the entries' words, `along` fading in from 0 to 1.
+    fn help_bar(&self, pen: &mut Pen, along: f32) {
+        let alpha = along.clamp(0.0, 1.0);
+        if alpha <= 0.0 {
+            return;
+        }
+        let line = HELP_ENTRIES.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ");
+        let s = self.help_text.size * pen.k / ATLAS_SIZE;
+        let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
+        // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`).
+        let width = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let [x, y, w, h] = self.help.pictures[0];
+        let [ml, mr] = self.help.margins.unwrap_or([0.0; 2]);
+        let (cap_l, cap_r, height) = (ml / PER_LAYOUT, mr / PER_LAYOUT, h / PER_LAYOUT);
+        let at = [1280.0 - width, self.help_at[1]];
+        let color = [1.0, 1.0, 1.0, byte(alpha * 255.0)];
+        pen.pic(GUIDE, [x, y, ml, h], at, [cap_l, height], color);
+        let tile = (w - ml - mr) / PER_LAYOUT;
+        let (mut at_x, mut left) = (at[0] + cap_l, width - cap_l - cap_r);
+        while left > 0.001 {
+            let part = left.min(tile);
+            pen.pic(GUIDE, [x + ml, y, (w - ml - mr) * part / tile, h], [at_x, at[1]], [part, height], color);
+            at_x += part;
+            left -= part;
+        }
+        pen.pic(GUIDE, [x + w - mr, y, mr, h], [at_x, at[1]], [cap_r, height], color);
+        let label = Label { color: [1.0, 1.0, 1.0], ..self.help_text };
+        pen.text(&label, [1280.0, 720.0], &line, byte(alpha * 255.0));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cursor_walks_the_buttons_in_order_and_wraps() {
+        let mut nav = Nav::open(1906.0);
+        assert_eq!(nav.cursor, 0);
+        for (i, at) in [2000.0, 2040.0, 2080.0, 2120.0, 2160.0].into_iter().enumerate() {
+            nav.step(1, at);
+            assert_eq!(nav.cursor, i + 1);
+        }
+        assert_eq!(nav.cursor, SETTINGS);
+        nav.step(1, 2200.0);
+        assert_eq!(nav.cursor, 0);
+        nav.step(-1, 2210.0);
+        assert_eq!(nav.cursor, SETTINGS);
+    }
+
+    #[test]
+    fn a_move_starts_the_new_glow_and_the_old_ones_fade_at_the_same_frame() {
+        let mut nav = Nav::open(1906.0);
+        nav.step(1, 2000.0);
+        assert_eq!(nav.off[0], Some(2000.0));
+        assert_eq!(nav.on[1], Some(2000.0));
+        assert_eq!(nav.on[0], Some(1936.0));
+    }
+
+    #[test]
+    fn the_script_opens_the_menu_six_frames_after_y_and_walks_the_cursor() {
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down)];
+        assert!(replay(&keys, 1905.0).is_none());
+        assert_eq!(replay(&keys, 1906.0).unwrap().opened, 1906.0);
+        assert_eq!(replay(&keys, 2010.0).unwrap().cursor, 1);
+        assert_eq!(replay(&keys, 2100.0).unwrap().cursor, 2);
+    }
+
+    #[test]
+    fn the_cursor_comes_to_its_first_button_once_the_cards_have_faded_in() {
+        assert_eq!(Nav::open(1906.0).on[0], Some(1906.0 + CURSOR_AT));
+    }
+}

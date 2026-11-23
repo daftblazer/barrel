@@ -95,6 +95,8 @@ struct Args {
     save: Option<String>,
     /// `--hud`: the field's HUD over a field she stands in (a `--save` shows it too).
     hud: bool,
+    /// `--menu-keys F:y,F:down,F:up,F:a,F:b`: the buttons of the field's menu at the capture's game frames (offscreen).
+    menu_keys: Vec<(f32, barrel_ryza::field_menu::Key)>,
     /// The hour the save's clock word gives (`--save`).
     save_hour: Option<u32>,
     /// The frame of the game's capture the HUD's pulse starts at (`--hud-at`), to line a frame up with it.
@@ -181,7 +183,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -263,6 +265,21 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--done" => a.story = barrel_ryza::story::Story::after(&value()?),
             "--save" => a.save = Some(value()?),
             "--hud" => a.hud = true,
+            "--menu-keys" => {
+                use barrel_ryza::field_menu::Key;
+                for key in value()?.split(',') {
+                    let (frame, name) = key.split_once(':').ok_or("--menu-keys F:y,F:down,...")?;
+                    let key = match name {
+                        "y" => Key::Open,
+                        "up" => Key::Up,
+                        "down" => Key::Down,
+                        "a" => Key::Confirm,
+                        "b" => Key::Back,
+                        _ => return Err("--menu-keys F:y,F:down,F:up,F:a,F:b".into()),
+                    };
+                    a.menu_keys.push((frame.parse()?, key));
+                }
+            }
             "--hud-at" => a.hud_at = value()?.parse()?,
             "--hud-arrival" => a.hud_arrival = value()?.parse()?,
             "--hud-stick" => {
@@ -467,6 +484,48 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fh::TEXTURES])?;
     Ok((layer, hud))
+}
+
+/// The field menu's layer (the textures of `barrel_ryza::field_menu`) and its view.
+fn menu_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer) -> Result<(text::Layer, barrel_ryza::field_menu::View)> {
+    use barrel_ryza::field_menu as fm;
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = |va| barrel_ryza::font::glyphs_at(&exe, va).ok_or("the executable's font table");
+    // (file, texture number) in the layer's order (`field_menu`'s constants).
+    let wanted = [
+        ("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_en\\font\\mainfont00_hd1080_0.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_bg04.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_main_menu_image_00.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_main_menu.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_main_menu.g1t", 1),
+        ("\\data\\x64\\res_en\\ui\\a21_main_menu.g1t", 2),
+        ("\\data\\x64\\res_cmn\\ui\\sys_white.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_mix.g1t", 3),
+        ("\\data\\x64\\res_cmn\\ui\\a21_icon.g1t", 0),
+        ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
+    ];
+    let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
+    let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let size = |i: usize| (tex[i].width, tex[i].height);
+    let view = fm::View::read(fm::Sources {
+        layout: &install.read("\\saves\\ui_en\\a21_main_menu\\uil_a21_main_menu.xml")?,
+        chara: &install.read("\\saves\\ui_en\\a21_main_menu\\uil_a21_main_menu_chara.xml")?,
+        styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_main_menu.xml")?,
+        photo_styles: &install.read("\\saves\\ui_en\\etc\\uis_a21_main_menu_image.xml")?,
+        mix_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_mix.xml")?,
+        icon_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_icon.xml")?,
+        anims: &install.read("\\saves\\ui_en\\a21_main_menu\\uia_a21_main_menu.xml")?,
+        common_anims: &install.read("\\saves\\ui_en\\uia_common.xml")?,
+        help: &install.read("\\saves\\ui_en\\a21_button_help\\uil_a21_shade.xml")?,
+        help_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
+        strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
+        glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
+        sizes: [size(fm::PHOTO), size(fm::MENU0), size(fm::MENU1), size(fm::MENU2), size(fm::MIX), size(fm::ICON), size(fm::GUIDE)],
+    })?;
+    let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fm::TEXTURES])?;
+    Ok((layer, view))
 }
 
 /// The load screen's layer (the textures of `barrel_ryza::load_view`), its view and the saving
@@ -1014,8 +1073,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let Resolved { graphics, render_before_presets, game_settings, presets } = Resolved::from(a.preset, config.as_deref(), ini_text.as_deref(), &read_table);
     eprintln!("graphics: {game_settings:?} {presets:?}");
     let mut field_music: Option<u32> = None;
+    let mut menu_shown = barrel_ryza::field_menu::Shown { party: Vec::new(), money: 0 };
     if let Some(save) = &a.save {
-        let state = barrel_ryza::save::decode(&barrel_files::read(Path::new(save))?).map_err(|e| format!("{save}: {e}"))?;
+        let file = barrel_files::read(Path::new(save))?;
+        if let Some(h) = barrel_ryza::saves::Header::parse(&file) {
+            eprintln!("menu party {:?}", h.party);
+            menu_shown = barrel_ryza::field_menu::Shown { party: h.party.iter().map(|&(id, level)| barrel_ryza::field_menu::Member { id, level }).collect(), money: h.money };
+        }
+        let state = barrel_ryza::save::decode(&file).map_err(|e| format!("{save}: {e}"))?;
         let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
         a.story = barrel_ryza::save::story(&state, &pe).map_err(|e| format!("{save}: {e}"))?;
@@ -1908,6 +1973,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         true => Some(hud_layer(&install, &gpu, &renderer)?),
         false => None,
     };
+    // The field's menu (Y): its layer where there is a field HUD to leave.
+    let mut field_menu = match hud.is_some() {
+        true => Some(menu_layer(&install, &gpu, &renderer)?),
+        false => None,
+    };
     let mut handoff: Option<std::path::PathBuf> = None;
     let mut showing_load = false;
     // The Settings screen's "Saving..." notice is drawn over it (in the load screen's layer).
@@ -2686,7 +2756,12 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 layer.set(&gpu, &quads)?;
             }
         }
-        if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
+        let menu_tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
+        let menu_now = field_menu.as_ref().and_then(|_| barrel_ryza::field_menu::replay(&a.menu_keys, menu_tick));
+        if let (Some((layer, view)), Some(nav)) = (field_menu.as_mut(), menu_now.as_ref()) {
+            let (quads, additive) = view.quads(nav, &menu_shown, menu_tick, (width, height));
+            layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
+        } else if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
             let tick = a.hud_at + if pump.is_some() { started.elapsed().as_secs_f32() * 60.0 } else { frame_no as f32 };
             let state = barrel_ryza::field_hud::State {
                 at: r.player.at.into(),
@@ -2713,6 +2788,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (true, Some((l, _, _)), _, _) => vec![l],
             (_, _, true, Some((l, _, _))) if showing_notice => std::iter::once(l).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
             (_, _, true, Some((l, _, _))) => vec![l],
+            _ if menu_now.is_some() => field_menu.iter().map(|(l, _)| l).collect(),
             _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
         // The view-projection drawn with: shifted by this frame's sub-pixel jitter when TAA or a

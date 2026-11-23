@@ -34,6 +34,7 @@ pub mod options;
 pub mod preferences;
 pub mod options_view;
 pub mod field_hud;
+pub mod field_menu;
 pub mod story;
 pub mod event;
 pub mod telop;

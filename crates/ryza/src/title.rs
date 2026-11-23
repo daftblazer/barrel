@@ -104,6 +104,8 @@ enum Easing {
     Linear,
     InCubic,
     OutCubic,
+    InSine,
+    OutSine,
 }
 
 impl Curve {
@@ -123,6 +125,8 @@ impl Curve {
             Easing::Linear => u,
             Easing::InCubic => u * u * u,
             Easing::OutCubic => 1.0 - (1.0 - u).powi(3),
+            Easing::InSine => 1.0 - (u * std::f32::consts::FRAC_PI_2).cos(),
+            Easing::OutSine => (u * std::f32::consts::FRAC_PI_2).sin(),
         };
         std::array::from_fn(|c| v0[c] + (v1[c] - v0[c]) * e)
     }
@@ -144,6 +148,8 @@ pub fn curve(anims: &[u8], name: &str, attr: &str) -> Result<Curve, String> {
     let easing = match c.attr("interpolate") {
         Some("easing_incubic") => Easing::InCubic,
         Some("easing_outcubic") => Easing::OutCubic,
+        Some("easing_insine") => Easing::InSine,
+        Some("easing_outsine") => Easing::OutSine,
         None => Easing::Linear,
         Some(other) => return Err(format!("uia_common: {name}: easing {other} (not read)")),
     };

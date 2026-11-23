@@ -250,6 +250,12 @@ impl Layer {
     /// As [`Layer::set_clipped`], with the quads in `additive` drawn added to what is under
     /// them (source alpha times the picture, as the games' glows).
     pub fn set_blended(&mut self, gpu: &Gpu, quads: &[Quad], clips: &[Clip], additive: std::ops::Range<usize>) -> Result<()> {
+        self.set_blended_by(gpu, quads, clips, &|i| additive.contains(&i))
+    }
+
+    /// As [`Layer::set_blended`], with the additive quads picked by `additive` (any of them, not
+    /// a run).
+    pub fn set_blended_by(&mut self, gpu: &Gpu, quads: &[Quad], clips: &[Clip], additive: &dyn Fn(usize) -> bool) -> Result<()> {
         if let Some((_, _, pending)) = &self.trace {
             *pending.borrow_mut() = Some((gpu.frame.get(), quads.to_vec()));
         }
@@ -263,7 +269,7 @@ impl Layer {
             let texture = q.texture.min(last);
             let mask = clips.iter().find(|c| c.quads.contains(&i)).and_then(|c| quads.get(c.mask));
             let mask_texture = mask.map_or(texture, |m| m.texture.min(last));
-            let add = additive.contains(&i);
+            let add = additive(i);
             match self.runs.last_mut() {
                 Some((t, m, _, count, a)) if *t == texture && *m == mask_texture && *a == add => *count += 6,
                 _ => self.runs.push((texture, mask_texture, verts.len() as u32, 6, add)),
