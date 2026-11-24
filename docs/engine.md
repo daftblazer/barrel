@@ -491,7 +491,10 @@ triangles that are not upright) under the character and no more than a step (50 
 feet; with nothing under it the walk does not move (`barrel walk` across AREA_01_01 from (3000,
 3000) eastward goes over the valley floor between heights 0 and 46). The floors are kept in
 square cells of 256 units on the ground, each in every cell it reaches, so a height looks only
-at its own cell's floors.
+at its own cell's floors. Ryza's walk asks `height_on_ball` instead: on a floor tilted up to 30
+degrees it stands the character a ball's rest higher (`radius * (1 / cos - 1)`, 1.94 on 21
+degrees for 28), as the game does (docs/ryza/open.md, "Ryza in the field"); Escha's walk
+does not.
 
 The player runs at 500 units a second, 625 once `EVENT_XG05_110` (event 734) has been seen
 (`game::walk::player_run_speed`): the user brain (`clsFMBrainUser`) reads it from `0x140234910`,

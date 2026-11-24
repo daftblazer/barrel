@@ -238,6 +238,15 @@ impl Ground {
         if self.faces { map.at_faces(x, z) } else { map.at(x, z) }
     }
 
+    /// Like `height`, but the floors take the character as a ball of `radius` resting on them
+    /// (`ball_height`): on a slope it stands higher than the floor under its centre, as the
+    /// Ryza games' do (docs/ryza/open.md, "Ryza in the field"). The heightmap is taken as it is.
+    pub fn height_on_ball(&self, x: f32, z: f32, y: f32, step_up: f32, radius: f32) -> Option<f32> {
+        let cell = ((x / FLOOR_CELL).floor() as i32, (z / FLOOR_CELL).floor() as i32);
+        let floors = self.cells.get(&cell).into_iter().flatten().filter_map(|&k| ball_height(&self.floors[k as usize], x, z, radius));
+        self.terrain(x, z).into_iter().chain(floors).filter(|&h| h <= y + step_up).fold(None, |best, h| Some(best.map_or(h, |b: f32| b.max(h))))
+    }
+
     /// Where a character with its feet at `y` stands at (x, z): the highest of the heightmap and
     /// the floors under it that is no more than `step_up` above its feet (higher is a ledge it
     /// does not climb); none if there is nothing under it.
@@ -247,6 +256,27 @@ impl Ground {
         self.terrain(x, z).into_iter().chain(floors).filter(|&h| h <= y + step_up).fold(None, |best, h| Some(best.map_or(h, |b: f32| b.max(h))))
     }
 }
+
+/// The height a character of `radius` stands at on a floor triangle under (x, z), whichever way
+/// it is wound: a ball resting on a plane tilted by an angle stands `radius * (1 / cos - 1)`
+/// above the plane's height under its centre (1.94 on a 21 degree slope for 28). Only the
+/// triangle under the centre counts (not an edge or a corner within the radius): the game's
+/// feet change floor, and jump by that amount, where the centre does (walk-30 frames 2967 and
+/// 2978). None when (x, z) is not over the triangle.
+fn ball_height(t: &[[f32; 3]; 3], x: f32, z: f32, radius: f32) -> Option<f32> {
+    let h = floor_height(t, x, z)?;
+    let [a, b, c] = *t;
+    let (e1, e2) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+    let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    // STAND-IN: measured on slopes of 4 to 21 degrees; a steeper floor (a cliff sliver the walk
+    // crosses in a frame) is taken at its plain height.
+    let up = if len > 1e-6 { n[1].abs() / len } else { 1.0 };
+    Some(if up >= BALL_STEEPEST.cos() { h + radius * (1.0 / up - 1.0) } else { h })
+}
+
+/// The steepest slope (radians) a ball's rest is lifted for by `ball_height`.
+const BALL_STEEPEST: f32 = std::f32::consts::FRAC_PI_6;
 
 /// The height of a floor triangle at (x, z), if (x, z) is over it.
 fn floor_height(t: &[[f32; 3]; 3], x: f32, z: f32) -> Option<f32> {
@@ -393,6 +423,17 @@ mod tests {
         assert_eq!(g.height(50.0, 50.0, 90.0, 30.0), Some(100.0), "a step up onto it");
         assert_eq!(g.height(50.0, 50.0, 0.0, 30.0), None, "too high a ledge from the bottom");
         assert_eq!(g.height(150.0, 50.0, 100.0, 30.0), None, "off its edge");
+    }
+
+    #[test]
+    fn a_character_stands_higher_on_a_slope_than_the_floor_under_its_centre() {
+        // A floor rising 1 in 3 along x (18.4 degrees): a ball of 28 stands 28 * (1 / cos - 1) = 1.49 higher.
+        let c = Collision { nodes: vec![], triangles: vec![[0, 1, 2], [2, 1, 3]], vertices: vec![[0.0, 0.0, 0.0], [300.0, 100.0, 0.0], [0.0, 0.0, 300.0], [300.0, 100.0, 300.0]] };
+        let g = Ground::new(None, &c, DEFAULT_SLOPE);
+        let (plain, ball) = (g.height(150.0, 100.0, 0.0, 200.0).unwrap(), g.height_on_ball(150.0, 100.0, 0.0, 200.0, 28.0).unwrap());
+        assert!((plain - 50.0).abs() < 1e-3 && (ball - plain - 28.0 * ((1.0f32 + 1.0 / 9.0).sqrt() - 1.0)).abs() < 1e-3, "{plain} {ball}");
+        // Off the floor there is nothing, as before.
+        assert_eq!(g.height_on_ball(400.0, 100.0, 0.0, 200.0, 28.0), None);
     }
 
     #[test]

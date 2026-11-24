@@ -176,7 +176,7 @@ impl Player {
             Some(g) => {
                 if self.climbed {
                     // Cut the move where the ground has risen CLIMB_CAP.
-                    let reach = |t: f32| g.height(before.x + (to[0] - before.x) * t, before.z + (to[1] - before.z) * t, before.y, STEP_UP);
+                    let reach = |t: f32| g.height_on_ball(before.x + (to[0] - before.x) * t, before.z + (to[1] - before.z) * t, before.y, STEP_UP, self.radius);
                     if reach(1.0).is_some_and(|y| y - before.y > CLIMB_CAP) {
                         let (mut lo, mut hi) = (0.0f32, 1.0f32);
                         for _ in 0..24 {
@@ -186,7 +186,7 @@ impl Player {
                         to = [before.x + (to[0] - before.x) * lo, before.z + (to[1] - before.z) * lo];
                     }
                 }
-                if let Some(y) = g.height(to[0], to[1], self.at.y, STEP_UP) {
+                if let Some(y) = g.height_on_ball(to[0], to[1], self.at.y, STEP_UP, self.radius) {
                     self.climbed = slid && y - before.y > CLIMB_CAP;
                     self.at = Vec3::new(to[0], y, to[1]);
                 }

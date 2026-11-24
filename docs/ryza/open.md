@@ -1600,28 +1600,41 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
          removed a 5.5-unit offset along the whole fence); whether the
          stand is one frame in general, or the same mechanism as the 12-frame creep below, is
          not told.
+       - **Her feet on a slope: a ball, not a point (built, `Ground::height_on_ball`).** From 2967
+         to 2977 she is 1.94 above the floor under her centre, constant to 0.01 (her feet follow
+         the floor's fall of 1.95 to 2.23 a frame exactly), having risen 1.19 at 2967 as the floor
+         changed to the triangle with its apex at (31905, 5979, 33846) (`shape 6`, the placed
+         cliff mesh; the heightmap is 120 below there). That triangle is tilted 20.8 degrees, and
+         28 * (1 / cos 20.8 - 1) is 1.95: she stands as a ball of her radius (28) rests on a
+         tilted plane, her feet's height the plane's under her centre plus `radius * (1 / cos -
+         1)`. The same fits the stairs' side (1.55 over the heightmap on a slope of 0.34: 28 *
+         (1 / cos 18.8 - 1) = 1.57) and the 0.09 to 0.11 she stands over the first fence's floor
+         (slope 0.08: 0.09). The floor changes under her feet, and the offset with it, where her
+         centre crosses the triangle's edge (2967 and 2978), not where the ball's touching point
+         does (that point is 10 units uphill of the centre and lags the jump by a frame; tried).
+         Built for the floors (`barrel_engine::walk::ball_height`; slopes to 30 degrees, steeper
+         ones plain, a stand-in: unmeasured) and not for the heightmap, whose hover on the stairs
+         starts 2 frames late (0.53 for 1914 to 1918 on slopes of 0.06 to 0.34, then 1.55 from
+         1919: not explained, why the heightmap's differs from the floors'). Barrel's feet are
+         now within 0.13 of hers from 2967 to 2977 (0.1 to 5 off before), the whole 2780 to 3079
+         segment 1.9 in y (3.4 before).
+       - **The landing stall** (2979 to 2989, then free at 2990: all of the 88 units). At 2978 she
+         leaves that triangle and her feet drop 4.0 (the fall of 2.2 and the hover's 1.94) to
+         5982.50, 0.08 above the floor. Then her steps along the wall are 0.545, 0.479, 0.424,
+         0.392, 0.353, 0.312, 0.292, 0.251, 0.241, 0.212, 0.190, each 0.90 of the one before (a
+         decay of 0.9 a frame, as if the stick were ignored and what was left of her speed
+         coasted), 27.83 from the wall at the first (0.17 inside it) and creeping out 0.02 a
+         frame, the camera following as little; at 2990 she moves 7.076 along the stick again.
+         Eleven frames, from a drop of 4.0 in one frame (the stairs' descent is 3.4 a frame and
+         has no stall). During the hover she slides along the wall as a plain projection with no
+         28.00 / 28.14 alternation (28.12 throughout). Not built: Barrel's walk leaves the
+         triangle a frame later (0.5 units: its x is 0.5 behind) and drops 1.8 and 2.2 in two
+         frames, so a trigger on one drop of 4.0 would not fire; what the game triggers it on
+         (the drop, the loss of the hover, leaving a floor for a lower one) is one sample.
        Walk-30 now (`walkdiff`): to frame 2966 the fence slide is within 5.9 units, 0.33 degrees
        (the whole walk to 2966: 11.04 and 0.34, the 2230 to 2540 segments'); 3100 to 3299
-       4.0 units, 2.03 degrees; 3300 to 3700 0.18, 1.68 degrees; 2780 to 3079 still 93 units
-       (below). Left, largest first:
-       - **The fall and the landing, 2967 to 2989 (all of the 93 units).** The ground there is the
-         placed cliff mesh's floor (`shape 6`; the heightmap is 120 below), and a floor
-         triangle with its apex at (31905, 5979, 33846). From 2967 to 2977 she is 1.94 above the
-         floor under her (the offset is constant to 0.01: her feet follow the floor's fall of
-         1.95 to 2.23 a frame exactly), having risen 1.19 at 2967 while the floor dropped 0.64;
-         at 2978 she leaves that triangle (Barrel's floor changes there too, to 5982.42) and drops
-         4.0 to 5982.50, still 0.08 above. During the hover she slides along the wall as a plain
-         projection with no 28.00 / 28.14 alternation (28.12 throughout). Barrel's walk follows
-         the floor and is 5 below at 2967 to 2977 (the walk-ground output, `highest` and `under`
-         agree), so the cause is in the game's floor there (a placement of that triangle's mesh
-         lower by 1.94, or a rule keeping her up: not told) and no landing happens in Barrel.
-         **The landing stall** (2979 to 2989, then free at 2990): her steps along the wall are
-         0.545, 0.479, 0.424, 0.392, 0.353, 0.312, 0.292, 0.251, 0.241, 0.212, 0.190, each 0.90
-         of the one before (a decay of 0.9 a frame, as if the stick were ignored and what was
-         left of her speed coasted), 27.83 from the wall at the first (0.17 inside it) and
-         creeping out 0.02 a frame, the camera following as little; at 2990 she moves 7.076
-         along the stick again. Eleven frames, from the landing at 2978. Not built: Barrel has
-         no landing to trigger it.
+       4.1 units, 2.04 degrees; 3300 to 3700 0.18, 1.69 degrees; 2780 to 3079 still 88 units
+       (the landing stall). Left, largest first:
        - The camera's yaw, 2.0 degrees by 3164 (3100 to 3299) and constant 1.7 after it: the steps
          along the wall are 0.8 to 1.2 percent shorter than the game's (7.07 against 7.15 at
          3103; 3 percent at 3100, the corner's first step). The game's long steps are not the
@@ -1634,12 +1647,15 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
          on long). Not explained.
     3. The stairs' heights (7 up at the top step, 3.4 along; with the xz error 3.4, within the
        11), the camera starting at 393.25 and 400 from her first step, the pitch's transient
-       (0.6 degrees). The stairs' 7.25: the game's feet at 1915 to 1933 are 1.55 above the
-       heightmap and 6.0 to 6.4 below the placed ramp mesh's floor (`shape 1467`, 20 triangles:
-       a floor 6.2 above her, parallel to hers to 0.1), which Barrel's `STEP_UP` of 60 climbs
-       (0.6 up at 1915, then 2.5): not by a step rule (a `STEP_UP` of 5 changes nothing there:
-       the ramp is within reach at 1915) but by that mesh's placement or its being no floor of
-       hers; the same kind of offset as the 1.94 under the fall. Not solved.
+       (0.6 degrees). The stairs' y error (7.25, 8.79 with the ball's hover): the game's feet at
+       1915 to 1933 are 1.55 above the heightmap and 6.0 to 6.4 below the placed ramp mesh's
+       floor (`shape 1467`, 20 triangles: a floor 6.2 above her, parallel to hers to 0.1), which
+       Barrel climbs (it is 0.6 above her feet at 1915 and 2.5 more at 1916; a floor step of 3 and
+       of 5 gave the same walk, the first rise being within both, and a smaller one is not
+       told apart by this walk: her stairs-free rises are 0.55 a frame on the slope and the
+       ball's 1.19 at 2967). Not solved: that mesh's placement is 6.2 too high or it is no
+       floor of hers, a kind of offset the unread last three floats of the collision records
+       may hold. `STEP_UP` of 60 stays (a stand-in).
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair
