@@ -360,10 +360,13 @@ a page, the Equipment page without its item card (2330-2370, 2410, 2420). The pa
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
-- Anti-aliasing changed live several times in a window made the field progressively worse (user, 2026-11-23: smeared,
-  oversaturated). Not reproduced offscreen: eight changes in a row (`BARREL_CONFIG_AT`, Off, FXAA, TAA, MSAA 4x, FSR native
-  AA and back) end where a fresh start does (43 dB at 1920x1080 and 3440x1440, the temporal ones' usual), and the same settings
-  applied five times are identical. Open: what a window does differently (the swapchain, the resize path, a moving camera).
+- Fixed 2026-11-23: anti-aliasing changed live in a window made the field worse (user: smeared, oversaturated; MSAA
+  blurry). A resize (the window made fullscreen) rebuilt the targets but left `Renderer::extent` at the old size, and
+  `apply_settings` builds at `extent`: every later settings change drew the scene at the old size (MSAA stretched and
+  blurred, FSR native AA zoomed and washed out, 13.5 dB from a fresh start). `rebuild_targets` now keeps the size.
+  Found with `BARREL_WINDOW_SHOT=N:FILE.png[,...]` (a window's picture at frame N, from the swapchain), which an offscreen
+  run cannot show: windowed 2560x1440, then fullscreen, then native AA is now 42.7 dB from a fresh start, and off, native,
+  MSAA 4x and native again 40.6 dB (real frame times, so not identical).
 - Check `title-3d-1135` (checks.txt) left three offscreen barrel runs hung for hours on 2026-11-23 (killed by hand; cause
   not looked into).
 

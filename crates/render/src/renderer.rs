@@ -350,7 +350,8 @@ pub struct Frame<'a> {
     /// The screen's colour overlay (a fade).
     pub overlay: [f32; 4],
     pub layers: &'a [&'a text::Layer],
-    /// Offscreen, the buffer this frame is copied into (a frame to keep).
+    /// The buffer this frame is copied into (a frame to keep): offscreen, or a window's whose
+    /// swapchain can be copied from (its own format, `Presenter::format`).
     pub readback: Option<vk::Buffer>,
     /// Draw the sky plane (its look slots from `SKY_SLOT`) behind the distant view.
     pub sky_plane: bool,
@@ -1825,6 +1826,19 @@ impl Renderer {
                     .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
                     .image_extent(extent);
                 d.cmd_copy_image_to_buffer(cb, color, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
+            } else if let (None, Some(readback), Some(&swap)) = (offscreen, readback, self.target_images.get(image)) {
+                // A window's picture (`BARREL_WINDOW_SHOT`): the swapchain image, left as it was for the present.
+                let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
+                let turn = |from, to, src, dst| {
+                    vk::ImageMemoryBarrier::default().old_layout(from).new_layout(to).src_access_mask(src).dst_access_mask(dst).image(swap).subresource_range(range)
+                };
+                let all = vk::PipelineStageFlags::ALL_COMMANDS;
+                d.cmd_pipeline_barrier(cb, all, all, vk::DependencyFlags::empty(), &[], &[], &[turn(vk::ImageLayout::PRESENT_SRC_KHR, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::AccessFlags::COLOR_ATTACHMENT_WRITE, vk::AccessFlags::TRANSFER_READ)]);
+                let region = vk::BufferImageCopy::default()
+                    .image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1))
+                    .image_extent(vk::Extent3D { width, height, depth: 1 });
+                d.cmd_copy_image_to_buffer(cb, swap, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, readback, &[region]);
+                d.cmd_pipeline_barrier(cb, all, all, vk::DependencyFlags::empty(), &[], &[], &[turn(vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::ImageLayout::PRESENT_SRC_KHR, vk::AccessFlags::TRANSFER_READ, vk::AccessFlags::empty())]);
             }
         }
         drawn
@@ -1862,6 +1876,9 @@ impl Renderer {
     /// The targets again at a new window size (after the presenter's swapchain was rebuilt).
     pub fn rebuild_targets(&mut self, gpu: &Gpu, presenter: Option<&Presenter>, width: u32, height: u32) -> Result<()> {
         self.targets.destroy(gpu);
+        // The new size is kept: `apply_settings` builds at it (a window made fullscreen, then a
+        // setting changed, would otherwise draw the scene into targets of the old size).
+        self.extent = vk::Extent3D { width, height, depth: 1 };
         self.target_images = target_images(presenter, self.offscreen.map(|(i, _)| i));
         let s = &self.settings;
         self.ao.resize(gpu, s.scene_size(width, height))?;

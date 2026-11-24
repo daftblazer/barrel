@@ -2001,6 +2001,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         Some(_) => None,
         None => Some(gpu.buffer(bytes, vk::BufferUsageFlags::TRANSFER_DST, true)?),
     };
+    // `BARREL_WINDOW_SHOT=N:FILE.png[,M:FILE...]`: in a window, the picture at frame N written to FILE (what an
+    // offscreen run cannot show: the swapchain, a resize, live settings over real frame times).
+    let window_shots: Vec<(u32, String)> = std::env::var("BARREL_WINDOW_SHOT")
+        .ok()
+        .filter(|_| pump.is_some())
+        .map(|v| v.split(',').filter_map(|e| e.split_once(':')).filter_map(|(n, f)| Some((n.trim().parse().ok()?, f.to_string()))).collect())
+        .unwrap_or_default();
     let mut sync = ring::Frames::new(&gpu)?;
     let mut prev_vp = None;
     // The temporal upscalers' and TAA's sub-pixel jitter: the frames drawn so far with it.
@@ -3153,6 +3160,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         };
         let same_camera = prev_drawn_vp.is_some_and(|p: Mat4| p.abs_diff_eq(view.vp, 1e-5));
         prev_drawn_vp = Some(view.vp);
+        let window_shot = match &presenter {
+            Some(p) if p.readable && window_shots.iter().any(|(n, _)| *n == frame_no) => Some(gpu.buffer(u64::from(width) * u64::from(height) * 4, vk::BufferUsageFlags::TRANSFER_DST, true)?),
+            _ => None,
+        };
         let frame = Frame {
             image,
             width,
@@ -3206,7 +3217,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // Before the title the game shows its boot screens over black: no scene shows.
             overlay: if scene_on.get() { [0.0; 4] } else { [0.0, 0.0, 0.0, 1.0] },
             layers: &layers,
-            readback: readback.map(|(b, _)| b),
+            readback: readback.or(window_shot).map(|(b, _)| b),
             sky_plane: view.sky_plane,
             clouds: view.clouds,
             water_pieces,
@@ -3269,6 +3280,24 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (Some(p), _) => {
                 let done = sync.submit(&gpu, cb, image, p.images.len())?;
                 stale |= p.present(&gpu, image as u32, done)?;
+                if let Some((buf, mem)) = window_shot {
+                    unsafe { d.device_wait_idle()? };
+                    let mut pixels = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
+                    unsafe {
+                        let src = d.map_memory(mem, 0, pixels.len() as u64, vk::MemoryMapFlags::empty())? as *const u8;
+                        std::ptr::copy_nonoverlapping(src, pixels.as_mut_ptr(), pixels.len());
+                        d.unmap_memory(mem);
+                        d.destroy_buffer(buf, None);
+                        d.free_memory(mem, None);
+                    }
+                    if p.format == vk::Format::B8G8R8A8_UNORM {
+                        pixels.chunks_exact_mut(4).for_each(|px| px.swap(0, 2));
+                    }
+                    for (_, file) in window_shots.iter().filter(|(n, _)| *n == frame_no) {
+                        std::fs::write(file, barrel_formats::png::encode_rgba(width, height, &pixels))?;
+                        eprintln!("window shot: {file} ({width}x{height}, frame {frame_no})");
+                    }
+                }
             }
             // Offscreen: the same frame `--frames` times (for `--timings`), the last one written.
             (None, Some(_)) if frame_no + 1 < a.frames.unwrap_or(1) => {
