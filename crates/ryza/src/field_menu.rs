@@ -264,7 +264,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -830,6 +830,8 @@ enum Entries {
     PageGuide,
     /// The Container page's: select, the table of contents, add to favorites, the submenu and back.
     Shelf,
+    /// The Gathering Tools page's: select, the table of contents and back.
+    Tools,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
@@ -853,6 +855,16 @@ const SHELF_ENTRIES: [(char, u32); 5] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TAB
 /// The Container page's plate is this much wider than its five entries need (layout pixels: 0.67 of 1080 lines, `field-menu-pages` 2110).
 /// STAND-IN, as `STATUS_PLATE_EXTRA`.
 const SHELF_PLATE_EXTRA: f32 = 0.67 / 1.5;
+
+/// The Gathering Tools page's entries (`field-menu-pages` 2670).
+const TOOLS_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4d8}', 4_194_368)];
+
+/// The Gathering Tools page's bar comes in after its parts have slid (`SLIDE` and the pick's four): it fades in over `TOOLS_BAR_FADE` frames
+/// from `TOOLS_BAR_AT` frames after the page's first, its plate `TOOLS_BAR_GROW` layout pixels short a fifth of the way through the fade and
+/// growing to its width (`field-menu-pages` 2660: a third of its opacity and 54 pixels of 1080 lines short, whole on 2670). STAND-IN: one sample.
+pub const TOOLS_BAR_AT: f32 = 34.0;
+const TOOLS_BAR_FADE: f32 = 15.0;
+const TOOLS_BAR_GROW: f32 = 36.28;
 
 /// "Table of Contents" (the item card's guide entry).
 const TABLE_OF_CONTENTS: u32 = 6_684_709;
@@ -1016,6 +1028,20 @@ impl View {
         // (going out it follows the menu's bar: the words first, then the plate fades)
         let gone = leaving.map(Bar::out);
         self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if shelf { Entries::Shelf } else if guide { Entries::PageGuide } else { Entries::Page } });
+        pen.finish().0
+    }
+
+    /// The Gathering Tools page's help bar `age` frames after its parts began to come in (none before `TOOLS_BAR_AT`).
+    pub fn tools_help(&self, screen: (u32, u32), age: f32) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let a = age - TOOLS_BAR_AT;
+        if a <= 0.0 {
+            return Vec::new();
+        }
+        // (and the same little extra width the Container page's bar has: its "Select" is the same glyph)
+        let extra = SHELF_PLATE_EXTRA - TOOLS_BAR_GROW * ((TOOLS_BAR_FADE - a) / (TOOLS_BAR_FADE * 2.0 / 3.0)).clamp(0.0, 1.5);
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        self.help_bar(&mut pen, Bar { alpha: (a / TOOLS_BAR_FADE).clamp(0.0, 1.0), grow: 1.0, words: true, extra, entries: Entries::Tools });
         pen.finish().0
     }
 
@@ -1329,6 +1355,7 @@ impl View {
             Entries::StatusPage => &STATUS_ENTRIES,
             Entries::PageGuide => &PAGE_GUIDE_ENTRIES,
             Entries::Shelf => &SHELF_ENTRIES,
+            Entries::Tools => &TOOLS_ENTRIES,
         };
         let line = self.help_line(entries);
         let full = self.plate_full(&line, pen.k);

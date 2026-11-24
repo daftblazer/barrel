@@ -1153,6 +1153,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut item_info: Option<barrel_ryza::item_info::Items> = None;
     // The container's items (the Container page's grid) and its places.
     let mut container: (Vec<barrel_ryza::save::Worn>, usize) = (Vec::new(), 0);
+    let mut tools: Vec<barrel_ryza::save::Worn> = Vec::new();
     let mut party_skills = barrel_ryza::party_skills::Skills::default();
     if let Some(save) = &a.save {
         let file = barrel_files::read(Path::new(save))?;
@@ -1171,6 +1172,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             party_tables = Some(tables);
         }
         container = barrel_ryza::save::container(&state).unwrap_or_default();
+        tools = barrel_ryza::save::tools(&state).map(|t| t.0).unwrap_or_default();
         item_info = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?).ok();
         if let Ok(skills) = barrel_ryza::party_skills::Skills::read(&install.read("\\saves\\party\\party_skill.xml")?, &install.read("\\saves\\skill\\skill_data.xml")?) {
             party_skills = skills;
@@ -2049,7 +2051,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     };
     // The Equipment page, over the blurred picture of the menu (made after the backdrop: layers draw in the order they were made).
     let mut page = match (hud.is_some(), party_tables.as_ref()) {
-        (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t, &container.0.iter().map(|u| barrel_ryza::field_page::ShelfItem { image: t.image(u.item), category: item_info.as_ref().and_then(|i| i.row(u.item)).and_then(|r| r.category) }).collect::<Vec<_>>())?),
+        (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t, &container.0.iter().chain(&tools).map(|u| barrel_ryza::field_page::ShelfItem { image: t.image(u.item), category: item_info.as_ref().and_then(|i| i.row(u.item)).and_then(|r| r.category) }).collect::<Vec<_>>())?),
         _ => None,
     };
     let mut showing_page = false;
@@ -3082,7 +3084,12 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 (None, Some((p, out))) => (Some(p), Some(out)),
                 _ => (None, None),
             };
-            let menu_help = view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.is_some_and(|p| p.slot_since.is_none()), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving);
+            let menu_help = if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Tools)) {
+                // (the Gathering Tools page's bar comes in late)
+                view.tools_help((width, height), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c))
+            } else {
+                view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.is_some_and(|p| p.slot_since.is_none()), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
+            };
             if let (Some((layer, view)), Some(pick), Some(tables), Some(items)) = (page.as_mut(), page_now.filter(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), party_tables.as_ref(), item_info.as_ref()) {
                 // The Container page: its grid, the cursor's item as a card.
                 let ids: Vec<u8> = menu_shown.party.iter().map(|m| m.id).collect();
@@ -3099,6 +3106,16 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     leaving,
                 };
                 let (mut quads, additive, clips) = view.shelf_quads(&look, (width, height));
+                quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
+                layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
+                showing_page = true;
+            } else if let (Some((layer, view)), Some(pick), Some(tables), Some(items)) = (page.as_mut(), page_now.filter(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Tools)), party_tables.as_ref(), item_info.as_ref()) {
+                // The Gathering Tools page: the row of tools, the cursor's tool as a card.
+                let ids: Vec<u8> = menu_shown.party.iter().map(|m| m.id).collect();
+                let item = tools.get(pick.cell).map(|u| items.card(u, &ids, tables.image(u.item)));
+                let images: Vec<usize> = tools.iter().map(|u| tables.image(u.item)).collect();
+                let look = barrel_ryza::field_page::ToolsLook { party: &menu_shown.party, images: &images, cursor: pick.cell, item: item.as_ref(), age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving };
+                let (mut quads, additive, clips) = view.tools_quads(&look, (width, height));
                 quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
                 layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
                 showing_page = true;

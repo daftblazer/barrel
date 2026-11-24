@@ -133,11 +133,26 @@ pub struct ShelfLook<'a> {
     pub leaving: Option<f32>,
 }
 
+/// What the Gathering Tools page shows.
+pub struct ToolsLook<'a> {
+    pub party: &'a [crate::field_menu::Member],
+    /// The tools' picture numbers in order (the row's cells), the cell under the cursor and its card.
+    pub images: &'a [usize],
+    pub cursor: usize,
+    pub item: Option<&'a Card>,
+    /// Frames since the page's first, and, going out, since B.
+    pub age: f32,
+    pub leaving: Option<f32>,
+}
+
+/// The Gathering Tools page's title.
+pub const TOOLS_TITLE: u32 = 4_194_514;
+
 /// The page's strings: "Container", "Empty" and "All".
 pub const CONTAINER_TITLE: u32 = 6_684_760;
 const EMPTY_WORD: u32 = 6_684_711;
 const ALL_WORD: u32 = 4_194_319;
-const SHELF_STRINGS: [u32; 3] = [CONTAINER_TITLE, EMPTY_WORD, ALL_WORD];
+const SHELF_STRINGS: [u32; 4] = [CONTAINER_TITLE, EMPTY_WORD, ALL_WORD, TOOLS_TITLE];
 /// The tab names (consumables ... exploration): the page shows its tab's.
 const TAB_NAMES: u32 = 6_684_751;
 /// The grid's columns, the tabs' label pictures (`gen_a21_mix01_choise`'s: all, materials, consumables, equipment, synthesis, important) and
@@ -151,6 +166,8 @@ const ITEM_ALPHA: f32 = 242.0 / 255.0;
 /// `field-menu-pages` 2080, 2100, 2110 and 2120 where the game's are.
 const CURSOR_LOOP: f32 = 120.0;
 const CURSOR_PHASE_LAG: f32 = -0.1;
+/// The tools' cursor: its loop started later (STAND-IN: `field-menu-pages` 2650).
+const TOOLS_CURSOR_LAG: f32 = -1.0;
 /// The scroll bar's slider with the grid not full: from the bar's top, its length (STAND-IN: the capture's, the rule is not read).
 const SHELF_THUMB: [f32; 2] = [18.0, 390.0];
 /// The count's label and number: where the capture puts them in the `cc` node (the layout's are (-52, 31) and (-5, 31); the game's code
@@ -229,6 +246,8 @@ pub struct Page {
     cabinet: Element,
     cell: Element,
     tabs: Element,
+    /// The Gathering Tools page's layout (`uil_a21_menu_explore_equip.xml`).
+    explore: Element,
     /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
     text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
@@ -271,6 +290,7 @@ impl Page {
         let cabinet = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_cabinet.xml")?).map_err(|e| format!("cabinet: {e}"))?;
         let cell = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_cabinet_cell.xml")?).map_err(|e| format!("cabinet cell: {e}"))?;
         let tabs = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_item_tab.xml")?).map_err(|e| format!("cabinet tabs: {e}"))?;
+        let explore = layout("uil_a21_menu_explore_equip.xml")?;
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -298,7 +318,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -359,7 +379,7 @@ impl Page {
                     || (TAB_NAMES..TAB_NAMES + 8).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, text_styles, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -556,6 +576,41 @@ impl Page {
         w.slid(slide, |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new()));
     }
 
+    /// The Gathering Tools page: the row of tools in its frame (`uil_a21_menu_explore_equip.xml`'s `top`, sliding in from the left), the cursor
+    /// and the card of the tool under it (from the right) and the title plate.
+    pub fn tools_quads(&self, look: &ToolsLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
+        let (base, add, f) = cursor_colors(look.age + TOOLS_CURSOR_LAG);
+        let over = |path: &[&str]| -> Over {
+            match path {
+                ["top"] => Over { show: true, ..Default::default() },
+                ["top", "cell_root", "row_0", cell, part, ..] => {
+                    let k: usize = cell.strip_prefix("cell_").and_then(|n| n.parse().ok()).unwrap_or(0);
+                    let here = k < look.images.len();
+                    match (*part, path.len()) {
+                        ("item_image", 5) if here => Over { show: true, image_no: Some(look.images[k]), ..Default::default() },
+                        ("highlight", 5) if k == look.cursor && here => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
+                        ("highlight", 6) => Over { paint: Some([add[0], add[1], add[2], (191.0 * f).round() / 255.0]), ..Default::default() },
+                        _ => Over { hide: true, ..Default::default() },
+                    }
+                }
+                _ => Over::default(),
+            }
+        };
+        if let Some(top) = find(&self.explore, "top") {
+            let at = pair(top, "pos", [0.0; 2]);
+            w.slid(Slide::in_from(into(SLIDE_FRAMES), [-40.0, 0.0]), |w| w.walk(top, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+        }
+        if let Some(card) = look.item {
+            w.slid(Slide::in_from(into(SLIDE_FRAMES), [40.0, 0.0]), |w| self.item_card(w, &root, "normal_item", None, card, look.party));
+        }
+        self.caption_plate(&mut w, &root, TOOLS_TITLE, Slide::in_from(into(SLIDE_FRAMES), [0.0, -30.0]));
+        (w.out, w.additive, w.clips)
+    }
+
     /// The Container page: the tab row, the grid of the items, the count of free places, the card of the item under the cursor and the title
     /// plate (`uil_a21_cabinet.xml`'s `default`, which slides in from the left over 40 frames, and the card from the right).
     pub fn shelf_quads(&self, look: &ShelfLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
@@ -565,15 +620,7 @@ impl Page {
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let row = |s: &str, name: &str| s.strip_prefix(name).and_then(|n| n.strip_prefix(':')).and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
         let string = |n: u32| self.strings.get(&n).cloned();
-        // The cursor cell's animation (`anm_common_cursor_base` and `_add_75`, 120 frames up and down): the share of the way to teal.
-        let t = (look.age + CURSOR_PHASE_LAG).rem_euclid(CURSOR_LOOP);
-        let f = 1.0 - (t - CURSOR_LOOP / 2.0).abs() / (CURSOR_LOOP / 2.0);
-        // (the game's bytes: each animation's colour rounds to a byte and their product is cut down to one, the opacity rounds)
-        let lerp = |to: [f32; 3]| [255.0 + (to[0] - 255.0) * f, 255.0 + (to[1] - 255.0) * f, 255.0 + (to[2] - 255.0) * f].map(|v| v.round().clamp(0.0, 255.0));
-        let base = lerp([58.0, 205.0, 180.0]);
-        let add = lerp([58.0, 205.0, 205.0]);
-        let both = [0, 1, 2].map(|i| (base[i] * add[i] / 255.0).floor() / 255.0);
-        let base = base.map(|v| v / 255.0);
+        let (base, both, f) = cursor_colors(look.age + CURSOR_PHASE_LAG);
         let over = |path: &[&str]| -> Over {
             let [_, rest @ ..] = path else { return Over::default() };
             match rest {
@@ -761,7 +808,7 @@ impl Page {
                 _ => [&self.targets, &self.item, &self.cabinet].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
             };
         }
-        [&self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell].into_iter().find_map(|doc| find_with_children(doc, name))
+        [&self.explore, &self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell].into_iter().find_map(|doc| find_with_children(doc, name))
     }
 
     /// The children a node's `clone_child_tree` gives: the template's, which may be a clone of another (the Container grid's `cell`).
@@ -1201,6 +1248,18 @@ fn descend<'a>(first: &'a Element, parts: std::str::Split<'_, char>) -> Option<&
         at = at.children.iter().find_map(|c| find(c, part))?;
     }
     Some(at)
+}
+
+/// A cell cursor's colours at `t` frames of its loop (`anm_common_cursor_base` and `_add_75`, 120 frames up and down): the picture's, the
+/// added glow's (its animation's times the picture's) and the share of the way to teal. The game's bytes: each animation's colour rounds
+/// to a byte and their product is cut down to one.
+fn cursor_colors(t: f32) -> ([f32; 3], [f32; 3], f32) {
+    let t = t.rem_euclid(CURSOR_LOOP);
+    let f = 1.0 - (t - CURSOR_LOOP / 2.0).abs() / (CURSOR_LOOP / 2.0);
+    let lerp = |to: [f32; 3]| [255.0 + (to[0] - 255.0) * f, 255.0 + (to[1] - 255.0) * f, 255.0 + (to[2] - 255.0) * f].map(|v| v.round().clamp(0.0, 255.0));
+    let (base, add) = (lerp([58.0, 205.0, 180.0]), lerp([58.0, 205.0, 205.0]));
+    let both = [0, 1, 2].map(|i| (base[i] * add[i] / 255.0).floor() / 255.0);
+    (base.map(|v| v / 255.0), both, f)
 }
 
 fn numbers_of(attributes: &[(String, String)], name: &str) -> Option<Vec<f32>> {

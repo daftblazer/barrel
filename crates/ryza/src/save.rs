@@ -150,12 +150,17 @@ const WORN_SIZE: usize = UNIT_SIZE;
 /// The container's items (`item` / `m_unitContainer`: a big-endian byte count, then a unit each, an empty place's item `0xffff`):
 /// the filled places in order, and the number of places.
 pub fn container(state: &[u8]) -> Option<(Vec<Worn>, usize)> {
-    units(state, "m_unitContainer")
+    units(state, &["item", "m_unitContainer"])
 }
 
-/// The units of the `item` record's list `name`.
-fn units(state: &[u8], name: &str) -> Option<(Vec<Worn>, usize)> {
-    let d = find(state, &["item", name])?;
+/// The gathering tools (`explore_equip` / `explore_equip_item`: the same list, 15 places).
+pub fn tools(state: &[u8]) -> Option<(Vec<Worn>, usize)> {
+    units(state, &["explore_equip", "explore_equip_item"])
+}
+
+/// The units of the list at `path`.
+fn units(state: &[u8], path: &[&str]) -> Option<(Vec<Worn>, usize)> {
+    let d = find(state, path)?;
     let bytes = u32::from_be_bytes(d.get(..4)?.try_into().ok()?) as usize;
     let list = d.get(4..4 + bytes)?;
     let places = list.chunks_exact(UNIT_SIZE).count();
