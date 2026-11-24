@@ -357,7 +357,7 @@ the order worth doing:
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
 - Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
-  and Effect/Trait pages are drawn and open and close as in the capture (part 11: 53 to 72 mismatches a frame, none at 0 yet; causes there); Monsters and Help are
+  and Effect/Trait pages are drawn and open and close as in the capture (part 11: the Effects page and the ways in and out are at 0 on most frames, the Items page 36 mismatches from the cards' tilt); Monsters and Help are
   closed in the capture's save (A does nothing) or not captured. Answer keys field-menu-pages (every 10 frames 1990-3540), field-menu-guide, field-menu-guide2.
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
@@ -2125,18 +2125,32 @@ STAND-INs named in the code: which items a tab holds (`library::tab_of`: only th
 (`REVEALED_AT` 11: the capture's items at level 10 are shown as silhouettes under "???", the colour 139/113/88; the rule that shows a name is not captured, so Barrel shows every
 item as a silhouette), the slider (`EFFECT_THUMB`), the page number "1 / 1" (one page), the keys on the sub-pages (none move the cursor yet).
 
-Left, with causes (each frame still at 53 to 72 mismatches, none at 0, so no rows are added; counts `field-menu-guide`: 2350 and 2360: 53, 2400 to 2480: 57, 2490: 53, 2620: 61,
-2650 and 2700: 69, 2750: 72, 2760: 61; before the pages were not drawn at all: 2440 had 305 game quads and none of the page):
-- The Item page's cards are tilted by the game's code (not by the layout): the first card about +40 degrees, the second -59 degrees and mirrored (2440: the base pieces' corners);
-  the pivot is not one of the layout's nodes (solved from the first card: about (301, 390) of 1080 lines, where none of the nodes is), so the base and highlight pieces
-  (about 28 quads) draw upright. The tilts look random per card; not reproduced.
-- The page's help bar: the Item page's has four plates (2380: `common#3` x 4, 66 texts in all) and the Effect page's two (2650), both fading in about 33 frames after A (2370: 7/15)
-  and out from B + 5; the top's bar fades out from A + 5 and back from B + 32. Only the top's bar is built (it stays drawn over the sub-page for now).
-- The Effects page's "Resulting Item" frame: the game draws the blanks' nine-slice children (`blank_1`, ...) squashed to zero width at the first blank's right edge (about 18
-  quads); Barrel draws them at their own places (the children seem to be placed by the parent's scale: not worked out). The scroll bar's window pieces differ in the
-  last digit of the rect (249.00002 against 249.0) and show as one pair of mismatches each.
-- The top's blink after a return from a page: first return 2510 is 17 frames in (started 13 after B), the second (2780) is 67 in and the third (3330) 56 in: not one rule; the top's
-  cursor ring after the pages (2780 to 3380) was not compared. 3290/3300 and the end (B 3370 to the menu, 3450 the field) were not compared either.
-- Equipment slides (2380 to 2400), 2510/2520 and the pick going out (field-menu-pages 3020/3030): not worked (no time).
+Second pass (same day): the sub-pages' own help bars, the Effects page's last pieces and the blink clock. Rows: 65 frames at 0 in the local `field-menu-rows-pages7.txt`
+(`field-menu-guidesub-N` for `field-menu-guide`: 2330 and 2340 to 2490's Effects/Items frames that are at 0, 2620 to 2740, 2750 to 2760, 2890 to 3030 and so on; `field-menu-guidesub2-N`
+for `field-menu-guide2`: 2330 to 2490). Counts per frame before (first pass) and after (`field-menu-guide`): Effects page 2620 to 2750: 61-72 -> 0 (2650: 3); the way out 2760: 61 -> 0;
+the second and third openings 2890 to 3020 and 3160 to 3290: 613-659 (the page was not opened: the brief's RIGHT keys were missing from the key script) -> 0 or 3 (the blink's last
+digits); the top's bar at A (2330, 2600): 14-15 -> 0; the top after a return (2500 to 2600, 2800 to 2880, ...): 18 -> 1; Items 2350 to 2480: 53-57 -> 36 (only the card tilt is left).
+Built in this pass:
+- `View::guide_sub_help`: the Item page's bar (cross "Select", the view button "Search" = `STR_LIBRARY_DEFINE_089`, B "Back", A "Confirm"; `Entries::GuideItems`) and the Effects page's (cross, B;
+  `Entries::GuideEffects`), both with their plate as the text makes it (no extra width), fading in over 15 frames from A + 33 and out from B + 5 with their words gone from B + 5;
+  the top's bar: words gone and fading from A + 5, back from B + 32 (whole at B + 47, `GUIDE_SUB_BAR_BACK`). The plates' change between the bars (2490: three plates at 170 and no words) is not drawn.
+- The empty "Resulting Item" blanks: the game draws a zero-width middle piece when a nine-slice is narrower than its margins (`field_page` `cols.insert`) and does not draw the copies
+  `blank_1` and `blank_2` at their places (hidden); the scroll bar's slider is drawn after the bar's own pictures (a21_window first, then the slider).
+- The top's cursor: it stays on the page's button while the top fades back in and goes to the first button 25 frames after B (`GUIDE_CURSOR_RESET`: between 20 and 30; 2770 on Effects, 2780 on Items);
+  its highlight's blink begins again on the frame of a key that moves it (`Pick::moved`; `field-menu-guide2` 2330, 2370, `field-menu-guide` 2560). The game does not restart it for RIGHT 2830 and 3100
+  (1 mismatch each frame): not explained.
+- The sub-pages' blink clock (`BLINK_RATE`): the cursor's blink of both pages runs from the page's first opening and keeps running while the page is away, at 120 frames in about 120.75
+  (the Effects list's lowest points 2675.2, 2917.8, 3160.4 are 242.6 apart; the Items' peak is 121.3 after its start); the second and third visits start in phase with it. STAND-IN: the
+  ratio (0.9938) is fitted to 2900 and the first visit; 2650, 2980 and some 3160 to 3290 are 3 mismatches (the last digit of the additive alpha).
+
+Left, with causes (frames not at 0 in the final sweeps; the full lists are in the report):
+- The Item page's cards are tilted by the game's code, not by the layout (`uil_library_04_item_top.xml` has no rotation on `node_center`, `node_adjust_scaling` is only a scale of 0.67): from the
+  trace's corners, solved against Barrel's upright pieces, card 1 is turned +39.8 degrees (the base's height 0.966 of the layout's 318), card 2 is mirrored and turned -59.1 degrees
+  (height 0.778). The pivot solved from card 1 is about (301, 390) of 1080 lines, which no node of the layout has; the heights differ per card, so the tilt looks drawn at random per card.
+  Not reproduced: the base and highlight pieces (36 mismatches on 2350 to 2480, 41 on 2490) draw upright.
+- 2490 to 2510: the page going out also morphs the 4-plate bar (above); 3320 to 3380 and 3420 to 3460: the menu's return and the ring after the Guide (part 10's class: the cursor ring's phase
+  and the bar's plate width two frames into its fade, 8 and 2 to 4 mismatches). 2790, 3060 and 3330: the top's bar a frame early on the way back (7/15 in the game on 2790 and 3060, 8/15 on 2520: one clock stall).
+- `field-menu-guide2`: 1 to 2 mismatches a frame from 2500 on, all in the menu after the Guide and the ring; 3320 on is the field (not compared: the scenario's stick inputs are not given).
+- Equipment slides (2380 to 2400), 2510/2520 and the pick going out (field-menu-pages 3020/3030): not worked.
 - The Traits tab, Monsters and Help pages, searching, sorting: no capture.
 
