@@ -1646,11 +1646,19 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
          xz error of the whole walk to frame 2229 went from 3.4 to 0.6 and of 2560 to 2779 from
          7.7 to 1.5. The first fence's uphill slide gains nothing from it (the climb cap
          absorbed it before), and the slip is the part of the old "+0.7 percent downhill".
-       - **The left stick pushed left or down is longer** (`MOVE_NEGATIVE` 1.0078): left, down
-         or the corner of left and up she moves 10.08 a frame, right or up 10.00 (frames 2236 to
-         2262 and 2580 to 2584; 32767 / 32512 is 1.00784, a guess), in the stick's direction,
-         not skewed. This was most of the "up to 0.6 degrees" yaw and the "-2 to +1 percent" of
-         the steps in part 3 (they were the stairs' side at 3100 and the long steps).
+       - **The left stick is read as signed bytes** (part 5, `walk::byte_axis`, `MOVE_LONGEST`
+         128/127; replaces `MOVE_NEGATIVE`): each axis is the 16-bit value's high byte over 127,
+         so full left or down (-32767) reads -128/127 = 1.00787 and full right or up 1.0
+         (steps of 10.08 and 10.00, frames 2236-2262, 2580-2584, 3100 on). The dead zone refits
+         to 0.2208 (12000 reads 46/127). The corner of left and up is also 10.08 and *not
+         skewed*: the byte values would turn it 0.2 degrees (the walk went 5.9 units and 0.48
+         degrees off), so the length comes from the bytes (capped at 128/127 after the dead
+         zone: left alone would give 1.0101) and the direction from the stick's own values.
+         STAND-IN: the corner of right and up is taken as capped the same (not walked); the
+         right stick is not read this way (its two samples, 78/127 and 79/127, fit different
+         dead zones: 0.173 and 0.190, against the 0.1651 kept). A half turn within 1e-3 rad goes
+         the positive way (`HALF_TURN_SLACK`: the exact tie at frame 2780 flipped with the
+         float's rounding).
        - **The camera's follow turns a little less across 45 degrees, and her lean leads it**
          (`FOLLOW_MID` 0.77, `FOLLOW_LEAD` 0.44): the lean at 45 degrees to the camera turns it
          0.7121 a frame (1.0125 sin 45 degrees would be 0.716), and her facing, the stick's
@@ -1686,6 +1694,13 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
          a slide at 8.6 units and more at 115 to 125 degrees across the view (1.04 to 1.11 and
          rising with the step): not a function of the speed alone, a lagged camera pivot is a
          guess. The walk's lean toward the stairs' side holds 0.78 units: only the yaw is off.
+         Part 5 measured it by the frame (3100 to 3163): the game's turn over ours is 1.00 at steps
+         up to 7.4 and rises with the step, 1.02 at 8.4, 1.07 at 8.8, 1.10 at 9.07, 1.14 at 9.21,
+         about (step / 8.4) * 1.03: the speed scaling `min(1, v / 504)` looks uncapped here,
+         while a free run (10.0 a frame) has the full 1.0125 rate, so it is not the speed
+         alone. Taking the follow's direction from the stick's lean instead of the step (or
+         half of each) was tried and breaks the fence segments (15 to 95 units at 3100): not
+         it. Open: the follow's law on a slide at 115 to 125 degrees across.
     3. The stairs' heights (the placed ramp's y 8.7, with the xz error 0.9). Part 4 measured
        more of it: her feet are 0.05 over the heightmap on the flat (slope 0.06, the ball's
        0.05), 0.53 at frames 1914 to 1918 and 1.56 from 1919 to 1932 on the steep part
@@ -1699,6 +1714,22 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
        A floor step height (5 instead of 60) did not change it (the ramp is 0.7 above her at
        1915). Not solved: when a floor above her counts (the heightmap under it falling away?
        a rule of the walkable mesh, `g1pf`?) and the floors' lift on a floor she is under.
+       Part 5 (2026-11-24), tried, none solved it: (a) the ramp's top is a ridge (z 30506 to 30512,
+       up to 6176) after a bevel from z 30466 (`walk-near` now prints each triangle's normal; all
+       up-facing, none wound the wrong way), so a floor-step rule cannot split 1915 from 1934:
+       the ramp is 2.4 to 3.1 over her (and 7.9 over the heightmap, constant) all through 1916
+       to 1933, then 0.2 over after, so no step height on (floor - feet) works (0, 0.5, 1, 3 and 60
+       tried: the first four leave her on the heightmap after 1933 and break the fence after
+       it). (b) The heightmap is 500-unit cells here (the crease of 0.06 to 0.34 at z 30500, flags
+       all 0), the hover 0.53 for 1914 to 1918 starts 16 units before it. A heightmap ball of 28
+       (`faces_at`'s triangle slope, 28 * (sqrt(1 + g^2) - 1): 0.05 on the flat and 1.57 on the
+       stairs, as measured) took the stairs' y to 1.2 until 1932, but moved the first fence's
+       climb cap and slip tuned on the plain heightmap (105 units at 2780): not kept. (c) At
+       1934 the game's step is 9.66 (not 10.0) and y rises 0.41 as the ramp catches her 0.21
+       under its plane: a contact push of 0.43 along the ramp's normal, with the ramp ignored for
+       the 19 frames before.  Open: what keeps the ramp out until 1933 (not a function of
+       height, not of the ramp's geometry; a state of hers, a timer, or the game's contact
+       order are left).
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair

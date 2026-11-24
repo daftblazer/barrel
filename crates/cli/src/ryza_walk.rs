@@ -145,6 +145,13 @@ pub fn near(args: &[&str]) -> Result<()> {
             for v in &c.vertices {
                 println!("    {:.1} {:.1} {:.1}", v[0], v[1], v[2]);
             }
+            for t in &c.triangles {
+                let [a, b, d] = t.map(|i| c.vertices[i as usize]);
+                let (e1, e2) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [d[0] - a[0], d[1] - a[1], d[2] - a[2]]);
+                let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-9);
+                println!("    tri {t:?} normal {:.2} {:.2} {:.2} z {:.0} to {:.0}", n[0] / len, n[1] / len, n[2] / len, a[2].min(b[2]).min(d[2]), a[2].max(b[2]).max(d[2]));
+            }
         }
     }
     Ok(())
