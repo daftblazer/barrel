@@ -473,6 +473,8 @@ pub struct Pick {
     /// The Guide's sub-page opened from its top (Items or Effects/Traits), and the frame each button's page was first opened on.
     pub sub: Option<GuideSub>,
     pub sub_first: [Option<f32>; 2],
+    /// The frame the top's cursor last moved to another button: its highlight's blink begins again there (`field-menu-guide2` 2330 and 2370: whole opacity on the key's frame).
+    pub moved: Option<f32>,
 }
 
 /// A sub-page of the Guide's top: its button's place (0 Items, 1 Effects/Traits), the frame of the A that opened it and of the B that leaves it.
@@ -488,6 +490,10 @@ pub struct GuideSub {
 /// Frames from B on a Guide sub-page to the top's being whole again: the page fades out over 15 frames and the top in over 15 after them
 /// (`field-menu-guide` 2480: B, 2490 the page at a third, 2500 the top at a third, 2510 whole).
 pub const GUIDE_SUB_BACK: f32 = 30.0;
+/// Frames from B on a sub-page to the top's cursor going back to the first button (between 20 and 30 in the capture: STAND-IN, the middle).
+const GUIDE_CURSOR_RESET: f32 = 25.0;
+/// The top's bar is whole again this many frames after B (it comes in over 15 from 32).
+pub const GUIDE_SUB_BAR_BACK: f32 = 47.0;
 
 /// The Container's grid has eight cells to a row, the Gathering Tools' row five.
 pub const CONTAINER_COLUMNS: usize = 8;
@@ -663,7 +669,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None, sub_first: [None; 2] });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None, sub_first: [None; 2], moved: None });
         }
         if matches!(self.cursor, CONTAINER | TOOLS | GUIDE_BUTTON) {
             // (no pick: the page is the button's; its first frame comes `ITEM_PAGE_LATER` frames after A, like a card's A on the Status page)
@@ -675,7 +681,7 @@ impl Nav {
             if self.cursor == GUIDE_BUTTON {
                 self.ring_again = Some(at + GUIDE_RING_AT);
             }
-            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None, sub_first: [None; 2] });
+            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None, sub_first: [None; 2], moved: None });
         }
     }
 
@@ -696,10 +702,37 @@ impl Nav {
         self.pick.as_ref().and_then(|p| p.sub.as_ref()).filter(|s| s.back.is_none_or(|b| at < b + GUIDE_SUB_BACK))
     }
 
+    /// The Guide top's cursor at frame `at`: after a sub-page it stays on that page's button while the top comes in and goes to the first button
+    /// `GUIDE_CURSOR_RESET` frames after B (`field-menu-guide` 2770 still on Effects, 2780 on Items).
+    pub fn guide_cursor(&self, at: f32) -> usize {
+        match self.pick.as_ref() {
+            Some(p) if p.sub.is_some_and(|s| s.back.is_some_and(|b| at >= b + GUIDE_CURSOR_RESET)) => 0,
+            Some(p) => p.cell,
+            None => 0,
+        }
+    }
+
+    /// The frame the Guide top's cursor last moved on, if it has moved since the top came in.
+    pub fn guide_moved(&self, at: f32) -> Option<f32> {
+        self.pick.as_ref().and_then(|p| p.moved).filter(|&m| self.pick.as_ref().and_then(|p| p.sub).is_none_or(|s| s.back.is_none_or(|b| m > b + GUIDE_CURSOR_RESET) && m < at + 0.5))
+    }
+
+    /// The Guide's sub-page whose bar is still on the screen at frame `at`: the top's bar comes back 47 frames after B, 17 after the page's last frame.
+    pub fn sub_bar(&self, at: f32) -> Option<&GuideSub> {
+        self.pick.as_ref().and_then(|p| p.sub.as_ref()).filter(|s| s.back.is_none_or(|b| at < b + GUIDE_SUB_BAR_BACK))
+    }
+
     /// A on the picked card; on the Guide's top, A on Items or Effects/Traits opens that page (Monsters and Help are closed in the
     /// capture's save: A does nothing, `field-menu-guide2` 2410).
     pub fn pick_confirm(&mut self, at: f32) {
         if self.page(at).is_some_and(|p| p.items == Some(ItemPage::Guide)) && self.sub(at).is_none() {
+            let cursor = self.guide_cursor(at);
+            if let Some(p) = self.pick.as_mut() {
+                p.cell = cursor;
+                if p.sub.is_some_and(|s| s.back.is_some_and(|b| at >= b + GUIDE_SUB_BAR_BACK)) {
+                    p.sub = None;
+                }
+            }
             if let Some(p) = self.pick.as_mut().filter(|p| p.cell < 2) {
                 let first = *p.sub_first[p.cell].get_or_insert(at);
                 p.sub = Some(GuideSub { button: p.cell, since: at, back: None, first });
@@ -732,6 +765,14 @@ impl Nav {
             return;
         }
         let sub_up = self.sub(at).is_some();
+        let cursor = self.guide_cursor(at);
+        if let Some(p) = self.pick.as_mut().filter(|p| p.items == Some(ItemPage::Guide)) {
+            p.cell = cursor;
+            // (a page long gone: the top's cursor is its own again)
+            if p.sub.is_some_and(|s| s.back.is_some_and(|b| at >= b + GUIDE_SUB_BAR_BACK)) {
+                p.sub = None;
+            }
+        }
         if let Some(p) = self.pick.as_mut().filter(|p| p.items.is_some()) {
             // The grid of the Container (eight to a row) or the row of tools (five): one cell a key (STAND-IN: the ends are not captured).
             let columns = if p.items == Some(ItemPage::Container) { CONTAINER_COLUMNS } else { TOOLS_COLUMNS };
@@ -740,10 +781,14 @@ impl Nav {
                 // (the sub-pages' own cursors are not captured)
                 return;
             }
+            let before = p.cell;
             p.cell = (p.cell as i32 + dx + rows * columns as i32).max(0) as usize;
             if p.items == Some(ItemPage::Guide) {
                 // (the Guide's four buttons stand in a row; STAND-IN: the ends stop it, not captured)
                 p.cell = p.cell.min(GUIDE_BUTTONS - 1);
+                if p.cell != before {
+                    p.moved = Some(at);
+                }
             }
             return;
         }
@@ -786,7 +831,6 @@ impl Nav {
                 if let Some(s) = p.sub.as_mut() {
                     s.back = Some(at);
                 }
-                p.cell = 0;
             }
             Some(p) if p.sub.is_some_and(|s| s.back.is_some_and(|b| at < b + GUIDE_SUB_BACK)) => {}
             Some(p) if p.confirmed.is_some_and(|c| at > c) && p.leaving.is_none() => p.leaving = Some(at),
@@ -1227,11 +1271,11 @@ impl View {
             None => (1.0 - (since - 5.0) / HELP_FADE, (since - GUIDE_SUB_BAR_AT) / HELP_FADE),
         };
         if top > 0.0 {
-            self.help_bar(&mut pen, Bar { alpha: top, grow: 1.0, words: back.is_some(), extra: GUIDE_PLATE_EXTRA, entries: Entries::GuideTop });
+            self.help_bar(&mut pen, Bar { alpha: top, grow: 1.0, words: back.is_some() || since < 5.0, extra: GUIDE_PLATE_EXTRA, entries: Entries::GuideTop });
         }
         if page > 0.0 {
             let entries = if button == 0 { Entries::GuideItems } else { Entries::GuideEffects };
-            self.help_bar(&mut pen, Bar { alpha: page, grow: 1.0, words: true, extra: if button == 0 { GUIDE_ITEMS_PLATE_EXTRA } else { STATUS_PLATE_EXTRA }, entries });
+            self.help_bar(&mut pen, Bar { alpha: page, grow: 1.0, words: back.is_none_or(|b| b < 5.0), extra: if button == 0 { GUIDE_ITEMS_PLATE_EXTRA } else { STATUS_PLATE_EXTRA }, entries });
         }
         pen.finish().0
     }
@@ -1798,7 +1842,7 @@ mod tests {
         assert_eq!(sub(2505.0).map(|s| s.back), Some(Some(2480.0)));
         assert_eq!(sub(2510.0), None);
         let top = replay(&keys, 2550.0, &ORDER).unwrap();
-        assert_eq!(top.pick.as_ref().map(|p| p.cell), Some(0));
+        assert_eq!(top.guide_cursor(2550.0), 0);
         assert_eq!(sub(2700.0).map(|s| s.button), Some(1));
         // B on the top itself (no sub-page up) leaves the Guide as before
         let mut more = keys.to_vec();
@@ -1829,7 +1873,7 @@ mod tests {
     fn the_guide_bar_fades_in_late_and_out_from_the_third_frame() {
         let (bar_in, bar_out) = (GUIDE_BAR_AT, GUIDE_BAR_OUT_AT);
         assert_eq!((bar_in, bar_out), (18.0, 3.0));
-        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None, sub_first: [None; 2] }.slides());
+        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None, sub_first: [None; 2], moved: None }.slides());
     }
 
     #[test]

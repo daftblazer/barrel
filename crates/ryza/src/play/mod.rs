@@ -3092,7 +3092,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 (None, Some((p, out))) => (Some(p), Some(out)),
                 _ => (None, None),
             };
-            let menu_help = if let (Some(s), true) = (nav.sub(menu_tick), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide))) {
+            let menu_help = if let (Some(s), true) = (nav.sub_bar(menu_tick), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide))) {
                 view.guide_sub_help((width, height), s.button, menu_tick - s.since, s.back.map(|b| menu_tick - b))
             } else if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide)) {
                 // (the Guide's bar comes in after its parts have faded)
@@ -3118,7 +3118,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     rate: if s.button == 0 { library.item_rate(&know_items) } else { library.effect_rate(&know_effects) },
                     cursor: 0,
                 });
-                let look = barrel_ryza::field_page::GuideLook { cursor: pick.cell, age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving, sub };
+                let look = barrel_ryza::field_page::GuideLook { cursor: nav.guide_cursor(menu_tick), age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving, moved: nav.guide_moved(menu_tick).map(|m| menu_tick - m), sub };
                 let (mut quads, additive, clips) = view.guide_quads(&look, (width, height));
                 quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
                 layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;

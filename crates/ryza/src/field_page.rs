@@ -156,6 +156,8 @@ pub struct GuideLook<'a> {
     /// Frames since the page's first frame (its first draws at 1), and, going out, since B.
     pub age: f32,
     pub leaving: Option<f32>,
+    /// Frames since the cursor last moved (its highlight's blink begins again), if it has.
+    pub moved: Option<f32>,
     /// A sub-page opened from the top, and the frames since the top's blink began (the top's own clock when none is up).
     pub sub: Option<SubLook<'a>>,
 }
@@ -702,7 +704,7 @@ impl Page {
             None => (fade(look.age - 1.0), top_alpha.unwrap_or(fade(look.age - 1.0).powi(2))),
         };
         // The highlight's glow over the cursor's button blinks (`anm_common_blink`: whole to none and back in 120 frames) at 125/255.
-        let t = (look.age - 1.0).rem_euclid(120.0);
+        let t = look.moved.unwrap_or(look.age - 1.0).rem_euclid(120.0);
         let blink = if t < 60.0 { 1.0 - t / 60.0 } else { (t - 60.0) / 60.0 };
         let over = |path: &[&str]| -> Over {
             match path {
