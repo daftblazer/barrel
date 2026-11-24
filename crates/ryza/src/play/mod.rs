@@ -3052,7 +3052,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
-            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick), backdrop.as_mut()) {
+            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick).or_else(|| nav.page_leaving(menu_tick).filter(|(p, out)| *out < p.page_out()).map(|(p, _)| p)), backdrop.as_mut()) {
                 // The page's blurred picture of the menu and its vignettes come in from the page's first frame.
                 let first = pick.confirmed.unwrap_or(0.0) + pick.page_at();
                 let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(menu_tick - first, None), (width, height));
@@ -3072,8 +3072,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
             // The Equipment page over the blurred menu.
             showing_page = false;
-            let menu_help = view.page_help((width, height), nav.page(menu_tick).is_some_and(|p| p.status), nav.page(menu_tick).and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c));
-            if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), nav.page(menu_tick), party_tables.as_ref()) {
+            let (page_now, leaving) = match (nav.page(menu_tick), nav.page_leaving(menu_tick)) {
+                (Some(p), _) => (Some(p), None),
+                (None, Some((p, out))) => (Some(p), Some(out)),
+                _ => (None, None),
+            };
+            let menu_help = view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving);
+            if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), page_now, party_tables.as_ref()) {
                 if let Some(member) = menu_shown.party.get(pick.card) {
                     let skills = if pick.status { party_skills.active(usize::from(member.id), member.level, barrel_ryza::field_menu::TACTICS_LEVEL) } else { Vec::new() };
                     let look = barrel_ryza::field_page::Look {
@@ -3087,6 +3092,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         status: pick.status,
                         skills: &skills,
                         row: pick.row,
+                        leaving,
                     };
                     let (mut quads, additive) = view.quads(&look, (width, height));
                     // The page's own help bar: the menu's plate and words over the page's textures.

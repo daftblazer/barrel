@@ -434,6 +434,8 @@ pub struct Nav {
     pub in_settings: bool,
     /// The character pick A on Equip or Status leads to.
     pub pick: Option<Pick>,
+    /// The pick of the page the menu came back from (the page's last parts are still going out).
+    pub left: Option<Pick>,
     /// When the menu came back from a page (the blurred photo fades out from it).
     pub blur_out: Option<f32>,
     /// Frames the cursor's ring runs ahead of its loop (1 after the Settings screen).
@@ -462,7 +464,16 @@ pub struct Pick {
     pub row: usize,
 }
 
+/// Frames the menu takes to go out under a page (`SLIDE` for each of its parts and the stagger of the buttons after the first).
+const LEAVE_FRAMES: f32 = 30.0;
+
 impl Pick {
+    /// Frames from B on the page to the menu's coming back: the Status page's parts take 30 frames to go (`field-menu-status`: B on
+    /// 2620, the light at 213/255 of its slide-in on 2660, so the menu began on 2650); the Equipment page's 24.
+    pub fn page_out(&self) -> f32 {
+        if self.status { STATUS_PAGE_OUT } else { PAGE_OUT }
+    }
+
     /// Frames from A on the card to the page's first frame.
     pub fn page_at(&self) -> f32 {
         if self.status { STATUS_PAGE_AT } else { PAGE_AT }
@@ -476,6 +487,7 @@ pub const PAGE_AT: f32 = 10.0;
 /// The Status page's first frame, after A on the card (`field-menu-status`: A on 2320, the page's parts at 0.704 of their
 /// slides on 2330, so they began on 2320 and nothing shows before their first step).
 pub const STATUS_PAGE_AT: f32 = 1.0;
+const STATUS_PAGE_OUT: f32 = 30.0;
 
 /// STAND-IN: the tactics level the skills list is for (the save's own is not read; the capture's is the first).
 pub const TACTICS_LEVEL: u8 = 1;
@@ -483,6 +495,10 @@ pub const TACTICS_LEVEL: u8 = 1;
 /// Frames from B on a page to the menu's coming back (`field-menu-equip`: B on 2500; the cards at 6/30 of their fade and the
 /// photo's blur at 24/30 left on 2530, so both ran from 2524).
 pub const PAGE_OUT: f32 = 24.0;
+
+/// Frames from B on a page to its last part's going (`field-menu-status` 2650, B on 2620: the name plate at 124/255, which is its
+/// slide-in backwards 6 frames from its start; its animation began 6 frames after the others', so it ends at 36).
+pub const PAGE_GONE: f32 = 36.0;
 
 /// Frames from A on Equip or Status to the pick's first frame (`field-menu-equip`: A on 2060; the buttons' tint, the photo's
 /// blur and the extra button pictures all run from 2102), and from the pick's first frame to the card glow's loops (2103).
@@ -508,7 +524,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, blur_out: None, ring_skew: 0.0 }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0 }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -569,6 +585,14 @@ impl Nav {
         self.pick.as_ref().filter(|p| p.confirmed.is_some_and(|c| at >= c + p.page_at()) && p.leaving.is_none())
     }
 
+    /// The page going out (B was pressed on it `out` frames ago, fewer than `PAGE_GONE`) and the frames since: its parts leave by
+    /// their slide-ins backwards, the longest (the name plate's) the last. The menu comes back before they are gone.
+    pub fn page_leaving(&self, at: f32) -> Option<(&Pick, f32)> {
+        let p = self.pick.as_ref().filter(|p| p.confirmed.is_some() && p.leaving.is_some()).or(self.left.as_ref())?;
+        let out = at - p.leaving?;
+        (out >= 0.0 && out < PAGE_GONE).then_some((p, out))
+    }
+
     /// A direction on the Equipment page: the four slots are two rows of two (weapon and armour, the two accessories), so down
     /// goes from the weapon to the first accessory (`field-menu-equip`: DOWN on 2300, the cursor on the third slot) and left and
     /// right along a row (STAND-IN: the others stop at the edges, not captured).
@@ -612,7 +636,7 @@ impl Nav {
 
     /// The menu's coming back from a page, once its frame has come (`upto`: the frame the state is wanted at).
     fn settle(&mut self, upto: f32) {
-        if let Some(back) = self.pick.as_ref().and_then(|p| p.leaving).map(|l| l + PAGE_OUT).filter(|&b| b <= upto) {
+        if let Some(back) = self.pick.as_ref().and_then(|p| p.leaving).map(|l| l + self.pick.as_ref().map_or(PAGE_OUT, Pick::page_out)).filter(|&b| b <= upto) {
             self.back_from_page(back);
         }
     }
@@ -620,7 +644,7 @@ impl Nav {
     /// The menu's coming back from a page at frame `at`: the cards and buttons come in again over the background and the photo,
     /// the cursor where it was, as after the Settings screen.
     fn back_from_page(&mut self, at: f32) {
-        self.pick = None;
+        self.left = self.pick.take();
         self.chosen = None;
         self.shown = at;
         self.warm = true;
@@ -925,7 +949,7 @@ impl View {
     ///
     /// On the Status page (`age` frames since A on the card) the plate comes from the pick's bar's width to its own over
     /// `STATUS_BAR_FRAMES`, out cubic, and is `STATUS_PLATE_EXTRA` wider than its words need.
-    pub fn page_help(&self, screen: (u32, u32), status: bool, age: f32) -> Vec<Quad> {
+    pub fn page_help(&self, screen: (u32, u32), status: bool, age: f32, leaving: Option<f32>) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let extra = if status {
             let (pick, own) = (self.plate_full(&self.help_line(&PICK_ENTRIES), k), self.plate_full(&self.help_line(&STATUS_ENTRIES), k) + STATUS_PLATE_EXTRA);
@@ -934,7 +958,9 @@ impl View {
             0.0
         };
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
-        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries: if status { Entries::StatusPage } else { Entries::Page } });
+        // (going out it follows the menu's bar: the words first, then the plate fades)
+        let gone = leaving.map(Bar::out);
+        self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else { Entries::Page } });
         pen.finish().0
     }
 
@@ -981,7 +1007,33 @@ impl View {
         pen.hidden.push(pen.out.len());
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
         // A page (Equipment, Status) over the menu: only the background, the photo and the corner picture stay under it.
-        if nav.page(frame).is_some() {
+        // (a page going out stays under the menu's coming back only after `PAGE_OUT`)
+        let leaving = nav.page_leaving(frame).filter(|(p, out)| *out < p.page_out()).map(|(p, _)| p);
+        if let Some(page) = nav.page(frame).or(leaving) {
+            // The menu goes out under the page's coming in (`field-menu-status` 2330 to 2340, A on 2320): the layout's `get_out` as on B,
+            // each button (the light after the last of seven places) one `CLOSE_STEP` behind the one before. Only what the blurred picture
+            // of the menu leaves in view is in the trace: the light and the first card, whose rectangles reach the screen's edge.
+            let out = frame - page.confirmed.unwrap_or(frame);
+            if page.status && (0.0..LEAVE_FRAMES).contains(&out) && leaving.is_none() {
+                let slide_state = |n: f32| {
+                    let u = (1.0 - (out - n * CLOSE_STEP) / SLIDE).clamp(0.0, 1.0) * self.slide[0].duration();
+                    (self.slide[0].at(u)[3] / 255.0, self.slide[1].at(u)[0])
+                };
+                let (light_at, light) = &self.light;
+                let (a, dx) = slide_state(CLOSE_LIGHT_AT / CLOSE_STEP);
+                if a > 0.0 {
+                    pen.natural(MENU1, light, 0, [light_at[0] + dx, light_at[1]], white(byte(a * 255.0)));
+                }
+                for (i, at) in self.buttons.iter().enumerate() {
+                    let (a, dx) = slide_state(i as f32);
+                    if a > 0.0 {
+                        let (at, alpha) = ([at[0] + dx, at[1]], white(byte(a * 255.0)));
+                        pen.pic(MENU1, self.base.pictures[0], at, [self.base_size, self.base_size], alpha);
+                        pen.natural(MENU0, &self.names, BUTTONS[i], [at[0] + 2.0, at[1] + 103.0], alpha);
+                        pen.natural(MENU1, &self.icons, BUTTONS[i], [at[0] + 13.0, at[1] + 14.0], alpha);
+                    }
+                }
+            }
             let (put_at, put) = &self.put;
             pen.natural(MENU1, put, 0, *put_at, white(1.0));
             return pen.finish();

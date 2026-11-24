@@ -56,10 +56,11 @@ const ROTATION_FRAMES: f32 = 360.0;
 const EFFECT_FRAMES: f32 = 100.0;
 const EFFECT_PEAK: f32 = 2.818_787_6;
 const EFFECT_ALPHA: f32 = 100.0 / 255.0;
-const EFFECT_LAG: f32 = 2.1;
-// STAND-IN: the Status page's glow runs 0.4 frames behind the page's slides (`field-menu-status` 2400: 21/255; the Equipment page's is 2.1:
-// the loop starts when the layout is made, which is not the key's frame).
-const EFFECT_LAG_STATUS: f32 = 0.4;
+const EFFECT_LAG: f32 = 0.3;
+/// STAND-IN: the glow's loop is 101 frames long (the animation's 100 and one more; `field-menu-status` 2400, 2550 and 2620 and
+/// `field-menu-equip` 2410 fit one lag with it, where a loop of 100 needs 0.4, 1.9 and 2.1), and B on the page puts it a frame ahead.
+const EFFECT_LOOP: f32 = 101.0;
+const EFFECT_AFTER_B: f32 = 1.0;
 const CENTER_LIFT: f32 = 0.6875;
 const LEFT_BUTTON: char = '\u{4e6}';
 const RIGHT_BUTTON: char = '\u{4ea}';
@@ -122,6 +123,8 @@ pub struct Look<'a> {
     pub status: bool,
     pub skills: &'a [Skill],
     pub row: usize,
+    /// Frames since B on the page, while its parts go out (their slide-ins backwards).
+    pub leaving: Option<f32>,
 }
 
 /// A node the game's code changes: shown or hidden outright, another picture or another text.
@@ -278,7 +281,9 @@ impl Page {
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // Frames since A on the card: the Status page's parts come in by it (the Equipment page's are whole by the time it is shown).
         let clock = look.age;
-        let slide = |delay: f32, from: [f32; 2]| if look.status { Slide::in_from(clock - delay, from) } else { Slide::NONE };
+        // (leaving: the slide-in played backwards, the part's own delay counted from B)
+        let into = |delay: f32| look.leaving.map_or(clock - delay, |out| SLIDE_FRAMES - (out - delay).max(0.0));
+        let slide = |delay: f32, from: [f32; 2]| if look.status { Slide::in_from(into(delay), from) } else { Slide::NONE };
         let name = self.strings.get(&(262_148 + u32::from(look.member.id))).cloned().unwrap_or_default();
 
         // The character's figure (`uil_a21_menu_chara.xml`'s `chara_image_1`, whose place the equip layout sets: `chara_image_pos`;
@@ -288,21 +293,21 @@ impl Page {
             let at = find_pos(&self.status, "chara_image_pos").unwrap_or([0.0; 2]);
             if let Some(top) = find(&self.chara, "chara") {
                 let xf = root.node(at, 0.0, [1.0; 2]);
-                let parts = |hide_plate: bool| {
+                let parts = |plate: bool| {
                     let (figure, name) = (figure.clone(), name.clone());
                     move |path: &[&str]| -> Over {
                         match path {
-                            [_, "chara_image_1"] if !hide_plate => figure.clone(),
+                            [_, "chara_image_1"] if !plate => figure.clone(),
                             [_, "chara_image_1"] => Over { hide: true, ..Default::default() },
-                            [_, "name_node"] if hide_plate => Over { hide: true, ..Default::default() },
+                            [_, "name_node"] if !plate => Over { hide: true, ..Default::default() },
                             [_, "name_node"] | [_, "name_node", "name_fl"] => Over { show: true, ..Default::default() },
                             [_, "name_node", "name_fl", "text_1"] => Over { text: Some(name.clone()), ..Default::default() },
                             _ => Over::default(),
                         }
                     }
                 };
-                w.slid(slide(0.0, [0.0, 30.0]), |w| w.walk(top, xf, &mut Vec::new(), &parts(true), &HashMap::new()));
-                w.slid(slide(NAME_DELAY, [0.0, 30.0]), |w| w.walk(top, xf, &mut Vec::new(), &parts(false), &HashMap::new()));
+                w.slid(slide(0.0, [0.0, 30.0]), |w| w.walk(top, xf, &mut Vec::new(), &parts(false), &HashMap::new()));
+                w.slid(slide(NAME_DELAY, [0.0, 30.0]), |w| w.walk(top, xf, &mut Vec::new(), &parts(true), &HashMap::new()));
             }
         } else {
             let at = find_pos(&self.equip, "chara_image_pos").unwrap_or([0.0; 2]);
@@ -407,7 +412,7 @@ impl Page {
             let place = |name: &str| name.strip_prefix("face_icon").and_then(|i| i.parse::<usize>().ok()).and_then(|i| i.checked_sub(1 + first));
             let first_x = find_pos(&self.faces, &format!("face_icon{:02}", first + 1)).map_or(0.0, |p| p[0]);
             // The icons' animations run from A on the card (`anm_a21_menu_faceicon_rotation` and `_expandEff`, looping).
-            let eff = (clock - if look.status { EFFECT_LAG_STATUS } else { EFFECT_LAG }).rem_euclid(EFFECT_FRAMES);
+            let eff = (clock - EFFECT_LAG + look.leaving.map_or(0.0, |_| EFFECT_AFTER_B)).rem_euclid(EFFECT_LOOP).min(EFFECT_FRAMES);
             let glow = if eff < EFFECT_PEAK { eff / EFFECT_PEAK } else { (EFFECT_FRAMES - eff) / (EFFECT_FRAMES - EFFECT_PEAK) } * EFFECT_ALPHA;
             let glow = (glow * 255.0).round() / 255.0;
             let icons = |path: &[&str]| -> Over {
@@ -424,7 +429,7 @@ impl Page {
                 }
             };
             // (`anm_common_juvenile_fade_in` at twice its speed: the cube of the time over 30 frames)
-            let fade = if look.status { Slide { alpha: (clock / FACE_FADE_FRAMES).clamp(0.0, 1.0).powi(3), dx: 0.0, dy: 0.0 } } else { Slide::NONE };
+            let fade = if look.status { Slide { alpha: (into(0.0) / FACE_FADE_FRAMES).clamp(0.0, 1.0).powi(3), dx: 0.0, dy: 0.0 } } else { Slide::NONE };
             w.slid(fade, |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &icons, &HashMap::new()));
         }
 
@@ -692,6 +697,10 @@ impl Walker<'_> {
         let c = numbers(e, "color");
         let mut color = if c.len() >= 4 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0] } else { [1.0; 4] };
         color[3] *= o.alpha.unwrap_or(1.0);
+        // (a picture at no opacity is not drawn: the game hides a node a fade has not reached)
+        if color[3] <= 0.0 {
+            return;
+        }
         match p.edges {
             // A nine-slice: each margin at its size, the middle repeated (`options_view::segments`), rows then columns.
             Some([l, t, r, b]) => {
