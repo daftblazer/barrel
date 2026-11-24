@@ -941,6 +941,8 @@ impl View {
             pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], at, size, turn, white(byte(b * 255.0)));
         }
         let (mask_at, mask_size, mask_turn) = &self.mask;
+        // The game draws the mask into a target of its own (the trace's `rt ...#7`), never onto the screen: in the trace only.
+        pen.hidden.push(pen.out.len());
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
         // A page (Equipment, Status) over the menu: only the background, the photo and the corner picture stay under it.
         if nav.page(frame).is_some_and(|p| !p.status) {

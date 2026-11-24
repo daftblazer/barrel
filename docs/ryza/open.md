@@ -358,7 +358,12 @@ a page, the Equipment page without its item card (2330-2370, 2410, 2420). The pa
 - Status page: not drawn (A on a Status card shows the pick). Answer key field-menu-status 2320-2620.
 - Container, Gathering Tools, Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540).
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
-- No window run of the pages yet; offscreen pixel pictures of the menu show the photo white (not looked into).
+- No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
+  mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
+- Anti-aliasing changed live several times in a window made the field progressively worse (user, 2026-11-23: smeared,
+  oversaturated). Not reproduced offscreen: eight changes in a row (`BARREL_CONFIG_AT`, Off, FXAA, TAA, MSAA 4x, FSR native
+  AA and back) end where a fresh start does (43 dB at 1920x1080 and 3440x1440, the temporal ones' usual), and the same settings
+  applied five times are identical. Open: what a window does differently (the swapchain, the resize path, a moving camera).
 - Check `title-3d-1135` (checks.txt) left three offscreen barrel runs hung for hours on 2026-11-23 (killed by hand; cause
   not looked into).
 

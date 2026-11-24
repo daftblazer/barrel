@@ -2064,7 +2064,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut apply_settings = false;
     // After a live display change: when the frames were counted from, and how many since.
     let mut display_probe: Option<(std::time::Instant, u32)> = None;
-    let reapply_at = std::env::var("BARREL_REAPPLY_AT").ok().and_then(|v| v.parse::<u32>().ok());
+    // `BARREL_CONFIG_AT=N:FILE[,M:FILE...]` (with `BARREL_CONFIG` set): at frame N the config takes FILE's text and is
+    // applied as a Yes on the Settings screen applies it: a run of live changes checked against a fresh start.
+    let config_at: Vec<(u32, String)> = std::env::var("BARREL_CONFIG_AT")
+        .ok()
+        .filter(|_| std::env::var_os("BARREL_CONFIG").is_some())
+        .map(|v| v.split(',').filter_map(|e| e.split_once(':')).filter_map(|(n, f)| Some((n.trim().parse().ok()?, f.to_string()))).collect())
+        .unwrap_or_default();
+    let reapply_at: Vec<u32> = std::env::var("BARREL_REAPPLY_AT").map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
     let mut scripted_saved = false;
     let mut scripted_tab_change: Option<i32> = None;
     let mut scripted_blink: Option<i32> = None;
@@ -2352,13 +2359,20 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         // The settings were saved with Yes: the render settings and the presets they come to
         // are applied now, in this run (`Renderer::apply_settings`), as a fresh start with the
         // saved config would have them.
-        // `BARREL_REAPPLY_AT=N`: the same settings applied again at frame N, a check that a
+        // `BARREL_REAPPLY_AT=N[,M...]`: the same settings applied again at frames N, M..., a check that a
         // renderer made again draws as the one it replaces (tools/live-settings.sh `same`).
-        if reapply_at == Some(frame_no as u32) {
+        if reapply_at.contains(&(frame_no as u32)) {
             let s = renderer.settings;
             renderer = renderer.apply_settings(&gpu, presenter.as_ref(), s)?;
             scene.rebind(&gpu, &renderer.shared);
             eprintln!("settings: applied again (frame {frame_no})");
+        }
+        for (_, file) in config_at.iter().filter(|(n, _)| *n == frame_no as u32) {
+            if let (Some(path), Ok(text)) = (barrel_files::config::graphics_path(), std::fs::read_to_string(file)) {
+                std::fs::write(path, text)?;
+                apply_settings = true;
+                eprintln!("settings: config from {file} (frame {frame_no})");
+            }
         }
         if std::mem::take(&mut apply_settings) {
             let config = read_config();
