@@ -840,7 +840,15 @@ begin with big-endian words: the character (0 Ryza, 1 Klaudia, 2 Lent, 3 Tao ...
 maximum HP with the worn items' at word 4 and the growth row's six numbers at words 6 to 11 (`docs/tables.md`, "Ryza DX: a
 party member's numbers"). From byte 0x190 four item units of 0x42 bytes each, little-endian: the slot number (weapon,
 armour, two accessories), the item's number (the `itemData.xml` row; `0xffff` for none), its quality (30 for the starting
-gear) and more not read.
+gear) and more not read. (See "Item units" below: the same unit is the container's and the tools'.)
+
+**Item units** (`barrel_ryza::save::Worn`, 0x42 bytes, little-endian): +0 serial, +2 the `itemData.xml` row (`0xffff` empty), +4 the quality (a
+word, 30 for the starting gear, 100 for the necklace), +8 the level (a byte, as the table's `lv` in the captured ones), +14 four effects (the
+number of the effect's string from 6881281; `0xffff` for none), +22 three potentials (a row of `item_potential.xml`; 290 for none), +28 their
+three levels (1 where none: not checked), +45 a weapon's free slots (3 for the staff). The container is `item/m_unitContainer`: a big-endian
+byte count (9,999 units of 66 bytes, the "Empty 9993" of the page is the places less the six filled) and the units; the gathering tools are
+`explore_equip/explore_equip_item` (15 places, the first two the Wind Shoes and a bag in the capture's save). `save::container` and
+`save::tools` read them. Checked against the capture's Quartz Necklace (effects 1175, 1276, 1279) and Wind Shoes (688 "Movement Up S").
 
 ## Voices (`Sound/Voice/Series*.fp`)
 

@@ -2763,6 +2763,23 @@ STAND-IN: the 3 added to attack, defence and speed is read as the equip quality,
 30 here) over 10; Lv is 3 in the capture as well, so the two cannot be told apart with one level. The page's "Equip Quality" is
 the same number. Not read: the second number of the row, the element resists, the role levels.
 
+## Ryza DX: the item card (`Saves/item/itemdata.xml`, `Saves/ui_en/a21_item_info/`)
+
+What the card of the Equipment, Container and Gathering Tools pages shows (`barrel_ryza::item_info::Items::card`). The strings are
+`strcombineall.xml`'s: an item's name is string 6750209 + its row of `itemdata.xml` (`STR_ITEM_NAME_n`), an effect's 6881281 + the unit's effect
+number, a potential's 6946817 + its row of `item_potential.xml` (290 rows; a unit's empty place holds 290) and a category's 6815745 + its place
+in `fieldmix/fieldmixcat.xml` (44 rows from LIQUID to KEY: "(Accessory)" is 40, "(Gathering)" 41). From the item's row: `lv` (the level; the
+unit's own is the same where captured), `elemValue` and the lit element icons (`elemFire`, `elemIce`, `elemThunder`, `elemAir` at -1: fire, ice,
+bolt, air in the plate's order), `hp`, `atk`, `def`, `spd` (the Status panel), `r_atk`, `r_def`, `r_spt` (Change Role: attacker, defender, supporter
+levels), `pc_0` to `pc_8` at -1 (who may wear it: the faces are lit for those, dimmed for the others) and `cat_0` (the category; the card shows
+the first). From the unit (`docs/formats.md`): the quality (the gauge is cut at the quality's share of 100; the number is the quality), the
+effects, the potentials and the weapon's free slots ("Slot 3", weapons only). Checked on the Handmade Staff (row 406: Lv 4, 1 and fire, quality 30,
+ATK 6, SPD 2, no role, only Ryza), the Quartz Necklace (486: Lv 26, quality 100, "Beloved Medal M", "Resist Ailments +7%", "Resist KO +5%",
+Defender Lv 2) and the Wind Shoes (316: Lv 25, 2, fire and air, quality 50, "Movement Up S", category Gathering). STAND-INs: the element value
+shown is the table's plus one for each hundred of quality (the necklace's 2 is 3 on its card); the rank letter (the picture list runs S, A, B, C,
+D, E) steps one down for every 50 points of quality from D at 30 (C at 50, B at 100); the potentials' levels (the bytes after them) are shown
+as they are (no capture has a potential).
+
 ## Ryza DX: a character's skills (`Saves/party/party_skill.xml`, `Saves/skill/skill_data.xml`)
 
 What the Status page's "Active" tab lists (`barrel_ryza::party_skills`). `party_skill.xml` has a section for each character in the

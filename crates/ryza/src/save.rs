@@ -272,4 +272,44 @@ mod tests {
         assert_eq!((m[0].id, m[0].level), (0, 5));
         assert_eq!(m[0].worn.map(|w| w.map(|w| (w.item, w.quality))), [Some((406, 30)), None, None, None]);
     }
+
+    /// An item unit of 0x42 bytes as the container's first (the capture's Quartz Necklace: level 26, quality 100, three effects).
+    fn necklace() -> Vec<u8> {
+        let mut u = vec![0u8; UNIT_SIZE];
+        u[0..2].copy_from_slice(&74u16.to_le_bytes());
+        u[2..4].copy_from_slice(&486u16.to_le_bytes());
+        u[4] = 100;
+        u[8] = 26;
+        for (k, e) in [1175u16, 1276, 1279, 0xffff].into_iter().enumerate() {
+            u[14 + 2 * k..16 + 2 * k].copy_from_slice(&e.to_le_bytes());
+        }
+        for k in 0..3 {
+            u[22 + 2 * k..24 + 2 * k].copy_from_slice(&290u16.to_le_bytes());
+        }
+        u
+    }
+
+    #[test]
+    fn a_unit_reads_its_item_quality_level_effects_and_potentials() {
+        let w = Worn::read(&necklace()).unwrap();
+        assert_eq!((w.item, w.quality, w.level, w.effects, w.potentials), (486, 100, 26, [1175, 1276, 1279, 0xffff], [290; 3]));
+        let mut empty = necklace();
+        empty[2..4].copy_from_slice(&[0xff, 0xff]);
+        assert!(Worn::read(&empty).is_none());
+    }
+
+    #[test]
+    fn the_container_lists_its_filled_places_and_counts_all() {
+        // Three places, the middle one empty.
+        let mut empty = necklace();
+        empty[2..4].copy_from_slice(&[0xff, 0xff]);
+        let list = [necklace(), empty, necklace()].concat();
+        let mut c = (list.len() as u32).to_be_bytes().to_vec();
+        c.extend(list);
+        let item = rec("m_unitContainer", &c);
+        let state = [vec![0; 0x20], rec("item", &item)].concat();
+        let (units, places) = container(&state).unwrap();
+        assert_eq!((units.len(), places), (2, 3));
+        assert!(tools(&state).is_none());
+    }
 }

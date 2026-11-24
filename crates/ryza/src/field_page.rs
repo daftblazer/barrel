@@ -145,6 +145,9 @@ pub struct ToolsLook<'a> {
     pub leaving: Option<f32>,
 }
 
+/// The Gathering Tools page's title plate leaves this many frames before its other parts (STAND-IN: one sample).
+const TOOLS_TITLE_EARLY: f32 = 1.0;
+
 /// The Gathering Tools page's title.
 pub const TOOLS_TITLE: u32 = 4_194_514;
 
@@ -607,7 +610,9 @@ impl Page {
         if let Some(card) = look.item {
             w.slid(Slide::in_from(into(SLIDE_FRAMES), [40.0, 0.0]), |w| self.item_card(w, &root, "normal_item", None, card, look.party));
         }
-        self.caption_plate(&mut w, &root, TOOLS_TITLE, Slide::in_from(into(SLIDE_FRAMES), [0.0, -30.0]));
+        // (the title plate goes a frame and a tenth ahead of the other parts: `field-menu-pages` 2740, 0.949 of its opacity to their 0.965)
+        let title_in = look.leaving.map_or(look.age, |out| SLIDE_FRAMES - out - TOOLS_TITLE_EARLY);
+        self.caption_plate(&mut w, &root, TOOLS_TITLE, Slide::in_from(title_in, [0.0, -30.0]));
         (w.out, w.additive, w.clips)
     }
 
@@ -644,7 +649,7 @@ impl Page {
                     let here = idx < look.images.len();
                     match (*part, path.len()) {
                         ("item_image", 5) if here => Over { image_no: Some(look.images[idx]), alpha: Some(ITEM_ALPHA), ..Default::default() },
-                        ("highlight", 5) if idx == look.cursor && here => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
+                        ("highlight", 5) if idx == look.cursor && here && look.leaving.is_none() => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
                         ("highlight", 6) => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
                         _ => Over { hide: true, ..Default::default() },
                     }
@@ -652,11 +657,13 @@ impl Page {
                 _ => Over::default(),
             }
         };
-        if let Some(top) = find(&self.cabinet, "default") {
+        // (B takes the grid and the card away at once; only the title plate slides out, `field-menu-pages` 2150 to 2170)
+        let gone = look.leaving.is_some_and(|out| out >= 1.0);
+        if let Some(top) = find(&self.cabinet, "default").filter(|_| !gone) {
             let at = pair(top, "pos", [0.0; 2]);
             w.slid(Slide::over(into(SHELF_SLIDE_FRAMES), SHELF_SLIDE_FRAMES, [-40.0, 0.0]), |w| w.walk(top, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
         }
-        if let Some(card) = look.item {
+        if let Some(card) = look.item.filter(|_| !gone) {
             // (the card slides in from the right)
             w.slid(Slide::in_from(into(SLIDE_FRAMES), [40.0, 0.0]), |w| self.item_card(w, &root, "normal_arms", None, card, look.party));
         }
@@ -1330,5 +1337,35 @@ mod tests {
         assert_eq!(cols.first().map(|c| c.1), Some(25.0));
         assert_eq!(cols.last().map(|c| c.1), Some(25.0));
         assert!(cols.iter().map(|c| c.1).sum::<f32>() - 324.0 < 0.01);
+    }
+
+    #[test]
+    fn a_clone_path_names_the_first_node_of_each_name_below_the_one_before() {
+        let doc = table::parse_str(r#"<root><node name="clone_targets"><node name="effect"><image name="effect"><node name="list"><node name="node"><text name="a"/></node></node></image></node></node></root>"#).unwrap();
+        let found = descend(find(&doc, "clone_targets").unwrap(), "effect/node".split('/')).unwrap();
+        assert_eq!(found.children.first().and_then(|c| c.attr("name")), Some("a"));
+        assert!(descend(find(&doc, "clone_targets").unwrap(), "effect/none".split('/')).is_none());
+    }
+
+    #[test]
+    fn the_cursor_cell_colours_are_the_games_bytes_at_the_capture_phases() {
+        // `field-menu-pages` 2110: the picture at (88, 212, 191), the added glow at (30, 176, 158) with 162 of opacity.
+        let (base, both, f) = cursor_colors(68.99);
+        assert_eq!(base.map(|v| (v * 255.0).round() as u32), [88, 212, 191]);
+        assert_eq!(both.map(|v| (v * 255.0).round() as u32), [30, 176, 158]);
+        assert_eq!((191.0 * f).round() as u32, 162);
+        // 2080: (127, 223, 206) and (63, 195, 180).
+        let (base, both, _) = cursor_colors(38.99);
+        assert_eq!(base.map(|v| (v * 255.0).round() as u32), [127, 223, 206]);
+        assert_eq!(both.map(|v| (v * 255.0).round() as u32), [63, 195, 180]);
+    }
+
+    #[test]
+    fn a_slide_over_forty_frames_is_half_way_in_the_first_nine() {
+        // The Container page's parts on 2050, nine frames in: 0.533 of their opacity and 28 of the 60 pixels of their way left.
+        let s = Slide::over(9.0, 40.0, [-40.0, 0.0]);
+        assert!((s.alpha - 0.5333).abs() < 0.01, "{}", s.alpha);
+        assert!((s.dx + 40.0 * (1.0 - s.alpha)).abs() < 1e-4);
+        assert_eq!(Slide::over(40.0, 40.0, [-40.0, 0.0]).dx, 0.0);
     }
 }

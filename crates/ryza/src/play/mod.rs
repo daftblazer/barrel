@@ -3086,7 +3086,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             };
             let menu_help = if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Tools)) {
                 // (the Gathering Tools page's bar comes in late)
-                view.tools_help((width, height), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c))
+                view.tools_help((width, height), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
             } else {
                 view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.is_some_and(|p| p.slot_since.is_none()), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
             };

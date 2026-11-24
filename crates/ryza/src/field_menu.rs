@@ -468,6 +468,10 @@ pub struct Pick {
     pub cell: usize,
 }
 
+/// The Container's grid has eight cells to a row, the Gathering Tools' row five.
+pub const CONTAINER_COLUMNS: usize = 8;
+const TOOLS_COLUMNS: usize = 5;
+
 /// The pages of items, which open from their button with no character pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemPage {
@@ -479,6 +483,15 @@ pub enum ItemPage {
 /// pulse runs; `field-menu-pages`: A on 2000, the page's parts at 0.53 of their slide on 2050, so they began on 2041).
 pub const ITEM_PAGE_LATER: f32 = 41.0;
 
+/// Frames from B on the Container page to the menu's coming back, and to the page's going: at once (`field-menu-pages` 2150: B, the page still
+/// whole but for its cursor; 2160: only the menu, at 0.027 of its fade, so its first frame was 2151). STAND-IN: one frame.
+pub const ITEM_PAGE_OUT: f32 = 1.0;
+
+/// The title plate of the Container page and the parts of the Gathering Tools page slide out over 30 frames from B (`field-menu-pages` 2740: 0.965 of their opacity, 2750: 0.70) and the
+/// menu comes back a frame before B's frame (2740: the cards at 0.051 of their fade, 2750: 0.34: it began on 2729).
+const TOOLS_PAGE_GONE: f32 = 30.0;
+const TOOLS_PAGE_OUT: f32 = -1.0;
+
 /// Frames the menu takes to go out under a page (`SLIDE` for each of its parts and the stagger of the buttons after the first).
 const LEAVE_FRAMES: f32 = 30.0;
 
@@ -486,13 +499,23 @@ impl Pick {
     /// Frames from B on the page to the menu's coming back: the Status page's parts take 30 frames to go (`field-menu-status`: B on
     /// 2620, the light at 213/255 of its slide-in on 2660, so the menu began on 2650); the Equipment page's 24.
     pub fn page_out(&self) -> f32 {
-        if self.slides() { STATUS_PAGE_OUT } else { PAGE_OUT }
+        match self.items {
+            Some(ItemPage::Container) => ITEM_PAGE_OUT,
+            Some(ItemPage::Tools) => TOOLS_PAGE_OUT,
+            None if self.status => STATUS_PAGE_OUT,
+            None => PAGE_OUT,
+        }
     }
 
     /// Frames from B on the page to its last part's going: the Status page's slides run out (`PAGE_GONE`); the Equipment page's are not
     /// animated, so it stays as it was until the menu is back.
     pub fn page_gone(&self) -> f32 {
-        if self.slides() { PAGE_GONE } else { PAGE_OUT }
+        match self.items {
+            Some(ItemPage::Container) => TOOLS_PAGE_GONE,
+            Some(ItemPage::Tools) => TOOLS_PAGE_GONE,
+            None if self.status => PAGE_GONE,
+            None => PAGE_OUT,
+        }
     }
 
     /// Frames from A on the card to the page's first frame.
@@ -631,6 +654,13 @@ impl Nav {
     /// right along a row (STAND-IN: the others stop at the edges, not captured).
     pub fn page_slot(&mut self, dx: i32, dy: i32, at: f32) {
         if self.page(at).is_none() {
+            return;
+        }
+        if let Some(p) = self.pick.as_mut().filter(|p| p.items.is_some()) {
+            // The grid of the Container (eight to a row) or the row of tools (five): one cell a key (STAND-IN: the ends are not captured).
+            let columns = if p.items == Some(ItemPage::Container) { CONTAINER_COLUMNS } else { TOOLS_COLUMNS };
+            let rows = if p.items == Some(ItemPage::Container) { dy } else { 0 };
+            p.cell = (p.cell as i32 + dx + rows * columns as i32).max(0) as usize;
             return;
         }
         if let Some(p) = self.pick.as_mut() {
@@ -863,6 +893,11 @@ const TOOLS_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TAB
 /// from `TOOLS_BAR_AT` frames after the page's first, its plate `TOOLS_BAR_GROW` layout pixels short a fifth of the way through the fade and
 /// growing to its width (`field-menu-pages` 2660: a third of its opacity and 54 pixels of 1080 lines short, whole on 2670). STAND-IN: one sample.
 pub const TOOLS_BAR_AT: f32 = 34.0;
+/// The Container page's bar comes in four frames after the page's first, as the fade of the tools' (`field-menu-pages` 2050: a third of its
+/// opacity, whole on 2060).
+const SHELF_BAR_AT: f32 = 4.0;
+/// The Container bar's plate is this much short (layout pixels) a fifth of the way through its fade (2050: 835 pixels of 1080 lines of 990).
+const SHELF_BAR_GROW: f32 = 103.9;
 const TOOLS_BAR_FADE: f32 = 15.0;
 const TOOLS_BAR_GROW: f32 = 36.28;
 
@@ -1020,23 +1055,35 @@ impl View {
             let (pick, own) = (self.plate_full(&self.help_line(&PICK_ENTRIES), k), self.plate_full(&self.help_line(&STATUS_ENTRIES), k) + STATUS_PLATE_EXTRA);
             STATUS_PLATE_EXTRA + (pick - own) * (1.0 - (age / STATUS_BAR_FRAMES).clamp(0.0, 1.0)).powi(3)
         } else if shelf {
-            SHELF_PLATE_EXTRA
+            // (the Container page's bar shrinks going out, as the menu's does)
+            // (coming in it fades in from `SHELF_BAR_AT` frames after the page's first, its plate growing, as the tools' bar does)
+            match leaving {
+                Some(out) => SHELF_PLATE_EXTRA * Bar::out(out).grow,
+                None => SHELF_PLATE_EXTRA - SHELF_BAR_GROW * ((TOOLS_BAR_FADE - (age - SHELF_BAR_AT)) / (TOOLS_BAR_FADE * 2.0 / 3.0)).clamp(0.0, 1.5),
+            }
         } else {
             0.0
         };
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         // (going out it follows the menu's bar: the words first, then the plate fades)
         let gone = leaving.map(Bar::out);
-        self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if shelf { Entries::Shelf } else if guide { Entries::PageGuide } else { Entries::Page } });
+        self.help_bar(&mut pen, Bar { alpha: gone.map_or(if shelf { ((age - SHELF_BAR_AT) / TOOLS_BAR_FADE).clamp(0.0, 1.0) } else { 1.0 }, |b| b.alpha), grow: if shelf { gone.map_or(1.0, |b| b.grow) } else { 1.0 }, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if shelf { Entries::Shelf } else if guide { Entries::PageGuide } else { Entries::Page } });
         pen.finish().0
     }
 
     /// The Gathering Tools page's help bar `age` frames after its parts began to come in (none before `TOOLS_BAR_AT`).
-    pub fn tools_help(&self, screen: (u32, u32), age: f32) -> Vec<Quad> {
+    pub fn tools_help(&self, screen: (u32, u32), age: f32, leaving: Option<f32>) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let a = age - TOOLS_BAR_AT;
         if a <= 0.0 {
             return Vec::new();
+        }
+        // (going out it follows the menu's bar: the words first, then the plate shrinks and fades)
+        if let Some(out) = leaving {
+            let gone = Bar::out(out);
+            let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+            self.help_bar(&mut pen, Bar { alpha: gone.alpha, grow: gone.grow, words: gone.words, extra: SHELF_PLATE_EXTRA * gone.grow, entries: Entries::Tools });
+            return pen.finish().0;
         }
         // (and the same little extra width the Container page's bar has: its "Select" is the same glyph)
         let extra = SHELF_PLATE_EXTRA - TOOLS_BAR_GROW * ((TOOLS_BAR_FADE - a) / (TOOLS_BAR_FADE * 2.0 / 3.0)).clamp(0.0, 1.5);
@@ -1076,7 +1123,9 @@ impl View {
         pen.pic(MENU2, shadow, *shadow_at, *shadow_size, white(180.0 / 255.0));
         let cards = byte(if closing { incubic(CARD_FADE - out, CARD_FADE) } else { incubic(age, CARD_FADE) } * 255.0);
         // The photo blurs in over the pick (the game's blurring quad over the photo's place; it draws as `sys_white` here).
-        let blur = picked.map(|(_, a)| incubic(a, BLUR_FRAMES)).or(nav.blur_out.map(|r| incubic(BLUR_FRAMES - (frame - r), BLUR_FRAMES)));
+        // (a page of items leaves no blurred picture of the menu behind: only the page's own vignettes fade)
+        let after_items = nav.left.as_ref().is_some_and(|p| p.items.is_some());
+        let blur = picked.map(|(_, a)| incubic(a, BLUR_FRAMES)).or(nav.blur_out.filter(|_| !after_items).map(|r| incubic(BLUR_FRAMES - (frame - r), BLUR_FRAMES)));
         if let Some(b) = blur {
             let (at, size, turn) = self.pick.blur;
             // (STAND-IN: not drawn, only in the trace; the photo stays sharp until a layer can blur a part of itself)
@@ -1516,9 +1565,33 @@ mod tests {
     }
 
     #[test]
-    fn a_on_the_container_button_starts_no_pick() {
-        let keys = [(1900.0, Key::Open), (2060.0, Key::Confirm)]; // (the cursor is on the Container)
-        assert!(replay(&keys, 2200.0, &ORDER).unwrap().pick.is_none());
+    fn a_on_the_container_button_opens_its_page_41_frames_later_and_b_takes_it_away_at_once() {
+        // (the cursor is on the Container: `field-menu-pages`, A on 2000, the page's parts at 0.53 of their slide on 2050, B on 2150)
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Confirm), (2150.0, Key::Back)];
+        let nav = replay(&keys, 2100.0, &ORDER).unwrap();
+        assert_eq!(nav.pick.as_ref().and_then(|p| p.items), Some(ItemPage::Container));
+        assert!(replay(&keys, 2041.0, &ORDER).unwrap().page(2041.0).is_none());
+        assert!(nav.page(2042.0).is_some());
+        let out = replay(&keys, 2152.0, &ORDER).unwrap();
+        assert_eq!(out.blur_out, Some(2151.0));
+        // (only the title plate stays, for 30 frames)
+        assert_eq!(out.page_leaving(2160.0).map(|(_, o)| o), Some(10.0));
+    }
+
+    #[test]
+    fn a_on_gathering_tools_opens_its_page_and_the_menu_comes_back_a_frame_before_b() {
+        let keys = [(1900.0, Key::Open), (2540.0, Key::Down), (2541.0, Key::Down), (2580.0, Key::Confirm), (2730.0, Key::Back)];
+        let nav = replay(&keys, 2650.0, &ORDER).unwrap();
+        assert_eq!(nav.pick.as_ref().and_then(|p| p.items), Some(ItemPage::Tools));
+        assert!(nav.page(2650.0).is_some());
+        assert_eq!(replay(&keys, 2740.0, &ORDER).unwrap().blur_out, Some(2729.0));
+    }
+
+    #[test]
+    fn the_keys_on_an_items_page_move_its_cell() {
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Confirm), (2100.0, Key::Down), (2110.0, Key::Screen(crate::options_run::Key::Right))];
+        let nav = replay(&keys, 2120.0, &ORDER).unwrap();
+        assert_eq!(nav.pick.unwrap().cell, CONTAINER_COLUMNS + 1);
     }
 
     #[test]

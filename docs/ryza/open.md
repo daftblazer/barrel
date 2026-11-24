@@ -347,16 +347,16 @@ Left (each a listed cause):
 
 ### Field menu: what is left (2026-11-23)
 
-Built and at 0 (91 field-menu-* rows): opening and closing from the field, the cursor, the help bar and its transients,
-Settings from the menu there and back (with the blurred menu under it), the character pick on Equip and Status, B back from
-a page, the Equipment page without its item card (2330-2370, 2410, 2420), the Status page (part 8). The party's numbers come from the game's table
-(`party_stats.rs`). Left, in the order worth doing:
-- Equipment page: the item card (`uil_a21_item_info.xml` `equip_arms`, frame at layout (354, 7); it needs the item table's
-  effects, status and roles and the save's potentials, none read yet: about 650 quads at 2290), the slides and fades on a
-  slot or character change (2380-2400: 2-3 mismatches), the page coming in and going out (2500, 2510: about 260), the cursor
-  blink one frame behind from 2440 (1 mismatch each to 2490). Sections "part 6", "part 7" below.
+Built and at 0 (91 field-menu-* rows in checks.txt, 27 more in the local rows file of part 9): opening and closing from the field, the
+cursor, the help bar and its transients, Settings from the menu there and back (with the blurred menu under it), the character pick on
+Equip and Status, B back from a page, the Equipment page with its item card (2290; 2330-2370, 2410, 2420), the Status page (part 8), the
+item card, the Container and Gathering Tools pages (part 9). The party's numbers come from the game's table (`party_stats.rs`). Left, in
+the order worth doing:
+- Equipment page: the slides and fades on a slot or character change (2380-2400: 2-3 mismatches), the page going out (2500, 2510: about
+  260), the cursor blink one frame behind from 2430 (1 mismatch each to 2490). Sections "part 6", "part 7", "part 9" below.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
-- Container, Gathering Tools, Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540).
+- Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
+- Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540; Status pick and Guide from 2830).
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
@@ -2017,3 +2017,54 @@ Left, with causes:
   whose layouts' `get_in` anims were not read: only the Status page's parts leave animated), the cursor blink one frame behind from 2430
   (the blink's loop is probably also 121 frames, not tried).
 - No window run of the Status page was made (offscreen only).
+
+### Field menu, part 9: the item card, the Container page and the Gathering Tools page
+
+Built (`crates/ryza/src/{item_info,field_page,field_menu,save}.rs`; rows in the local `field-menu-rows-pages5.txt`, not yet in checks.txt):
+- The item card, one implementation for the three pages (`Page::item_card`): the layout `uil_a21_item_info.xml` walked from the card kind's
+  `top` (`equip_arms` at the equip layout's item-info place (354, 7); `normal_arms` at its own (523, 33) on the Container page; `normal_item` at
+  its own (594, 36) on Gathering Tools): the paper, the name plate, the level, the element value and its lit icons, the rank letter, the
+  quality gauge (cut at the quality's share of a hundred, a gauge a hundred), the effects, status (HP, ATK, DEF, SPD), traits, change role
+  and the equippable faces, with the category on the two pages that have one. The values (`item_info::Items::card`, rules in `docs/tables.md`
+  "Ryza DX: the item card") are the item table's and the save's unit's (`save::Worn`, `docs/formats.md`).
+- New in the walker: `clone_child_tree` paths (`clone_targets/effect/node`: the first node of each name below the one before) and clones of
+  clones (the Container's `cell`), `template_cell` and `template_tab` for the nodes that load a file, siblings of one name told apart by a
+  count in the path (`node`, `node:1`; card, Container and tools only), a text's style by `copy` (`TEXT_ARTICLE`, `TEXT_HEADLINE`, ...) with
+  its `pos_ratio_x`, stencils (`stencil_mask="create"` is a white quad in the trace, not drawn; what a `masked` node draws is clipped by it:
+  `barrel_render::text::Clip`), a picture cut at a share of its width, text turned with its node (the category's lines are 1 or 2 degrees
+  off), a picture's colour set by an animation (the cursor cell) and the scroll bar's slider.
+- The Container page (A on the first button; `Pick::items`, no character pick, its first frame 41 frames after A: the menu stands as it was
+  while the button pulses; `ShelfLook`, `Page::shelf_quads`): the tab row (six tabs, "ALL" lit), the grid of the save's `m_unitContainer`
+  (eight to a row, the pictures `etc_a21_item_s`, the cursor cell's two quads with the byte rounding of the game's colours), the count of free
+  places ("Empty", places less items), "All", the card of the cursor's item, the title plate and the bar of five entries. The page's parts
+  slide in from the left over 40 frames (`speed` 0.75), the card from the right over 30; the bar fades in four frames after the page's first.
+  B takes the grid and the card away at once and the menu comes back a frame later; the title plate slides out over 30 frames and the bar
+  shrinks as the menu's does. Keys on the page move the cursor one cell (STAND-IN: not captured; no tab, count or scroll change).
+- The Gathering Tools page (`ToolsLook`, `Page::tools_quads`): the row of the save's tools (`explore_equip/explore_equip_item`), the cursor,
+  the card, the title plate; its bar of three entries fades in 34 frames after the page's first. B: the parts slide out over 30 frames, the
+  menu comes back a frame before B's own, the bar goes as the menu's.
+- Rows at 0: `field-menu-equip` 2290 (the card on the staff: from 685 mismatches), `field-menu-container` 2000 to 2040 (the menu as it
+  stood), 2080 to 2140, 2150 to 2180 (the page going), `field-menu-tools` 2650 to 2720 and 2730, 2740. Before: every frame of the pages was
+  at 300 to 860 mismatches (the pages were not drawn).
+
+STAND-INs named in the code: the effect lines' x (a layout pixel more than the layout's), the faces' step (79 pixels of 1080 lines),
+the count's label and number places (the game's code moves them), the slider's place and length, the items' opacity in the grid (242/255), the
+cursor cells' phase (a tenth of a frame early; the tools' one frame late), the element value (the table's plus one a hundred of quality), the
+rank letter (one step down every 50 points of quality, 30 D, 50 C, 100 B), the table of contents in the Equipment page's bar until the first key
+(it goes at 2300 to 2310), the plates' extra widths of the new bars, the Container and Tools bars' growth while they fade in, a level
+of a trait (the byte after the potentials: no capture has one) and the page's coming and going times above.
+
+Left, with causes:
+- The pages coming in: the Container 2050 (8 mismatches), 2060 and 2070 (6 each: the items' opacity is not the slide's times a constant:
+  .53, .835, .949 against the slide's .53, .855, .98 on 2050, 2060, 2070: not explained; at 2050 also the money plate going out, a quad
+  not drawn), the Tools 2630 and 2640 (about 300: the menu going out under the page and the parts coming in were not compared; the Status page's
+  code for the menu going out is used and the frames differ).
+- The menu's ring after a page of items (Container 2190 and 2200: 10 and 2; Tools 2610, 2620 and 2750 on: 1 to 2 mismatches each): the cursor
+  ring's phase after A or B, as the Status page's 2690 to 2710 (part 8).
+- The Container bar's shrink going out (2190: the plate 26 layout pixels wider than the game's at the same opacity).
+- The Equipment page: the character change's slides (2380 to 2400), the page going out (2510, 2520) and the blink from 2430 (1 mismatch
+  each): not tried. The slot cursor's blink on 2200 to 2260 is a frame off by turns (the game's own clock hitches: +1, +1, -1, 0 on 2200,
+  2230, 2260, 2290; 2290 is at 0).
+- Tabs other than the first, the scroll bar of a full grid, the favourites, sub-menu and sort, tools beyond the five places, the cursor's
+  keys beyond a cell step: no capture.
+- No window run of the pages (offscreen only).
