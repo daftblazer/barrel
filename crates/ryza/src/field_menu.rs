@@ -264,7 +264,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -462,7 +462,22 @@ pub struct Pick {
     pub status: bool,
     /// The Status page's skill under the cursor (a row of its list).
     pub row: usize,
+    /// The Container or Gathering Tools page (the button was one of them): no character is picked, A on the button opens it.
+    pub items: Option<ItemPage>,
+    /// The item page's cursor: a cell of its grid (Container) or a place of its row (Gathering Tools).
+    pub cell: usize,
 }
+
+/// The pages of items, which open from their button with no character pick.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemPage {
+    Container,
+    Tools,
+}
+
+/// Frames from A on the Container or Gathering Tools button to the page's own A (the menu stands as it was while the button's
+/// pulse runs; `field-menu-pages`: A on 2000, the page's parts at 0.53 of their slide on 2050, so they began on 2041).
+pub const ITEM_PAGE_LATER: f32 = 41.0;
 
 /// Frames the menu takes to go out under a page (`SLIDE` for each of its parts and the stagger of the buttons after the first).
 const LEAVE_FRAMES: f32 = 30.0;
@@ -471,18 +486,23 @@ impl Pick {
     /// Frames from B on the page to the menu's coming back: the Status page's parts take 30 frames to go (`field-menu-status`: B on
     /// 2620, the light at 213/255 of its slide-in on 2660, so the menu began on 2650); the Equipment page's 24.
     pub fn page_out(&self) -> f32 {
-        if self.status { STATUS_PAGE_OUT } else { PAGE_OUT }
+        if self.slides() { STATUS_PAGE_OUT } else { PAGE_OUT }
     }
 
     /// Frames from B on the page to its last part's going: the Status page's slides run out (`PAGE_GONE`); the Equipment page's are not
     /// animated, so it stays as it was until the menu is back.
     pub fn page_gone(&self) -> f32 {
-        if self.status { PAGE_GONE } else { PAGE_OUT }
+        if self.slides() { PAGE_GONE } else { PAGE_OUT }
     }
 
     /// Frames from A on the card to the page's first frame.
     pub fn page_at(&self) -> f32 {
-        if self.status { STATUS_PAGE_AT } else { PAGE_AT }
+        if self.slides() { STATUS_PAGE_AT } else { PAGE_AT }
+    }
+
+    /// Whether the page's parts slide in and out (the Status page and the pages of items) and the menu goes out under it.
+    pub fn slides(&self) -> bool {
+        self.status || self.items.is_some()
     }
 }
 
@@ -521,7 +541,9 @@ const BLUR_FRAMES: f32 = 30.0;
 const ROLL_FRAMES: f32 = 480.0;
 const LOOP_PICK_FRAMES: f32 = 120.0;
 /// The Equip and Status buttons' places in the cursor order.
+const CONTAINER: usize = 0;
 const EQUIP: usize = 1;
+const TOOLS: usize = 2;
 const STATUS: usize = 3;
 
 impl Nav {
@@ -563,7 +585,12 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0 });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0 });
+        }
+        if matches!(self.cursor, CONTAINER | TOOLS) {
+            // (no pick: the page is the button's; its first frame comes `ITEM_PAGE_LATER` frames after A, like a card's A on the Status page)
+            let items = if self.cursor == CONTAINER { ItemPage::Container } else { ItemPage::Tools };
+            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0 });
         }
     }
 
@@ -801,6 +828,8 @@ enum Entries {
     StatusPage,
     /// The Equipment page's with the table of contents (the item's entry in the book) between "Select" and "Back".
     PageGuide,
+    /// The Container page's: select, the table of contents, add to favorites, the submenu and back.
+    Shelf,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
@@ -817,6 +846,13 @@ const STATUS_BAR_FRAMES: f32 = 20.0;
 
 /// The Equipment page's entries with the table of contents (`field-menu-equip` 2200 to 2300, the cursor on the weapon).
 const PAGE_GUIDE_ENTRIES: [(char, u32); 4] = [('\u{4e2}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The Container page's entries (`field-menu-pages` 2110): the cross, the guide, X "Add to Favorites", Y "Submenu" and B "Back".
+const SHELF_ENTRIES: [(char, u32); 5] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 6_684_776), ('\u{4de}', 4_194_317), ('\u{4d8}', 4_194_368)];
+
+/// The Container page's plate is this much wider than its five entries need (layout pixels: 0.67 of 1080 lines, `field-menu-pages` 2110).
+/// STAND-IN, as `STATUS_PLATE_EXTRA`.
+const SHELF_PLATE_EXTRA: f32 = 0.67 / 1.5;
 
 /// "Table of Contents" (the item card's guide entry).
 const TABLE_OF_CONTENTS: u32 = 6_684_709;
@@ -966,18 +1002,20 @@ impl View {
     ///
     /// `guide`: the table of contents is among the entries. STAND-IN: the Equipment page has it until the first key on the page
     /// (it goes with the first move down in the capture, 2300 to 2310: the real rule is not found).
-    pub fn page_help(&self, screen: (u32, u32), status: bool, guide: bool, age: f32, leaving: Option<f32>) -> Vec<Quad> {
+    pub fn page_help(&self, screen: (u32, u32), status: bool, guide: bool, shelf: bool, age: f32, leaving: Option<f32>) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let extra = if status {
             let (pick, own) = (self.plate_full(&self.help_line(&PICK_ENTRIES), k), self.plate_full(&self.help_line(&STATUS_ENTRIES), k) + STATUS_PLATE_EXTRA);
             STATUS_PLATE_EXTRA + (pick - own) * (1.0 - (age / STATUS_BAR_FRAMES).clamp(0.0, 1.0)).powi(3)
+        } else if shelf {
+            SHELF_PLATE_EXTRA
         } else {
             0.0
         };
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         // (going out it follows the menu's bar: the words first, then the plate fades)
         let gone = leaving.map(Bar::out);
-        self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if guide { Entries::PageGuide } else { Entries::Page } });
+        self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if shelf { Entries::Shelf } else if guide { Entries::PageGuide } else { Entries::Page } });
         pen.finish().0
     }
 
@@ -1031,7 +1069,7 @@ impl View {
             // each button (the light after the last of seven places) one `CLOSE_STEP` behind the one before. Only what the blurred picture
             // of the menu leaves in view is in the trace: the light and the first card, whose rectangles reach the screen's edge.
             let out = frame - page.confirmed.unwrap_or(frame);
-            if page.status && (0.0..LEAVE_FRAMES).contains(&out) && leaving.is_none() {
+            if page.slides() && (0.0..LEAVE_FRAMES).contains(&out) && leaving.is_none() {
                 let slide_state = |n: f32| {
                     let u = (1.0 - (out - n * CLOSE_STEP) / SLIDE).clamp(0.0, 1.0) * self.slide[0].duration();
                     (self.slide[0].at(u)[3] / 255.0, self.slide[1].at(u)[0])
@@ -1290,6 +1328,7 @@ impl View {
             Entries::Page => &PAGE_ENTRIES,
             Entries::StatusPage => &STATUS_ENTRIES,
             Entries::PageGuide => &PAGE_GUIDE_ENTRIES,
+            Entries::Shelf => &SHELF_ENTRIES,
         };
         let line = self.help_line(entries);
         let full = self.plate_full(&line, pen.k);

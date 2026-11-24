@@ -110,6 +110,54 @@ struct Pic {
     edges: Option<[f32; 4]>,
 }
 
+/// An item of the Container page's grid, for the textures the page loads: its picture number and its category's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShelfItem {
+    pub image: usize,
+    pub category: Option<usize>,
+}
+
+/// What the Container page shows.
+pub struct ShelfLook<'a> {
+    pub party: &'a [crate::field_menu::Member],
+    /// The grid's items in order (a picture number each), the cell under the cursor and the tab.
+    pub images: &'a [usize],
+    pub cursor: usize,
+    pub tab: usize,
+    /// The free places of the container (the count's "Empty").
+    pub free: usize,
+    /// The card of the item under the cursor.
+    pub item: Option<&'a Card>,
+    /// Frames since the page's first, and, going out, since B.
+    pub age: f32,
+    pub leaving: Option<f32>,
+}
+
+/// The page's strings: "Container", "Empty" and "All".
+pub const CONTAINER_TITLE: u32 = 6_684_760;
+const EMPTY_WORD: u32 = 6_684_711;
+const ALL_WORD: u32 = 4_194_319;
+const SHELF_STRINGS: [u32; 3] = [CONTAINER_TITLE, EMPTY_WORD, ALL_WORD];
+/// The tab names (consumables ... exploration): the page shows its tab's.
+const TAB_NAMES: u32 = 6_684_751;
+/// The grid's columns, the tabs' label pictures (`gen_a21_mix01_choise`'s: all, materials, consumables, equipment, synthesis, important) and
+/// the page's slide (`speed` 0.75 of 30 frames).
+const SHELF_COLUMNS: usize = 8;
+const SHELF_TABS: [usize; 6] = [0, 5, 6, 7, 8, 9];
+const SHELF_SLIDE_FRAMES: f32 = 40.0;
+/// The items' opacity in the grid (242 of 255 in the capture: not explained; STAND-IN).
+const ITEM_ALPHA: f32 = 242.0 / 255.0;
+/// The cursor cell's animation loops in 120 frames from the page's first; STAND-IN: a tenth of a frame early, which puts the byte roundings of
+/// `field-menu-pages` 2080, 2100, 2110 and 2120 where the game's are.
+const CURSOR_LOOP: f32 = 120.0;
+const CURSOR_PHASE_LAG: f32 = -0.1;
+/// The scroll bar's slider with the grid not full: from the bar's top, its length (STAND-IN: the capture's, the rule is not read).
+const SHELF_THUMB: [f32; 2] = [18.0, 390.0];
+/// The count's label and number: where the capture puts them in the `cc` node (the layout's are (-52, 31) and (-5, 31); the game's code
+/// moves them: STAND-IN).
+const COUNT_LABEL_AT: [f32; 2] = [-65.44, 31.0];
+const COUNT_VALUE_AT: [f32; 2] = [31.44, 31.0];
+
 /// What a page shows: the member whose page it is and the slot under the cursor.
 pub struct Look<'a> {
     pub member: &'a crate::field_menu::Member,
@@ -154,6 +202,10 @@ struct Over {
     scale: Option<f32>,
     /// A picture cut at this share of its width (the quality gauge).
     crop: Option<f32>,
+    /// A picture's colour where an animation sets it (0 to 1).
+    paint: Option<[f32; 4]>,
+    /// A scroll bar's slider: its top and height in the bar's layout pixels.
+    thumb: Option<[f32; 2]>,
 }
 
 pub struct Page {
@@ -173,13 +225,17 @@ pub struct Page {
     /// The item card (`uil_a21_item_info.xml`) and the parts it copies (`uil_a21_item_info_clone_targets.xml`).
     item: Element,
     targets: Element,
+    /// The Container page's layout (`uil_a21_cabinet.xml`), its cell and its tabs (what its `template_cell` and `template_tab` load).
+    cabinet: Element,
+    cell: Element,
+    tabs: Element,
     /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
     text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
 }
 
 /// The style files the layouts' styles are in.
-const STYLE_FILES: [&str; 13] = [
+const STYLE_FILES: [&str; 15] = [
     "ui_en\\gen_styles\\uis_gen_a21_status.xml",
     "ui_en\\gen_styles\\uis_gen_a21_item_info.xml",
     "ui_en\\gen_styles\\uis_gen_a21_caption.xml",
@@ -193,6 +249,8 @@ const STYLE_FILES: [&str; 13] = [
     "ui_cmn\\etc\\uis_a21_item_l.xml",
     "ui_cmn\\etc\\uis_a21_chara_stand_card.xml",
     "ui_cmn\\etc\\uis_a21_bg.xml",
+    "ui_en\\gen_styles\\uis_gen_a21_mix.xml",
+    "ui_cmn\\etc\\uis_a21_item_s.xml",
 ];
 
 fn texture_path(texture: &str, english: bool) -> String {
@@ -201,7 +259,7 @@ fn texture_path(texture: &str, english: bool) -> String {
 
 impl Page {
     /// Reads the layouts and styles for `party` (the pictures and textures its members need).
-    pub fn read(files: Files, party: &[crate::field_menu::Member], item_image: &dyn Fn(u16) -> usize) -> Result<Page, String> {
+    pub fn read(files: Files, party: &[crate::field_menu::Member], item_image: &dyn Fn(u16) -> usize, shelf: &[ShelfItem]) -> Result<Page, String> {
         let read = |p: &str| (files.read)(&format!("\\saves\\{p}"));
         let layout = |name: &str| -> Result<Element, String> { table::parse(&read(&format!("ui_en\\a21_main_menu\\{name}"))?).map_err(|e| format!("{name}: {e}")) };
         let (equip, chara, status) = (layout("uil_a21_menu_equip.xml")?, layout("uil_a21_menu_chara.xml")?, layout("uil_a21_menu_chara_status.xml")?);
@@ -210,6 +268,9 @@ impl Page {
         let caption = table::parse(&read("ui_en\\a21_caption\\uil_a21_caption.xml")?).map_err(|e| format!("uil_a21_caption: {e}"))?;
         let item = table::parse(&read("ui_en\\a21_item_info\\uil_a21_item_info.xml")?).map_err(|e| format!("item_info: {e}"))?;
         let targets = table::parse(&read("ui_en\\a21_item_info\\uil_a21_item_info_clone_targets.xml")?).map_err(|e| format!("item_info targets: {e}"))?;
+        let cabinet = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_cabinet.xml")?).map_err(|e| format!("cabinet: {e}"))?;
+        let cell = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_cabinet_cell.xml")?).map_err(|e| format!("cabinet cell: {e}"))?;
+        let tabs = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_item_tab.xml")?).map_err(|e| format!("cabinet tabs: {e}"))?;
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -237,12 +298,12 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
         for name in &used {
-            if name == "etc_a21_item_l" || name == "etc_a21_chara_stand_card" || name == "etc_a21_category_image" {
+            if name == "etc_a21_item_l" || name == "etc_a21_chara_stand_card" || name == "etc_a21_category_image" || name == "etc_a21_item_s" {
                 continue;
             }
             for p in styles.get(name).into_iter().flatten() {
@@ -255,6 +316,14 @@ impl Page {
             }
             for w in m.worn.iter().flatten() {
                 if let Some(p) = styles.get("etc_a21_item_l").and_then(|l| l.get(item_image(w.item))) {
+                    wanted.insert((p.path.clone(), p.index));
+                }
+            }
+        }
+        // The Container page's items: the grid's small picture, the card's big one and its category's.
+        for it in shelf {
+            for (style, n) in [("etc_a21_item_s", Some(it.image)), ("etc_a21_item_l", Some(it.image)), ("etc_a21_category_image", it.category)] {
+                if let Some(p) = n.and_then(|n| styles.get(style).and_then(|l| l.get(n))) {
                     wanted.insert((p.path.clone(), p.index));
                 }
             }
@@ -286,9 +355,11 @@ impl Page {
                     || (EFFECT_BASE..EFFECT_BASE + 2000).contains(n)
                     || (CATEGORY_BASE..CATEGORY_BASE + 100).contains(n)
                     || (POTENTIAL_BASE..POTENTIAL_BASE + 400).contains(n)
+                    || SHELF_STRINGS.contains(n)
+                    || (TAB_NAMES..TAB_NAMES + 8).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, text_styles, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -467,17 +538,82 @@ impl Page {
         }
 
         // The title plate (`uil_a21_caption.xml`), sliding in from above.
-        if let Some(top) = find(&self.caption, "top") {
-            let title = self.strings.get(if look.status { &STATUS_TITLE } else { &EQUIPMENT_TITLE }).cloned();
-            let plate = |path: &[&str]| -> Over {
-                match path {
-                    ["top"] => Over { show: true, ..Default::default() },
-                    [.., "caption_text"] => Over { text: title.clone(), ..Default::default() },
-                    _ => Over::default(),
+        self.caption_plate(&mut w, &root, if look.status { STATUS_TITLE } else { EQUIPMENT_TITLE }, slide(0.0, [0.0, -30.0]));
+        (w.out, w.additive, w.clips)
+    }
+
+    /// The title plate with string `title`, moved by `slide`.
+    fn caption_plate(&self, w: &mut Walker, root: &Xf, title: u32, slide: Slide) {
+        let Some(top) = find(&self.caption, "top") else { return };
+        let title = self.strings.get(&title).cloned();
+        let plate = |path: &[&str]| -> Over {
+            match path {
+                ["top"] => Over { show: true, ..Default::default() },
+                [.., "caption_text"] => Over { text: title.clone(), ..Default::default() },
+                _ => Over::default(),
+            }
+        };
+        w.slid(slide, |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new()));
+    }
+
+    /// The Container page: the tab row, the grid of the items, the count of free places, the card of the item under the cursor and the title
+    /// plate (`uil_a21_cabinet.xml`'s `default`, which slides in from the left over 40 frames, and the card from the right).
+    pub fn shelf_quads(&self, look: &ShelfLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
+        let row = |s: &str, name: &str| s.strip_prefix(name).and_then(|n| n.strip_prefix(':')).and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
+        let string = |n: u32| self.strings.get(&n).cloned();
+        // The cursor cell's animation (`anm_common_cursor_base` and `_add_75`, 120 frames up and down): the share of the way to teal.
+        let t = (look.age + CURSOR_PHASE_LAG).rem_euclid(CURSOR_LOOP);
+        let f = 1.0 - (t - CURSOR_LOOP / 2.0).abs() / (CURSOR_LOOP / 2.0);
+        // (the game's bytes: each animation's colour rounds to a byte and their product is cut down to one, the opacity rounds)
+        let lerp = |to: [f32; 3]| [255.0 + (to[0] - 255.0) * f, 255.0 + (to[1] - 255.0) * f, 255.0 + (to[2] - 255.0) * f].map(|v| v.round().clamp(0.0, 255.0));
+        let base = lerp([58.0, 205.0, 180.0]);
+        let add = lerp([58.0, 205.0, 205.0]);
+        let both = [0, 1, 2].map(|i| (base[i] * add[i] / 255.0).floor() / 255.0);
+        let base = base.map(|v| v / 255.0);
+        let over = |path: &[&str]| -> Over {
+            let [_, rest @ ..] = path else { return Over::default() };
+            match rest {
+                [] => Over { show: true, ..Default::default() },
+                ["none", "count", "cc"] => Over { show: true, ..Default::default() },
+                ["none", "count", "cc", ""] => Over { text: string(EMPTY_WORD), at: Some(COUNT_LABEL_AT), ..Default::default() },
+                ["none", "count", "cc", ":1"] | ["none", "count", "cc", "capacity"] => Over { hide: true, ..Default::default() },
+                ["none", "count", "cc", "have_num"] => Over { text: Some(look.free.to_string()), at: Some(COUNT_VALUE_AT), ..Default::default() },
+                ["confirm", ..] => Over { hide: true, ..Default::default() },
+                ["scroll_bar"] => Over { thumb: Some(SHELF_THUMB), ..Default::default() },
+                ["tab_top", "tab_frame", "l1", "select_L"] => Over { text: Some(TAB_LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                ["tab_top", "tab_frame", "r1", "select_R"] => Over { text: Some(TAB_RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                ["tab_top", "taboff", tab, "text"] | ["tab_top", "tabon", tab, "text"] => {
+                    let n: usize = tab.strip_prefix("tab").and_then(|n| n.parse().ok()).unwrap_or(0);
+                    Over { image_no: Some(SHELF_TABS.get(n).copied().unwrap_or(5)), ..Default::default() }
                 }
-            };
-            w.slid(slide(0.0, [0.0, -30.0]), |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new()));
+                ["tab_top", "tabon", tab, ..] if tab.strip_prefix("tab").and_then(|n| n.parse::<usize>().ok()) != Some(look.tab) => Over { hide: true, ..Default::default() },
+                ["tab_name"] => Over { text: string(ALL_WORD), ..Default::default() },
+                ["sheet", r, c, part, ..] => {
+                    let idx = row(r, "row") * SHELF_COLUMNS + row(c, "cell");
+                    let here = idx < look.images.len();
+                    match (*part, path.len()) {
+                        ("item_image", 5) if here => Over { image_no: Some(look.images[idx]), alpha: Some(ITEM_ALPHA), ..Default::default() },
+                        ("highlight", 5) if idx == look.cursor && here => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
+                        ("highlight", 6) => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
+                        _ => Over { hide: true, ..Default::default() },
+                    }
+                }
+                _ => Over::default(),
+            }
+        };
+        if let Some(top) = find(&self.cabinet, "default") {
+            let at = pair(top, "pos", [0.0; 2]);
+            w.slid(Slide::over(into(SHELF_SLIDE_FRAMES), SHELF_SLIDE_FRAMES, [-40.0, 0.0]), |w| w.walk(top, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
         }
+        if let Some(card) = look.item {
+            // (the card slides in from the right)
+            w.slid(Slide::in_from(into(SLIDE_FRAMES), [40.0, 0.0]), |w| self.item_card(w, &root, "normal_arms", None, card, look.party));
+        }
+        self.caption_plate(&mut w, &root, CONTAINER_TITLE, Slide::in_from(into(SLIDE_FRAMES), [0.0, -30.0]));
         (w.out, w.additive, w.clips)
     }
 
@@ -509,7 +645,7 @@ impl Page {
                     if share <= 0.0 { hide() } else { Over { crop: Some(share), ..Default::default() } }
                 }
                 ["common", "quality", "quality_value"] => text(card.quality.to_string()),
-                ["effect", "effect", "list", n, "", "text"] => card.effects.get(row(n)).map_or_else(hide, |&e| text(string(e))),
+                ["effect", "effect", "list", n, "", "text"] => card.effects.get(row(n)).map_or_else(hide, |&e| Over { text: Some(string(e)), at: Some(EFFECT_TEXT_AT), ..Default::default() }),
                 ["potential", "potential", "list", n, "text"] => card.traits.get(row(n)).map_or_else(hide, |&(t, _)| text(string(t))),
                 ["potential", "potential", "list", n, "lv"] if row(n) >= card.traits.len() => hide(),
                 ["potential", "potential", "list", n, "lv", "text"] => card.traits.get(row(n)).map_or_else(hide, |&(_, l)| text(l.to_string())),
@@ -538,7 +674,7 @@ impl Page {
                 }
                 ["category", "category", "", ..] => hide(),
                 ["category", "category", "list", n, rest @ ..] => match (row(n), card.category, rest) {
-                    (0, Some(c), ["cat_icon"]) => Over { image_no: Some((c - CATEGORY_BASE) as usize), ..Default::default() },
+                    (0, Some(c), ["", "cat_icon"]) => Over { image_no: Some((c - CATEGORY_BASE) as usize), ..Default::default() },
                     (0, Some(c), ["cat_name"]) => text(string(c)),
                     (0, Some(_), _) => Over::default(),
                     _ => hide(),
@@ -616,16 +752,24 @@ impl Page {
     fn template(&self, name: &str) -> Option<&Element> {
         if name.contains('/') {
             // A path (`clone_targets/effect/node`): each name the first node of that name under the one before it.
-            return [&self.targets, &self.item].into_iter().find_map(|doc| {
-                let mut parts = name.split('/');
-                let mut at = find(doc, parts.next()?)?;
-                for part in parts {
-                    at = at.children.iter().find_map(|c| find(c, part))?;
-                }
-                Some(at)
-            });
+            // (`template_cell` and `template_tab` are nodes that load a file: its root stands for them)
+            let mut parts = name.split('/');
+            let first = parts.next()?;
+            return match first {
+                "template_cell" => descend(&self.cell, parts),
+                "template_tab" => descend(&self.tabs, parts),
+                _ => [&self.targets, &self.item, &self.cabinet].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
+            };
         }
-        [&self.equip, &self.status, &self.faces, &self.skill, &self.targets].into_iter().find_map(|doc| find_with_children(doc, name))
+        [&self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell].into_iter().find_map(|doc| find_with_children(doc, name))
+    }
+
+    /// The children a node's `clone_child_tree` gives: the template's, which may be a clone of another (the Container grid's `cell`).
+    fn template_children<'a>(&'a self, e: &Element, depth: usize) -> Vec<&'a Element> {
+        let Some(template) = e.attr("clone_child_tree").filter(|_| depth < 4).and_then(|t| self.template(t)) else { return Vec::new() };
+        let mut children = self.template_children(template, depth + 1);
+        children.extend(template.children.iter());
+        children
     }
 
     fn string(&self, id: &str) -> Option<&str> {
@@ -717,7 +861,12 @@ impl Slide {
     /// `anm_common_slide_in_*`: the opacity and the offset (from `from` to nothing) come in over 30 frames, fast first
     /// (`easing_outcubic`), `frames` after the animation began.
     fn in_from(frames: f32, from: [f32; 2]) -> Slide {
-        let e = 1.0 - (1.0 - (frames / SLIDE_FRAMES).clamp(0.0, 1.0)).powi(3);
+        Slide::over(frames, SLIDE_FRAMES, from)
+    }
+
+    /// The same over `total` frames (`speed` 0.75 of the Container page: 40).
+    fn over(frames: f32, total: f32, from: [f32; 2]) -> Slide {
+        let e = 1.0 - (1.0 - (frames / total).clamp(0.0, 1.0)).powi(3);
         Slide { alpha: e, dx: from[0] * (1.0 - e), dy: from[1] * (1.0 - e) }
     }
 }
@@ -807,6 +956,13 @@ impl Walker<'_> {
             match e.name.as_str() {
                 "image" => self.image(e, me, &o),
                 "text" => self.text(e, me, &o),
+                "scroll_bar" => {
+                    // The bar's slider (`uil_sbt_default.xml`: `_slider` at (9, 20) in the bar, 10 wide) where the game's code gives it one.
+                    if let Some([y, h]) = o.thumb {
+                        let slider = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mix02_flame01_sb".into()), ("size_wh".into(), format!("10.333, {h}, 0"))], children: Vec::new() };
+                        self.image(&slider, me.node([9.0, y], 0.0, [1.0; 2]), &Over::default());
+                    }
+                }
                 _ => {}
             }
             // A stencil's mask is the picture itself (in the trace, not on the screen); what a `masked` node draws is clipped by it.
@@ -818,9 +974,7 @@ impl Walker<'_> {
             let mut children: Vec<&Element> = Vec::new();
             let mut cmds: HashMap<String, Vec<Element>> = commands.clone();
             let page = self.page;
-            if let Some(template) = e.attr("clone_child_tree").and_then(|t| page.template(t)) {
-                children.extend(template.children.iter());
-            }
+            children.extend(page.template_children(e, 0));
             for c in &e.children {
                 if c.name == "command" {
                     if let Some(t) = c.attr("target_node") {
@@ -874,7 +1028,7 @@ impl Walker<'_> {
         };
         let from = self.out.len();
         let c = numbers(e, "color");
-        let mut color = if c.len() >= 4 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0] } else { [1.0; 4] };
+        let mut color = o.paint.unwrap_or(if c.len() >= 4 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0] } else { [1.0; 4] });
         color[3] *= o.alpha.unwrap_or(1.0);
         // (a picture at no opacity is not drawn: the game hides a node a fade has not reached)
         if color[3] <= 0.0 {
@@ -1000,7 +1154,20 @@ impl Walker<'_> {
             for g in string.chars().filter_map(|c| glyphs.get(&c)) {
                 let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.width as f32, g.height as f32);
                 let (x0, y0) = (pen + g.x_offset as f32 * s, top + dy + g.y_offset as f32 * sy);
-                self.out.push(Quad { turn: false, spin: None, rect: [x0, y0, x0 + gw * s, y0 + gh * sy], uv: [gx / 4096.0, gy / 2048.0, (gx + gw) / 4096.0, (gy + gh) / 2048.0], color, texture: if font == 0 { FONT01 } else { FONT00 } });
+                let (x1, y1) = (x0 + gw * s, y0 + gh * sy);
+                let uv = [gx / 4096.0, gy / 2048.0, (gx + gw) / 4096.0, (gy + gh) / 2048.0];
+                let texture = if font == 0 { FONT01 } else { FONT00 };
+                if xf.b.abs() > 1e-6 {
+                    // A turned node: the glyph's corners turn about the node's place (the category's lines are 1 or 2 degrees off).
+                    let (sin, cos) = (xf.b.atan2(xf.a)).sin_cos();
+                    let turn = |p: [f32; 2]| [x + (p[0] - x) * cos - (p[1] - y) * sin, y + (p[0] - x) * sin + (p[1] - y) * cos];
+                    let corners = [turn([x0, y0]), turn([x1, y0]), turn([x1, y1]), turn([x0, y1])];
+                    let (bx0, bx1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
+                    let (by0, by1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+                    self.out.push(Quad { turn: false, spin: Some(Spin::Corners(corners)), rect: [bx0, by0, bx1, by1], uv, color, texture });
+                } else {
+                    self.out.push(Quad { turn: false, spin: None, rect: [x0, y0, x1, y1], uv, color, texture });
+                }
                 pen += advance(g);
             }
         };
@@ -1018,11 +1185,23 @@ impl Walker<'_> {
     }
 }
 
+/// The effect lines' text place in its slider (the layout's (-1, 2); the capture's lines are a layout pixel further right: STAND-IN).
+const EFFECT_TEXT_AT: [f32; 2] = [0.0, 2.0];
+
 /// The centre of the equippable faces in the card's `list` node (the `center` node's place less the list's), their size and the step
 /// from one to the next: STAND-IN, 79 pixels of 1080 lines between the faces of both cards (the layout says 41.33 for its nine places).
 const FACE_CENTER_X: f32 = 180.0;
 const FACE_SIZE: f32 = 42.0;
 const FACE_STEP: f32 = 52.667;
+
+/// The node `parts` name below `first`, each the first of its name under the one before it.
+fn descend<'a>(first: &'a Element, parts: std::str::Split<'_, char>) -> Option<&'a Element> {
+    let mut at = first;
+    for part in parts {
+        at = at.children.iter().find_map(|c| find(c, part))?;
+    }
+    Some(at)
+}
 
 fn numbers_of(attributes: &[(String, String)], name: &str) -> Option<Vec<f32>> {
     let v = attributes.iter().find(|(k, _)| k == name)?;
