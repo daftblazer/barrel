@@ -593,6 +593,15 @@ impl Pick {
         if self.slides() { STATUS_PAGE_AT } else { PAGE_AT }
     }
 
+    /// Frames the page of items has run at game frame `tick`: counted on the animation clock from A, which loses a frame now and then
+    /// (`field_page::animation_clock`), less the page's delay. A stall between A and the page's first frame (Gathering Tools, A on 2580,
+    /// the stall on 2587) makes every part of it one frame late; the page's other timings (the menu going out, the bar, the title plate)
+    /// stay on game frames.
+    pub fn page_age(&self, tick: f32) -> f32 {
+        use crate::field_page::animation_clock;
+        animation_clock(tick) - animation_clock(self.since) - ITEM_PAGE_LATER
+    }
+
     /// Whether the page's parts slide in and out (the Status page and the pages of items) and the menu goes out under it.
     pub fn slides(&self) -> bool {
         self.status || self.items.is_some()

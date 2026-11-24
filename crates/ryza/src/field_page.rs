@@ -147,6 +147,8 @@ pub struct ToolsLook<'a> {
     pub item: Option<&'a Card>,
     /// Frames since the page's first, and, going out, since B.
     pub age: f32,
+    /// The same on game frames (the title plate does not lose the animation clock's stall).
+    pub plate_age: f32,
     pub leaving: Option<f32>,
 }
 
@@ -194,6 +196,12 @@ pub const SUB_AT: f32 = GUIDE_FADE;
 /// of 121.3 apart; the Items' peak 2467.3 is 121.3 after its start): the game's animation clock is a little slow. STAND-IN: the ratio as measured.
 const BLINK_RATE: f32 = 0.9938;
 
+/// The Items page's cards lie tilted: the game turns each card's `node_center` (its paper and cursor highlight; the picture, name and level stay upright)
+/// about its own origin and squashes it along its own height, as (degrees clockwise, the height's share). From the capture's corners (`field-menu-guide`
+/// 2400: both cards' pieces solve to one rotation about the node's origin, (206, 262) layout pixels, to 0.01 pixel); the first two cards of the capture are
+/// the only samples. STAND-IN: the game's rule (a seed per card, the item?) is not read; the two repeat down the list.
+const CARD_TILTS: [(f32, f32); 2] = [(39.770, 0.96623), (-59.106, 0.77800)];
+
 /// The colour an item's picture takes while the library shows it only as a silhouette (`field-menu-guide` 2440).
 const SILHOUETTE: [f32; 4] = [139.0 / 255.0, 113.0 / 255.0, 88.0 / 255.0, 1.0];
 
@@ -210,10 +218,6 @@ const TOOLS_TITLE_EARLY: f32 = 1.0;
 
 /// The Gathering Tools page's title.
 pub const TOOLS_TITLE: u32 = 4_194_514;
-
-/// The Gathering Tools page's slide-in runs this many frames behind the age counted from A (`field-menu-pages` 2630 and 2640, A on 2580: the page at 0.604 and 0.937 of
-/// its opacity where the age gives 0.659 and 0.949); the menu's going out under it is on time. STAND-IN: fitted to those two frames.
-const TOOLS_SLIDE_LATE: f32 = 0.9;
 /// The page's strings: "Container", "Empty" and "All".
 pub const CONTAINER_TITLE: u32 = 6_684_760;
 const EMPTY_WORD: u32 = 6_684_711;
@@ -234,8 +238,6 @@ const CURSOR_LOOP: f32 = 120.0;
 const CURSOR_PHASE_LAG: f32 = -0.1;
 /// The Effects list's scroll bar's slider with the list not scrolled: from the bar's top, its length (STAND-IN: the capture's, the rule is not read).
 const EFFECT_THUMB: [f32; 2] = [18.0, 462.0];
-/// The tools' cursor: its loop started later (STAND-IN: `field-menu-pages` 2650).
-const TOOLS_CURSOR_LAG: f32 = -1.0;
 /// The scroll bar's slider with the grid not full: from the bar's top, its length (STAND-IN: the capture's, the rule is not read).
 const SHELF_THUMB: [f32; 2] = [18.0, 390.0];
 /// The count's label and number: where the capture puts them in the `cc` node (the layout's are (-52, 31) and (-5, 31); the game's code
@@ -286,7 +288,7 @@ struct Over {
     tint: Option<[f32; 4]>,
     /// The node's turn (degrees clockwise) and scale where an animation sets them.
     turn: Option<f32>,
-    scale: Option<f32>,
+    scale: Option<[f32; 2]>,
     /// A picture cut at this share of its width (the quality gauge).
     crop: Option<f32>,
     /// A picture's colour where an animation sets it (0 to 1).
@@ -640,7 +642,7 @@ impl Page {
                 match path {
                     ["top", "icon", icon] if place(icon).is_none_or(|i| i >= n) => Over { hide: true, ..Default::default() },
                     ["top", "icon", icon, "hilight"] => Over { show: place(icon) == Some(look.card), turn: Some(clock.rem_euclid(ROTATION_FRAMES) * 360.0 / ROTATION_FRAMES), ..Default::default() },
-                    ["top", "icon", _, "hilight", "hilight_eff"] => Over { scale: Some(1.0 + 0.2 * (1.0 - (-10.0 * eff / EFFECT_FRAMES).exp2())), alpha: Some(glow), ..Default::default() },
+                    ["top", "icon", _, "hilight", "hilight_eff"] => Over { scale: Some([1.0 + 0.2 * (1.0 - (-10.0 * eff / EFFECT_FRAMES).exp2()); 2]), alpha: Some(glow), ..Default::default() },
                     ["top", "icon", icon, "face"] => Over { image_no: place(icon).and_then(|i| look.party.get(i)).map(|m| usize::from(m.id)), ..Default::default() },
                     ["top", "btn", "L2_node"] => Over { at: Some([first_x, 16.0]), ..Default::default() },
                     ["top", "btn", "L2_node", "select_L"] => Over { text: Some(LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
@@ -679,8 +681,8 @@ impl Page {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
-        let into = |total: f32| look.leaving.map_or(look.age - TOOLS_SLIDE_LATE, |out| total - out);
-        let (base, add, f) = cursor_colors(look.age + TOOLS_CURSOR_LAG);
+        let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
+        let (base, add, f) = cursor_colors(look.age);
         let over = |path: &[&str]| -> Over {
             match path {
                 ["top"] => Over { show: true, ..Default::default() },
@@ -705,7 +707,7 @@ impl Page {
             w.slid(Slide::in_from(into(SLIDE_FRAMES), [40.0, 0.0]), |w| self.item_card(w, &root, "normal_item", None, card, look.party));
         }
         // (the title plate goes a frame and a tenth ahead of the other parts: `field-menu-pages` 2740, 0.949 of its opacity to their 0.965)
-        let title_in = look.leaving.map_or(look.age, |out| SLIDE_FRAMES - out - TOOLS_TITLE_EARLY);
+        let title_in = look.leaving.map_or(look.plate_age, |out| SLIDE_FRAMES - out - TOOLS_TITLE_EARLY);
         self.caption_plate(&mut w, &root, TOOLS_TITLE, Slide::in_from(title_in, [0.0, -30.0]));
         (w.out, w.additive, w.clips)
     }
@@ -781,6 +783,10 @@ impl Page {
                     let k: usize = item.strip_prefix("node_item").and_then(|n| n.parse().ok()).unwrap_or(usize::MAX);
                     let Some(card) = cards.get(k) else { return Over { hide: true, ..Default::default() } };
                     match rest {
+                        ["node_center"] => {
+                            let (turn, squash) = CARD_TILTS[k % CARD_TILTS.len()];
+                            Over { turn: Some(turn), scale: Some([1.0, squash]), ..Default::default() }
+                        }
                         ["node_center", "node_adjust_scaling", "node_hl"] => Over { show: k == sub.cursor, ..Default::default() },
                         ["node_center", "node_adjust_scaling", "node_hl", "img_hl"] => Over { paint: Some([1.0, 1.0, 1.0, (120.0 * blink).round() / 255.0]), ..Default::default() },
                         ["win", "tag", "text_title"] => Over { text: string(if card.revealed { card.name } else { crate::library::UNKNOWN_NAME }), ..Default::default() },
@@ -1065,15 +1071,16 @@ impl Page {
     }
 }
 
-/// The game's animation clock loses a frame now and then: the first stall is at `STALL_FIRST` (game frames of the captures) and the
-/// next ones `STALL_EVERY` apart (1 / 0.9938, the Guide's blink rate). STAND-IN: the Equipment page's blink is 1 frame ahead of the clock
-/// on 2190 to 2260, in step on 2290 to 2420 (a stall between 2260 and 2290) and 1 behind on 2430 to 2490 (the next between 2420 and 2430).
-const STALL_FIRST: f32 = 2265.0;
-const STALL_EVERY: f32 = 161.3;
+/// The game's animation clock loses a frame now and then: it falls one more behind the game's frames every `STALL_EVERY` frames counted from frame 0 of the
+/// capture's run (stalls at 14, 15, 16 ... times that: 2264, 2425, 2587 ...). The Equipment page's blink is 1 frame ahead of the clock on 2190 to 2260, in step
+/// on 2290 to 2420 (a stall between 2260 and 2290) and 1 behind on 2430 to 2490 (the next between 2420 and 2430), and the Gathering Tools page (A on 2580) starts one
+/// frame later than the Container's (A on 2000) by the stall on 2587; the period is 161.7 inside the three bounds (161.43 to 162 from the first two, above 161.25
+/// from the third) and 1 / 0.9938, the Guide's blink rate, is 161.3 within that rate's error. The cause of the stall is not read.
+const STALL_EVERY: f32 = 161.7;
 
 /// The animation clock's reading at game frame `frame`: the frame less the stalls so far.
 pub fn animation_clock(frame: f32) -> f32 {
-    frame - ((frame - STALL_FIRST) / STALL_EVERY).floor()
+    frame - (frame / STALL_EVERY).floor()
 }
 
 /// `anm_common_blink`: the opacity goes from whole to none and back in 120 frames (a byte's steps), looping.
@@ -1252,7 +1259,7 @@ impl Walker<'_> {
                 xf
             } else {
                 let turn = o.turn.unwrap_or_else(|| numbers(e, "rot").get(2).copied().unwrap_or(0.0));
-                let mut scale = o.scale.map_or_else(|| pair(e, "scale", [1.0; 2]), |s| [s; 2]);
+                let mut scale = o.scale.unwrap_or_else(|| pair(e, "scale", [1.0; 2]));
                 // (a half turn about the vertical axis, `rot="0, 180, 0"`, mirrors the node across its left edge)
                 if numbers(e, "rot").get(1).is_some_and(|y| (y.abs() - 180.0).abs() < 0.5) {
                     scale[0] = -scale[0];
@@ -1645,6 +1652,24 @@ mod tests {
         assert_eq!([a.alpha, b.alpha].map(|v| (v * 255.0).round() as u32), [149, 43]);
         assert!((a.dy - 4.13).abs() < 0.02 && (b.dy - 14.82).abs() < 0.02, "{} {}", a.dy, b.dy);
         assert_eq!(Slide::slots_out(24.0).alpha, 0.0);
+    }
+
+    #[test]
+    fn the_items_cards_tilt_about_the_centre_node_to_the_captured_corners() {
+        // `field-menu-guide` 2400, 1080 lines: card 1's first piece, upright at (179.535, 229.425), is drawn with its top left corner at
+        // (310.598, 188.700); card 2's (506.235, 229.425) with its top right (767.535, 229.425) at (594.184, 214.527).
+        let k = 1.5;
+        let tilted = |centre: [f32; 2], tilt: (f32, f32), corner: [f32; 2]| {
+            let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: 0.0, y: 0.0 };
+            let me = root.node(centre, tilt.0, [1.0, tilt.1]);
+            // the corner in the node's own layout pixels: its offset from the node's screen place, over the scale
+            let [cx, cy] = root.apply(centre);
+            me.apply([(corner[0] - cx) / k, (corner[1] - cy) / k])
+        };
+        let [x, y] = tilted([206.0, 262.0], CARD_TILTS[0], [179.535, 229.425]);
+        assert!((x - 310.598).abs() < 0.05 && (y - 188.700).abs() < 0.05, "{x} {y}");
+        let [x, y] = tilted([206.0 + 217.8, 262.0], CARD_TILTS[1], [767.535, 229.425]);
+        assert!((x - 594.184).abs() < 0.05 && (y - 214.527).abs() < 0.05, "{x} {y}");
     }
 
     #[test]

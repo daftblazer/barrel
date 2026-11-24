@@ -731,7 +731,7 @@ fn compare(s: &Setup, g: &[Q], b: &[Q], mut line: impl FnMut(&str)) -> usize {
     let (mut i, mut j, mut bad) = (0, 0, 0);
     let show = |q: &Q| match &q.text {
         Some(t) => format!("text {t:?} rect {:?} color {:?}", q.rect, q.color),
-        None => format!("{} rect {:?} uv {:?} color {:?}", tex(&q.tex), q.rect, q.uv, q.color),
+        None => format!("{} rect {:?} uv {:?} color {:?}{}", tex(&q.tex), q.rect, q.uv, q.color, q.corners.map_or(String::new(), |c| format!(" corners {c:?}"))),
     };
     while i < n || j < m {
         if i < n && j < m && same(&g[i], &b[j]) {

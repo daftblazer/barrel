@@ -3098,7 +3098,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 let ids: Vec<u8> = menu_shown.party.iter().map(|m| m.id).collect();
                 let item = tools.get(pick.cell).map(|u| items.card(u, &ids, tables.image(u.item)));
                 let images: Vec<usize> = tools.iter().map(|u| tables.image(u.item)).collect();
-                let look = barrel_ryza::field_page::ToolsLook { party: &menu_shown.party, images: &images, cursor: pick.cell, item: item.as_ref(), age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving };
+                let look = barrel_ryza::field_page::ToolsLook { party: &menu_shown.party, images: &images, cursor: pick.cell, item: item.as_ref(), age: pick.page_age(menu_tick), plate_age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving };
                 let (mut quads, additive, clips) = view.tools_quads(&look, (width, height));
                 quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
                 layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
