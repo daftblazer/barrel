@@ -474,6 +474,12 @@ impl Pick {
         if self.status { STATUS_PAGE_OUT } else { PAGE_OUT }
     }
 
+    /// Frames from B on the page to its last part's going: the Status page's slides run out (`PAGE_GONE`); the Equipment page's are not
+    /// animated, so it stays as it was until the menu is back.
+    pub fn page_gone(&self) -> f32 {
+        if self.status { PAGE_GONE } else { PAGE_OUT }
+    }
+
     /// Frames from A on the card to the page's first frame.
     pub fn page_at(&self) -> f32 {
         if self.status { STATUS_PAGE_AT } else { PAGE_AT }
@@ -590,7 +596,7 @@ impl Nav {
     pub fn page_leaving(&self, at: f32) -> Option<(&Pick, f32)> {
         let p = self.pick.as_ref().filter(|p| p.confirmed.is_some() && p.leaving.is_some()).or(self.left.as_ref())?;
         let out = at - p.leaving?;
-        (out >= 0.0 && out < PAGE_GONE).then_some((p, out))
+        (out >= 0.0 && out < p.page_gone()).then_some((p, out))
     }
 
     /// A direction on the Equipment page: the four slots are two rows of two (weapon and armour, the two accessories), so down
