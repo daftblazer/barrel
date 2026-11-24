@@ -28,8 +28,10 @@ pub const TURN_RATE: f32 = 12.0;
 pub const RADIUS: f32 = 30.0;
 pub const HEIGHT: f32 = 170.0;
 pub const STEP_UP: f32 = 60.0;
-// Measured: walk-30 frames 2922-3164 (every other frame she climbs exactly 0.14).
-/// The most she climbs in a frame after one that climbed more.
+// Measured: walk-30 frames 2922-3164 (sliding up a slope along a wall, every other frame she climbs
+// exactly 0.14 whatever the edge). FITTED: 0.1435, so that the first fence's short step is the
+// game's 1.896 on Barrel's floors; the game's own constant is not found (docs/ryza/open.md).
+/// The most she climbs in a frame after one that slid along a wall and climbed more.
 pub const CLIMB_CAP: f32 = 0.1435;
 
 // STAND-IN: The mixing time between motions is chosen; the real thing is the game's own blend times.
@@ -83,8 +85,9 @@ pub struct Player {
     pub height: f32,
     /// Her last move climbed more than `CLIMB_CAP`: the next one may climb only that much.
     climbed: bool,
-    /// She was held by a wall last frame / is to stand this frame.
+    /// A wall moved her last frame.
     touching: bool,
+    /// She met a wall last frame and stands this one.
     stall: bool,
 }
 
@@ -280,6 +283,45 @@ mod tests {
         let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
         run(&mut p, [0.0, 1.0], 2.0, Some(&walls));
         assert!(p.at.z > 300.0, "{:?}", p.at);
+    }
+
+    #[test]
+    fn she_stops_at_a_wall_and_stands_a_frame_before_she_slides() {
+        let wall = barrel_engine::walk::Wall { a: [-5000.0, 200.0], b: [5000.0, 200.0], low: -100.0, high: 300.0, outline: None };
+        let walls = Walls::from_walls(vec![wall], 1000.0);
+        let mut p = Player::new(Vec3::new(0.0, 0.0, 100.0), 0.0, &LENGTHS);
+        let lean = [0.6, 0.8];
+        let moves: Vec<[f32; 2]> = (0..14).map(|_| p.step(lean, 1.0 / 60.0, None, Some(&walls))).collect();
+        // Eight units a frame along z up to the wall's radius short (172): the tenth frame arrives, the next stands.
+        assert!((p.at.z - (200.0 - RADIUS)).abs() < 0.1, "{:?}", p.at);
+        let arrived = moves.iter().position(|m| m[1] < 7.9).unwrap();
+        assert!(moves[arrived][1] > 0.0 && moves[arrived + 1] == [0.0, 0.0], "{moves:?}");
+        // Then along the wall at the lean's share of the speed (6 a frame).
+        assert!((moves[arrived + 2][0] - 6.0).abs() < 0.01 && moves[arrived + 2][1].abs() < 0.01, "{moves:?}");
+    }
+
+    #[test]
+    fn a_slide_up_a_slope_climbs_a_little_every_other_frame() {
+        // A ramp rising 0.1 a unit along x, a wall along x at z = 200, a lean 20 degrees off the wall.
+        let ramp = barrel_formats::g1co::Collision {
+            nodes: vec![],
+            triangles: vec![[0, 1, 2], [2, 1, 3]],
+            vertices: vec![[-1000.0, -100.0, -1000.0], [20000.0, 2000.0, -1000.0], [-1000.0, -100.0, 1000.0], [20000.0, 2000.0, 1000.0]],
+        };
+        let ground = Ground::new(None, &ramp, barrel_engine::walk::DEFAULT_SLOPE);
+        let wall = barrel_engine::walk::Wall { a: [-5000.0, 200.0], b: [50000.0, 200.0], low: -100.0, high: 3000.0, outline: None };
+        let walls = Walls::from_walls(vec![wall], 1000.0);
+        let y0 = ground.height(0.0, 100.0, 0.0, 1.0).unwrap();
+        let mut p = Player::new(Vec3::new(0.0, y0, 100.0), 0.0, &LENGTHS);
+        let lean = [0.9397, 0.342];
+        let moves: Vec<f32> = (0..80).map(|_| p.step(lean, 1.0 / 60.0, Some(&ground), Some(&walls))[0]).collect();
+        // Once along the wall the steps alternate: the projection (9.4), then as far as the ground
+        // rises `CLIMB_CAP` (1.435 at a grade of 0.1).
+        let tail = &moves[60..];
+        let (long, short): (Vec<f32>, Vec<f32>) = (tail.iter().step_by(2).copied().collect(), tail.iter().skip(1).step_by(2).copied().collect());
+        let (hi, lo) = if long[0] > short[0] { (long, short) } else { (short, long) };
+        assert!(hi.iter().all(|&m| (m - 9.4).abs() < 0.1), "{hi:?}");
+        assert!(lo.iter().all(|&m| (m - CLIMB_CAP / 0.1).abs() < 0.05), "{lo:?}");
     }
 
     #[test]

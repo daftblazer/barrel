@@ -1574,25 +1574,72 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
        51 degrees, while she slides at 78; at the corner it stays on the stick), and the camera
        follows where she went at a rate in proportion to her speed below 504 units a second
        (0.12 degrees a frame for each unit a frame across its view; the full 1.0125 at a run).
-       Left in this stretch (2780 to 3299 still 211 units, 15 degrees at most):
-       - Every other frame while she slides uphill (2922 to 2966 along the first fence, and
-         3115 to 3164 down the stair's top) she moves a short constant step instead of the
-         projected one: 1.90 units (the first fence), 2.08, then 2.20 (the two edges of the
-         stairs' side), each ending 0.14 off the wall, never in a way that follows the stick,
-         so her slide's mean speed is 70 to 75% of the projection there and Barrel is ahead by
-         up to 36 units by 2940. Not explained: it is not the fence's hull (it starts 4 frames
-         after the contact, 71 units from it, and the stairs have none), not a raw stick
-         (the step's size does not follow the camera), not the frame's parity. She climbs 0.07
-         to 0.08 of her run there (4 degrees; no walk-30 run is uphill otherwise, and the
-         slides at 0.02 are plain projections).
-       - From 2967 to 2977 she is held 1.94 above the heightmap (Barrel's ground matches hers to
-         0.11 everywhere else: `barrel-tool walk-ground`) as the ground falls 2 units a frame,
-         then lands at 2978 and creeps 12 frames (0.48 a frame decaying to 0.19, the camera
-         still following) before running on at 2990. No rule yet: one sample.
-       - The pairs also end at 28.00 and 28.14 from the wall in turn, even where both frames
-         are plain projections (2990 to 3020).
-    3. The stairs' heights (7 up at the top step, 3.4 along), the camera starting at 393.25 and
-       400 from her first step, the pitch's transient (0.6 degrees).
+       Solved in part 3 (2026-11-24), both built in `barrel_ryza::player`:
+       - **The climb cap.** Her distance from the wall alternates every frame while she slides:
+         28.00 (she moved into the wall and was pushed out: a long frame) and 28.14 to 28.15 (a
+         frame that moved her 0.145 away: a short one). On a slope that rises more than 0.14 a
+         frame the short frames climb exactly 0.14 (0.13 to 0.14 over 120 frames and three
+         different edges, whose short steps are 1.90, 2.07 and 2.13 long): not a step length but
+         a rise, `CLIMB_CAP`, a step ending where the ground has risen 0.1435 (fitted on the
+         first fence, whose 1.896 step is 0.1435 of rise on Barrel's floors; 0.14 at the
+         measurement's 0.01), the same size as the 0.145 the short frames move away from the wall
+         (a contact offset: both are probably one constant, 0.005 of her radius). The long
+         frames climb 0.27 to 0.6 unchecked. Built as: while she slid along a wall (the walls
+         moved her) and climbed more than the cap, the next frame's move is cut where the ground
+         has risen the cap. Where the slide climbs less (the flat stretch 2990 to 3020, whose
+         frames climb 0.10 to 0.14) the cap never binds, though the 28.00 / 28.14 alternation is
+         there too; downhill (3100 to 3113) there is neither the alternation nor a cap. Not
+         explained: which frames are the short ones at the start (the first three frames after
+         the contact, 2918 to 2920, are all unchecked and end 0.14 off the wall; the first
+         short frame is 2922), nor the 28.14 / 28.00 alternation itself (a reflection about
+         28.07 of her distance each frame; Barrel's walls leave her at 28.00 every frame).
+       - **The stop at a wall's first contact.** At 2916 she runs to the wall and stops where she
+         meets it (28.003, the rest of the move lost, not slid), stands the next frame (2917:
+         0.000), and slides from 2918. Built as `Player::stall`: a frame that first touches a
+         wall (none the frame before) ends at the touch, the next stands. One sample (it
+         removed a 5.5-unit offset along the whole fence); whether the
+         stand is one frame in general, or the same mechanism as the 12-frame creep below, is
+         not told.
+       Walk-30 now (`walkdiff`): to frame 2966 the fence slide is within 5.9 units, 0.33 degrees
+       (the whole walk to 2966: 11.04 and 0.34, the 2230 to 2540 segments'); 3100 to 3299
+       4.0 units, 2.03 degrees; 3300 to 3700 0.18, 1.68 degrees; 2780 to 3079 still 93 units
+       (below). Left, largest first:
+       - **The fall and the landing, 2967 to 2989 (all of the 93 units).** The ground there is the
+         placed cliff mesh's floor (`shape 6`; the heightmap is 120 below), and a floor
+         triangle with its apex at (31905, 5979, 33846). From 2967 to 2977 she is 1.94 above the
+         floor under her (the offset is constant to 0.01: her feet follow the floor's fall of
+         1.95 to 2.23 a frame exactly), having risen 1.19 at 2967 while the floor dropped 0.64;
+         at 2978 she leaves that triangle (Barrel's floor changes there too, to 5982.42) and drops
+         4.0 to 5982.50, still 0.08 above. During the hover she slides along the wall as a plain
+         projection with no 28.00 / 28.14 alternation (28.12 throughout). Barrel's walk follows
+         the floor and is 5 below at 2967 to 2977 (the walk-ground output, `highest` and `under`
+         agree), so the cause is in the game's floor there (a placement of that triangle's mesh
+         lower by 1.94, or a rule keeping her up: not told) and no landing happens in Barrel.
+         **The landing stall** (2979 to 2989, then free at 2990): her steps along the wall are
+         0.545, 0.479, 0.424, 0.392, 0.353, 0.312, 0.292, 0.251, 0.241, 0.212, 0.190, each 0.90
+         of the one before (a decay of 0.9 a frame, as if the stick were ignored and what was
+         left of her speed coasted), 27.83 from the wall at the first (0.17 inside it) and
+         creeping out 0.02 a frame, the camera following as little; at 2990 she moves 7.076
+         along the stick again. Eleven frames, from the landing at 2978. Not built: Barrel has
+         no landing to trigger it.
+       - The camera's yaw, 2.0 degrees by 3164 (3100 to 3299) and constant 1.7 after it: the steps
+         along the wall are 0.8 to 1.2 percent shorter than the game's (7.07 against 7.15 at
+         3103; 3 percent at 3100, the corner's first step). The game's long steps are not the
+         plain projection of its lean on the wall: against 10 times the cosine of the angle
+         taken with the camera's yaw as the frame began, they run -2.0% (uphill along the
+         first fence), 0.0% (the flat stretch, 2990 to 3020), +1.0% (downhill along the stairs'
+         side, 3100 to 3113) and +0.2% (uphill there), as if the camera's yaw she moves
+         against were up to 0.6 degrees ahead of or behind the one read, in a way that
+         follows the slope and the camera's step that frame (0.2 on short frames, 0.6 to 0.9
+         on long). Not explained.
+    3. The stairs' heights (7 up at the top step, 3.4 along; with the xz error 3.4, within the
+       11), the camera starting at 393.25 and 400 from her first step, the pitch's transient
+       (0.6 degrees). The stairs' 7.25: the game's feet at 1915 to 1933 are 1.55 above the
+       heightmap and 6.0 to 6.4 below the placed ramp mesh's floor (`shape 1467`, 20 triangles:
+       a floor 6.2 above her, parallel to hers to 0.1), which Barrel's `STEP_UP` of 60 climbs
+       (0.6 up at 1915, then 2.5): not by a step rule (a `STEP_UP` of 5 changes nothing there:
+       the ramp is within reach at 1915) but by that mesh's placement or its being no floor of
+       hers; the same kind of offset as the 1.94 under the fall. Not solved.
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair
