@@ -3163,12 +3163,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         card: pick.card,
                         item_images: &|i| tables.image(i),
                         slot: pick.slot,
-                        slot_age: menu_tick - pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_page::BLINK_FROM) + barrel_ryza::field_page::BLINK_LAG,
+                        slot_age: barrel_ryza::field_page::animation_clock(menu_tick) - barrel_ryza::field_page::animation_clock(pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_page::BLINK_FROM)) + barrel_ryza::field_page::BLINK_LAG,
                         age: menu_tick - pick.confirmed.unwrap_or(0.0),
                         status: pick.status,
                         skills: &skills,
                         row: pick.row,
                         leaving,
+                        swap: pick.swap.and_then(|s| Some((menu_shown.party.get(s.from)?.id, menu_tick - s.at + 1.0, s.way))),
                     };
                     let (mut quads, additive, clips) = view.quads(&look, (width, height));
                     // The page's own help bar: the menu's plate and words over the page's textures.

@@ -53,7 +53,7 @@ const BLINK_FRAMES: f32 = 120.0;
 pub const BLINK_LAG: f32 = 1.0;
 /// The slot cursor's blink runs from this many frames after A on the card, before any move (`field-menu-equip` 2290: phase 29 of 120).
 /// STAND-IN: one sample (the page itself is first drawn at `PAGE_AT`).
-pub const BLINK_FROM: f32 = 2.0;
+pub const BLINK_FROM: f32 = 1.0;
 /// The icon highlight's animations: a turn in 360 frames; the glow's 100 frames, its opacity peak (frame 2.82, 100 of 255) and a lag
 /// STAND-IN fitted to the capture's opacity of 33/255 on 2410.
 const ROTATION_FRAMES: f32 = 360.0;
@@ -77,6 +77,11 @@ const BROWN: [f32; 4] = [26.0, 0.0, 0.0, 255.0];
 /// (`anm_common_juvenile_fade_in`, 60 frames at twice the speed).
 const SLIDE_FRAMES: f32 = 30.0;
 const NAME_DELAY: f32 = 6.0;
+/// The Equipment page's slots going out: frames (the page's own, `Pick::page_out`) and the sink in layout pixels (fitted to 2510, 2520).
+const SLOT_OUT_FRAMES: f32 = 24.0;
+const SLOT_SINK: f32 = 20.0;
+/// The figures' change of character (`anm_chara_in`, `anm_chara_change_out`: 24 frames).
+const CHANGE_FRAMES: f32 = 24.0;
 const FACE_FADE_FRAMES: f32 = 30.0;
 /// The skills list: the cursor's place in the window's body, a row's height, and the cursor's glow (`anm_cursor_blink_ex_skill`).
 const CURSOR_AT: [f32; 2] = [-13.0, 25.0];
@@ -256,6 +261,8 @@ pub struct Look<'a> {
     pub leaving: Option<f32>,
     /// The item under the Equipment page's cursor.
     pub item: Option<&'a Card>,
+    /// A change of character in progress: the figure of the one left, the frames since the key and the way (+1 RT, -1 LT).
+    pub swap: Option<(u8, f32, i32)>,
 }
 
 /// A node the game's code changes: shown or hidden outright, another picture or another text.
@@ -475,7 +482,9 @@ impl Page {
         let clock = look.age;
         // (leaving: the slide-in played backwards, the part's own delay counted from B)
         let into = |delay: f32| look.leaving.map_or(clock - delay, |out| SLIDE_FRAMES - (out - delay).max(0.0));
-        let slide = |delay: f32, from: [f32; 2]| if look.status { Slide::in_from(into(delay), from) } else { Slide::NONE };
+        // (the Equipment page's parts are whole when it is shown, and slide only on the way out)
+        let moves = look.status || look.leaving.is_some();
+        let slide = |delay: f32, from: [f32; 2]| if moves { Slide::in_from(into(delay), from) } else { Slide::NONE };
         let name = self.strings.get(&(262_148 + u32::from(look.member.id))).cloned().unwrap_or_default();
 
         // The character's figure (`uil_a21_menu_chara.xml`'s `chara_image_1`, whose place the equip layout sets: `chara_image_pos`;
@@ -505,7 +514,16 @@ impl Page {
             let at = find_pos(&self.equip, "chara_image_pos").unwrap_or([0.0; 2]);
             if let Some(e) = find(&self.chara, "chara_image_1") {
                 let xf = root.node(at, 0.0, [1.0; 2]);
-                w.image(e, xf, &figure);
+                // The character change (`anm_chara_change_out` and `anm_chara_in`, 24 frames; RT uses the `_rev` pair): the old figure
+                // fades out linearly and goes 30 pixels along by `easing_insine`, the new fades in and comes from 30 back by `easing_outsine`.
+                if let Some((from, frames, way)) = look.swap.filter(|&(_, frames, _)| frames < CHANGE_FRAMES) {
+                    let t = frames / CHANGE_FRAMES;
+                    let (old, new) = (Over { show: true, image_no: Some(usize::from(from)), ..Default::default() }, 30.0 * way as f32);
+                    w.slid(Slide { alpha: 1.0 - t, dx: new * (1.0 - (t * std::f32::consts::FRAC_PI_2).cos()), dy: 0.0 }, |w| w.image(e, xf, &old));
+                    w.slid(Slide { alpha: t, dx: -new * (1.0 - (t * std::f32::consts::FRAC_PI_2).sin()), dy: 0.0 }, |w| w.slid(slide(0.0, [-40.0, 0.0]), |w| w.image(e, xf, &figure)));
+                } else {
+                    w.slid(slide(0.0, [-40.0, 0.0]), |w| w.image(e, xf, &figure));
+                }
             }
         }
 
@@ -568,7 +586,9 @@ impl Page {
                     _ => Over::default(),
                 }
             };
-            w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &slots, &HashMap::new());
+            // (going out, the slots fade linearly and sink 20 pixels, in sine: read off 2510 and 2520)
+            let gone = look.leaving.map_or(Slide::NONE, Slide::slots_out);
+            w.slid(gone, |w| w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &slots, &HashMap::new()));
         }
 
         // The item card of the slot under the cursor, at the item-info place of the equip layout (`item_info_pos` and its battle child).
@@ -627,7 +647,7 @@ impl Page {
                 }
             };
             // (`anm_common_juvenile_fade_in` at twice its speed: the cube of the time over 30 frames)
-            let fade = if look.status { Slide { alpha: (into(0.0) / FACE_FADE_FRAMES).clamp(0.0, 1.0).powi(3), dx: 0.0, dy: 0.0 } } else { Slide::NONE };
+            let fade = if moves { Slide { alpha: (into(0.0) / FACE_FADE_FRAMES).clamp(0.0, 1.0).powi(3), dx: 0.0, dy: 0.0 } } else { Slide::NONE };
             w.slid(fade, |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &icons, &HashMap::new()));
         }
 
@@ -1042,6 +1062,17 @@ impl Page {
     }
 }
 
+/// The game's animation clock loses a frame now and then: the first stall is at `STALL_FIRST` (game frames of the captures) and the
+/// next ones `STALL_EVERY` apart (1 / 0.9938, the Guide's blink rate). STAND-IN: the Equipment page's blink is 1 frame ahead of the clock
+/// on 2190 to 2260, in step on 2290 to 2420 (a stall between 2260 and 2290) and 1 behind on 2430 to 2490 (the next between 2420 and 2430).
+const STALL_FIRST: f32 = 2265.0;
+const STALL_EVERY: f32 = 161.3;
+
+/// The animation clock's reading at game frame `frame`: the frame less the stalls so far.
+pub fn animation_clock(frame: f32) -> f32 {
+    if frame < STALL_FIRST { frame } else { frame - ((frame - STALL_FIRST) / STALL_EVERY).floor() - 1.0 }
+}
+
 /// `anm_common_blink`: the opacity goes from whole to none and back in 120 frames (a byte's steps), looping.
 fn blink(frames: f32) -> f32 {
     let t = frames.rem_euclid(BLINK_FRAMES);
@@ -1134,6 +1165,13 @@ impl Slide {
     /// (`easing_outcubic`), `frames` after the animation began.
     fn in_from(frames: f32, from: [f32; 2]) -> Slide {
         Slide::over(frames, SLIDE_FRAMES, from)
+    }
+
+    /// The Equipment page's slots `frames` after B: the opacity falls linearly over `SLOT_OUT_FRAMES` while they sink
+    /// `SLOT_SINK` layout pixels by `easing_insine`.
+    fn slots_out(frames: f32) -> Slide {
+        let p = (frames / SLOT_OUT_FRAMES).clamp(0.0, 1.0);
+        Slide { alpha: 1.0 - p, dx: 0.0, dy: SLOT_SINK * (1.0 - (p * std::f32::consts::FRAC_PI_2).cos()) }
     }
 
     /// The same over `total` frames (`speed` 0.75 of the Container page: 40).

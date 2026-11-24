@@ -475,6 +475,16 @@ pub struct Pick {
     pub sub_first: [Option<f32>; 2],
     /// The frame the top's cursor last moved to another button: its highlight's blink begins again there (`field-menu-guide2` 2330 and 2370: whole opacity on the key's frame).
     pub moved: Option<f32>,
+    /// The last change of character on the page (LT or RT): the card it left, the frame and the way.
+    pub swap: Option<Swap>,
+}
+
+/// A change of character on a page: the card left, the frame of the key and the way (+1 RT, -1 LT).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Swap {
+    pub from: usize,
+    pub at: f32,
+    pub way: i32,
 }
 
 /// A sub-page of the Guide's top: its button's place (0 Items, 1 Effects/Traits), the frame of the A that opened it and of the B that leaves it.
@@ -669,7 +679,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None, sub_first: [None; 2], moved: None });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None, sub_first: [None; 2], moved: None, swap: None });
         }
         if matches!(self.cursor, CONTAINER | TOOLS | GUIDE_BUTTON) {
             // (no pick: the page is the button's; its first frame comes `ITEM_PAGE_LATER` frames after A, like a card's A on the Status page)
@@ -681,7 +691,7 @@ impl Nav {
             if self.cursor == GUIDE_BUTTON {
                 self.ring_again = Some(at + GUIDE_RING_AT);
             }
-            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None, sub_first: [None; 2], moved: None });
+            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None, sub_first: [None; 2], moved: None, swap: None });
         }
     }
 
@@ -809,7 +819,11 @@ impl Nav {
             return;
         }
         if let Some(p) = self.pick.as_mut() {
+            let from = p.card;
             p.card = (p.card as i32 + way).rem_euclid(party as i32) as usize;
+            if p.card != from {
+                p.swap = Some(Swap { from, at, way });
+            }
         }
     }
 
@@ -1873,7 +1887,7 @@ mod tests {
     fn the_guide_bar_fades_in_late_and_out_from_the_third_frame() {
         let (bar_in, bar_out) = (GUIDE_BAR_AT, GUIDE_BAR_OUT_AT);
         assert_eq!((bar_in, bar_out), (18.0, 3.0));
-        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None, sub_first: [None; 2], moved: None }.slides());
+        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None, sub_first: [None; 2], moved: None, swap: None }.slides());
     }
 
     #[test]
