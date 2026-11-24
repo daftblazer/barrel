@@ -442,6 +442,8 @@ pub struct Nav {
     ring_skew: f32,
     /// The frame the ring's loop runs from (the menu's first frame, or the frame the menu came back from a character pick); the ring is not drawn before it.
     ring_from: f32,
+    /// A frame the ring's loop begins again on, over `ring_from` from then.
+    ring_again: Option<f32>,
 }
 
 /// The character pick (`field-menu-equip`: A on Equip at 2060, the pick's first frame 2102).
@@ -611,7 +613,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0, ring_from: opened }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0, ring_from: opened, ring_again: None }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -654,7 +656,7 @@ impl Nav {
                 _ => ItemPage::Guide,
             };
             if self.cursor == GUIDE_BUTTON {
-                self.ring_from = at + GUIDE_RING_AT;
+                self.ring_again = Some(at + GUIDE_RING_AT);
             }
             self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0 });
         }
@@ -1470,7 +1472,7 @@ impl View {
         part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)]);
         part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
         // The ring runs from the menu's first frame, whichever button has the glow.
-        let since = frame - nav.ring_from;
+        let since = frame - nav.ring_again.filter(|&again| frame >= again).unwrap_or(nav.ring_from);
         // (STAND-IN: the loop's first frame is already a frame in, then the clock stalls one: `field-menu-pages` 3050 at 1 frame, 3060 at 10)
         let t = ((if (0.0..1.0).contains(&since) { 1.0 } else { since } + nav.ring_skew) % RING_LOOP_FRAMES) / 60.0;
         let ring_alpha = if since < 0.0 { 0.0 } else { self.ring_loop[0].at(t)[3] / 255.0 * on_alpha };
@@ -1689,6 +1691,37 @@ mod tests {
         assert_eq!(nav.pick.as_ref().and_then(|p| p.items), Some(ItemPage::Tools));
         assert!(nav.page(2650.0).is_some());
         assert_eq!(replay(&keys, 2740.0, &ORDER).unwrap().blur_out, Some(2729.0));
+    }
+
+    #[test]
+    fn a_on_the_guide_opens_its_page_and_the_menu_stands_until_its_parts_have_faded() {
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2001.0, Key::Down), (2002.0, Key::Down), (2003.0, Key::Down), (2160.0, Key::Confirm), (2310.0, Key::Back)];
+        let nav = replay(&keys, 2250.0, &ORDER).unwrap();
+        let pick = nav.pick.as_ref().unwrap();
+        assert_eq!((nav.cursor, pick.items), (4, Some(ItemPage::Guide)));
+        // (the page's first frame is 42 after A; the menu begins to go out 16 frames after it)
+        assert!(nav.page(2201.0).is_none() && nav.page(2202.0).is_some());
+        assert_eq!(pick.menu_out_later(), GUIDE_MENU_OUT_AT);
+        // B: the menu is back 15 frames later, the page's last part and the blurred picture go after 30.
+        let back = replay(&keys, 2330.0, &ORDER).unwrap();
+        assert_eq!(back.blur_out, Some(2325.0));
+        assert_eq!((back.left.as_ref().unwrap().page_gone(), back.left.as_ref().unwrap().backdrop_hold()), (30.0, 30.0));
+    }
+
+    #[test]
+    fn b_in_the_character_pick_restarts_the_cursors_loops_from_the_menus_return() {
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2001.0, Key::Down), (2002.0, Key::Down), (2100.0, Key::Confirm), (2200.0, Key::Back)];
+        let nav = replay(&keys, 2300.0, &ORDER).unwrap();
+        assert!(nav.pick.is_none());
+        assert_eq!(nav.ring_from, 2200.0 + PICK_OUT_FRAMES);
+        assert_eq!(nav.on[nav.cursor], Some(2200.0 + PICK_GLOW_LATER));
+    }
+
+    #[test]
+    fn the_guide_bar_fades_in_late_and_out_from_the_third_frame() {
+        let (bar_in, bar_out) = (GUIDE_BAR_AT, GUIDE_BAR_OUT_AT);
+        assert_eq!((bar_in, bar_out), (18.0, 3.0));
+        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0 }.slides());
     }
 
     #[test]
