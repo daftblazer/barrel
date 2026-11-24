@@ -1281,7 +1281,8 @@ impl View {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         let (top, page) = match back {
-            Some(b) => ((b - 32.0) / HELP_FADE, 1.0 - (b - 5.0) / HELP_FADE),
+            // (STAND-IN: the top's bar is back 32 frames after B on the Items page and 33 on the others: `field-menu-guide` 2520 against 2790, 3060 and 3330)
+            Some(b) => ((b - if button == 0 { 32.0 } else { 33.0 }) / HELP_FADE, 1.0 - (b - 5.0) / HELP_FADE),
             None => (1.0 - (since - 5.0) / HELP_FADE, (since - GUIDE_SUB_BAR_AT) / HELP_FADE),
         };
         if top > 0.0 {

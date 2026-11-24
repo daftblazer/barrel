@@ -1070,7 +1070,7 @@ const STALL_EVERY: f32 = 161.3;
 
 /// The animation clock's reading at game frame `frame`: the frame less the stalls so far.
 pub fn animation_clock(frame: f32) -> f32 {
-    if frame < STALL_FIRST { frame } else { frame - ((frame - STALL_FIRST) / STALL_EVERY).floor() - 1.0 }
+    frame - ((frame - STALL_FIRST) / STALL_EVERY).floor()
 }
 
 /// `anm_common_blink`: the opacity goes from whole to none and back in 120 frames (a byte's steps), looping.
@@ -1633,5 +1633,22 @@ mod tests {
         assert!((s.alpha - 0.5333).abs() < 0.01, "{}", s.alpha);
         assert!((s.dx + 40.0 * (1.0 - s.alpha)).abs() < 1e-4);
         assert_eq!(Slide::over(40.0, 40.0, [-40.0, 0.0]).dx, 0.0);
+    }
+
+    #[test]
+    fn the_equipment_slots_going_out_match_2510_and_2520() {
+        // 10 and 20 frames after B: 149/255 and 42/255 of the opacity, 4.13 and 14.82 layout pixels down.
+        let (a, b) = (Slide::slots_out(10.0), Slide::slots_out(20.0));
+        assert_eq!([a.alpha, b.alpha].map(|v| (v * 255.0).round() as u32), [149, 43]);
+        assert!((a.dy - 4.13).abs() < 0.02 && (b.dy - 14.82).abs() < 0.02, "{} {}", a.dy, b.dy);
+        assert_eq!(Slide::slots_out(24.0).alpha, 0.0);
+    }
+
+    #[test]
+    fn the_animation_clock_loses_a_frame_between_2260_and_2290_and_again_by_2430() {
+        let behind = |frame: f32| frame - animation_clock(frame);
+        assert_eq!(behind(2290.0) - behind(2260.0), 1.0);
+        assert_eq!(behind(2430.0) - behind(2420.0), 1.0);
+        assert_eq!(behind(2420.0) - behind(2290.0), 0.0);
     }
 }

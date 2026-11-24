@@ -352,8 +352,7 @@ cursor, the help bar and its transients, Settings from the menu there and back (
 Equip and Status, B back from a page, the Equipment page with its item card (2290; 2330-2370, 2410, 2420), the Status page (part 8), the
 item card, the Container and Gathering Tools pages (part 9). The party's numbers come from the game's table (`party_stats.rs`). Left, in
 the order worth doing:
-- Equipment page: the slides and fades on a slot or character change (2380-2400: 2-3 mismatches), the page going out (2500, 2510: about
-  260), the cursor blink one frame behind from 2430 (1 mismatch each to 2490: a stall of the game's clock, part 9). Sections "part 6", "part 7", "part 9" below.
+- Equipment page: done in part 12 (the character change, the page going out, the blink on the game's stalling animation clock); 2300 to 2320 (the page coming in) and 2590 are left.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
 - Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
@@ -2154,3 +2153,35 @@ Left, with causes (frames not at 0 in the final sweeps; the full lists are in th
 - Equipment slides (2380 to 2400), 2510/2520 and the pick going out (field-menu-pages 3020/3030): not worked.
 - The Traits tab, Monsters and Help pages, searching, sorting: no capture.
 
+
+### Field menu, part 12: the Equipment page's slides, the character change, the animation clock's stalls
+
+Built (`crates/ryza/src/{field_page,field_menu,play/mod}.rs`; 23 new `field-menu-equip` frames at 0 in the local `field-menu-rows-pages8.txt`).
+Counts before -> after (`field-menu-equip`): 2380, 2390 3 -> 0; 2400 2 -> 0; 2430 to 2500 1 -> 0 (2190 to 2260 too: 1 -> 0); 2510 164 -> 0; 2520 264 -> 0. `field-menu-guide`
+2790, 3060, 3330: 18 -> 1.
+- The Equipment page going out (B): the figure and the stat panel play their slide-ins backwards as the Status page's do (the figure from 40 pixels to the left, `uil_a21_menu_chara`
+  has no animation for it: the game's code), the party icons fade, the title plate goes up. The four slots fade linearly over 24 frames (`SLOT_OUT_FRAMES`, the page's own `Pick::page_out`)
+  and sink 20 layout pixels by `easing_insine` (`SLOT_SINK`: 4.13 and 14.82 pixels at 2510 and 2520, from the capture's corners). The help bar's plate shrinks as the Container's does
+  (`Bar::out(..).grow` for every page but Status).
+- The character change (LT, RT on the Equipment page, `anm_chara_change_out` and `anm_chara_in` of `uia_a21_main_menu.xml`, 24 frames: `Pick::swap`, `Look::swap`): the old figure
+  fades linearly and goes along by `easing_insine`, the new one fades in and comes from 30 pixels back by `easing_outsine`; RT uses the `_rev` pair (the old figure goes right, the new comes from the left).
+  The frame of the key is the animation's first (age 1).
+- An opacity under a slide is a byte of its own and the product with the part's is floored (not rounded again): a part at 1/255 going out drops to nothing, as the game's trace has it
+  (`Walker::slid`). `barrel-parity` now drops Barrel's quads at no opacity as it drops the game's.
+- The game's animation clock loses a frame every `STALL_EVERY` = 161.3 frames (`field_page::animation_clock`; 1 / 0.9938 of the Guide's blink rate), the first at `STALL_FIRST` = 2265:
+  the slot cursor's blink is 1 frame ahead on 2190 to 2260, in step on 2290 to 2420 and 1 behind on 2430 to 2490 (a stall between 2260 and 2290, the next between 2420 and 2430). STAND-IN:
+  both constants are fitted to those frames (the stall time is only known within 9 frames; the period from the Guide's rate), and the blink's first frame (`BLINK_FROM` 1, was 2).
+  Tried and not kept: the same clock under the menu's cursor ring (the ring's 121-frame loop became 120 on this clock): 12 of the first menu's rows broke (1955, 1970, 1990 ...).
+- The Guide top's bar comes back 33 frames after B on every sub-page but the Items page's (32): `field-menu-guide` 2790, 3060, 3330 18 -> 1 (STAND-IN: the Items page is the one case of the
+  capture at 32, 2520; the others at 33).
+
+Left, with causes (frames counted in `field-menu-pages`, `-guide`, `-status`):
+- The character pick going out (B on the pick: pages 2440 and 3020: 79 mismatches, 2450 and 3030: 49): the game dims the cards to 179/255 on the B frame (217 on the next) and draws the menu's
+  buttons over them at full then 32/255 opacity, while Barrel shows the whole menu at once (`Nav::pick_back` is a STAND-IN: "at once"); 2460 is the ring only. Not worked: it needs the
+  buttons' fade and the cards' tint over a few more captured frames than the every-ten sampling gives.
+- The ring after a page (Container 2190 to 2330, Tools 2750 to 3010 and 2930 to 3000 with the plate's alpha, Status 2690 to 2710: 1 to 4 each): the ring's phase restarts at the return by a rule not found.
+- Gathering Tools 2630 and 2640 (300 each) and the Container coming in 2050 to 2070 (8, 6, 6): not looked at.
+- The Guide's top highlight after a return (`field-menu-guide` 2500 to 2550, 2770 to 2880, 3040 to 3150: 1 each): the game's blink there climbs and falls at half Barrel's slope (2 against 4 bytes
+  a frame from 2520), so it is not a phase shift; RIGHT 2830 and 3100 are inside it.
+- The Item page's card tilt (36 mismatches, 2350 to 2480): not started.
+- `field-menu-equip` 2300 to 2320 (the page coming in, ~650) and 2590 (3) were not in this packet's list and are as before.
