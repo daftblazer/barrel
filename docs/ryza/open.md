@@ -1543,8 +1543,8 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
     128.5 above her feet.
   - **Built (`barrel_ryza::walk`, the window and `barrel-tool walk` share its `step`).** Dead zones
     0.2257 (left, from 108.9 at 12000) and 0.1651 (right), linear; speed 600 times the lean; she
-    moves along the stick against the camera as the frame began and faces where she went (a
-    slide along a wall included; still when held), 0.2 rad a frame, the short way round however
+    moves along the stick against the camera as the frame began and faces the stick's direction
+    (against a wall too, and when held), 0.2 rad a frame, the short way round however
     near half a turn (179.2 degrees went the negative way, 179.99 the positive); the camera turns 1.5 a frame, follows where she went at 1.0125 a frame times the
     sine of the angle across its view (0.7125 measured at 45 degrees against 0.716 here: the
     last half percent is not explained); pitch 0.9375 a frame times the stick for 8 frames at
@@ -1557,33 +1557,40 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
        (`walk::Wall::span`). The stair's side, `A21-S07-STAIR-01_cbvh2.g1co`, falls from 6184 to
        5808 along its 1,100 units and had blocked her at frame 2178, about 186 below its top. The walk now
        holds to 11 units and 0.34 degrees through frame 2779 (`walk-30-to-2779`).
-    2. The fence keeps her further off than Barrel does: from frame 2917 she slides along
-       `A21-COMMON-FENCE-02_cplh1.g1co` (x 31454 to 31797, z 33856 to 33910) about 78 units
-       from its face, and Barrel's 30-unit radius lets her 48 closer (52 units off by 2921, 342
-       at most by 3079). Measured since (2026-11-24, not solved):
-       - The fence's only collision is the one 388-byte `_cplh` hull per fence (no `_cbox`/`_cbvh`/
-         `_ccap` beside it, no unread kind placed there: the only unread files in Rasenboden are
-         the stumps' `_Group<N>.g1co`, far away; `_coll.bin`'s 4 records and `_le.koc`'s quads
-         near it (quads 0 and 5, tops 5945 and 5975, below her 5994 to 6006) are 79 and 198
-         units off her line). The hull is a thin ridge (a 25-deep base at the bottom, a ridge
-         line at the top, 150 high) and its header holds no margin; Barrel's placement of it
-         matches the model's bounds.
-       - The game's path is a straight line, slope 0.192 (10.87 degrees) from (31658, 33807)
-         at 2916 to (32138.6, 33899.3) at 3021, across fences 02 and 03 (their faces run at
-         12.4 and 14.2 degrees) and the 34-unit gap between them; it keeps 70.7 to 83.3 from
-         fence 02's front-bottom edge and 72.0 from fence 03's, then stops dead at 3021 (87
-         short of the next fence's start at x 32226, 85 from fence 03's front corner). So it
-         is not one hull face pushed out by a constant: no per-face offset or inflating the
-         hull by a radius (tried: faces pushed 40 and 48 along their normals; the hull's
-         footprint grown by 40 to 48 as a rounded prism) gives that line: grown hulls
-         reproduce the first contact (z 33806 at 2916 to 2920) but then slide twice as fast
-         (5.2 a frame against 2.7) and run on past fence 03's end.
-       - The early part does not see hulls at all (the same walk to 2779 is identical with the
-         hulls pushed out by 40), so the stair, gate and square match whatever the hulls do.
-       - Open: the slide speed (2.7 a frame at full lean, 74 degrees across the wall) says the
-         game's response is not a plain projection of her move on the face; her facing there
-         turns slowly (8 to 15 degrees by 2940 where Barrel's follows the slide to 81), so
-         the first thing to read is how the game's facing and camera follow a slide.
+    2. Solved (2026-11-24): the fence's wall is not a collision hull but the border of the
+       **walkable mesh** `<field>.g1pf` (docs/formats.md, "Ryza's walkable mesh"). From frame
+       2918 to 3699 her centre is 28.0 units (her `FMrad`) from one of its border edges at every
+       frame (27.83 at the closest, at the first contact), and the straight 10.87-degree line the
+       first try found is the edge from (31428, 33791) to (32171, 33934), 743 units long, which
+       runs across both fences and the gap between them; she stops dead at 3021 in its corner with
+       the next edge (32171, 33934) to (32135, 33649), and leaves along that one from 3100 to
+       the last corner at (32063, 33526). Read as walls (`barrel_formats::g1pf`,
+       `walk::load_terrain`) they put her at the game's corner (3080 to 3099: 0.10 units) and the
+       game's end (3300 to 3700: 0.18 units, the camera 1.9 degrees off), and the mesh alone,
+       without the `_le.koc` quads and the placed models' walls, walks the same to frame 3099 (so
+       what else stops her after the corner is not yet told apart: both are kept). Two rules
+       measured on the way, both built: her facing turns toward the stick's direction, not
+       toward where she went (against the fence it follows the camera's yaw a frame late, 14 to
+       51 degrees, while she slides at 78; at the corner it stays on the stick), and the camera
+       follows where she went at a rate in proportion to her speed below 504 units a second
+       (0.12 degrees a frame for each unit a frame across its view; the full 1.0125 at a run).
+       Left in this stretch (2780 to 3299 still 211 units, 15 degrees at most):
+       - Every other frame while she slides uphill (2922 to 2966 along the first fence, and
+         3115 to 3164 down the stair's top) she moves a short constant step instead of the
+         projected one: 1.90 units (the first fence), 2.08, then 2.20 (the two edges of the
+         stairs' side), each ending 0.14 off the wall, never in a way that follows the stick,
+         so her slide's mean speed is 70 to 75% of the projection there and Barrel is ahead by
+         up to 36 units by 2940. Not explained: it is not the fence's hull (it starts 4 frames
+         after the contact, 71 units from it, and the stairs have none), not a raw stick
+         (the step's size does not follow the camera), not the frame's parity. She climbs 0.07
+         to 0.08 of her run there (4 degrees; no walk-30 run is uphill otherwise, and the
+         slides at 0.02 are plain projections).
+       - From 2967 to 2977 she is held 1.94 above the heightmap (Barrel's ground matches hers to
+         0.11 everywhere else: `barrel-tool walk-ground`) as the ground falls 2 units a frame,
+         then lands at 2978 and creeps 12 frames (0.48 a frame decaying to 0.19, the camera
+         still following) before running on at 2990. No rule yet: one sample.
+       - The pairs also end at 28.00 and 28.14 from the wall in turn, even where both frames
+         are plain projections (2990 to 3020).
     3. The stairs' heights (7 up at the top step, 3.4 along), the camera starting at 393.25 and
        400 from her first step, the pitch's transient (0.6 degrees).
 - **Collision shapes outside their models** (small). With the placement list's per-file

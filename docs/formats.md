@@ -1496,7 +1496,7 @@ ones to the shared walker as walls. The game reads them (`0x140a3c880`, the name
 `Res:Field/%s/%s_le.koc`) as occluders for hiding objects behind them (docs/ryza/open.md,
 "Rasenboden against the game's draws"). Beside it: `_coll.bin` in the main container (Rasenboden:
 4 records of a position, a rotation and a size, likely boxes), `.g1pf` and `.elixir.g1pf`
-(`FP1G`, over a 128,000-unit square: path-finding, not read) and `.trmd` (`TRMD`, 1024 × 1024
+(`FP1G`, over a 128,000-unit square: the walkable mesh, below) and `.trmd` (`TRMD`, 1024 × 1024
 cells of 5 bytes: likely the ground's material, not read). In Rasenboden's `.trmd` (header
 `TRMD`, u32 1024, 1024, 0) only each cell's first byte varies (the other four are 0xff): three
 values, 4 (579,687 cells), 36 (434,751) and 13 (34,138). Drawn as an image, 13 is one long
@@ -1539,6 +1539,44 @@ words; 40 bytes). Rasenboden's four boxes are tall and thin (38 × 715 × 37 by 
 the path below Ryza's house) and its cylinder wide (704 by 547): invisible blockers, read by
 `barrel_ryza::solids::field_shapes` (taken as half-sizes about the position, the cylinder's
 height upward: not checked).
+
+### Ryza's walkable mesh (`<field>.g1pf`)
+
+`FP1G` (and `.elixir.g1pf` beside it, the same layout, smaller): a mesh of convex polygons over
+the ground plane that the game keeps Ryza inside of. It is where the fences and the like stop
+her: a fence's own collision (`_cplh` hulls, `_cbvh`, boxes) is not what she slides along. Her
+centre stays exactly her collision radius (`FMrad`, 28 units) from the edge of the mesh, and
+the walk's slide along it is a straight line however many fences it crosses, gaps included
+(docs/ryza/open.md, "Walking her, measured": Rasenboden's walk-30 along its first fences, then
+down the stairs, and at its two corners; her distance from the nearest border edge over the
+whole run is 27.83 at least and 28.0 to 28.15 while she slides). `barrel_formats::g1pf` reads
+it; `barrel_ryza::walk::load_terrain` adds its border edges to the walls, full height.
+
+```text
+0x00  "FP1G", bytes 01 02 02 01, u32 0, u32 file size, f32 128000, f32 128000
+0x18  u32 layer count (2)
+0x1c  per layer 12 u32: vertices, corner indices, neighbour entries (the same count),
+      polygons, then eight counts of tables after the polygons (not read)
+0x7c  six more u32 (not read); the data follows at 0x94
+      layer 0: vertices, f32 (x, z) pairs;
+               corner indices, u32: each polygon's corners in turn, counter-clockwise or not;
+               neighbours, u32 per corner: the polygon across the edge from that corner to
+               the next, 0xffffffff for none (a border: 1,022 of Rasenboden's 1,916);
+               polygons, 36 bytes each: u32 first corner, u32 corner count (3 to 5), u32 first
+               corner again, u32 (0, or 33/53 and the like: not read), then five f32: a radius
+               (602 to 931 on the big ones; likely the bounding circle), the plane's normal
+               (x, y, z: nearly upright) and a height (5998.97 for one that spans the stairs'
+               top; the plane is not what she stands on: that is the heightmap)
+```
+
+Layer 1 (1,018 vertices to layer 0's 1,029, so likely the same mesh with a few edits, perhaps
+gates the story opens) and the eight tables after the polygons (counts 144, 289, 158, ... in
+the header) are not read. Rasenboden: 433 polygons of 3 to 5 corners, big ones (the fences' side
+is one triangle 1,000 units long), over x 23,400 to 42,800, z 21,800 to 46,500. Whether every
+border is a wall in every field (rivers, cliff tops) is not checked beyond Rasenboden's walk;
+in it the mesh alone reproduces the whole walk through the fence corner (frame 3099) with the
+`_le.koc` quads and the placed models' walls removed (the models' floors kept), and the quads
+and models still matter after the corner (`docs/ryza/open.md`).
 
 ### Ryza field cameras (`saves\fieldmap\cameraparam\<field>.xml`)
 
