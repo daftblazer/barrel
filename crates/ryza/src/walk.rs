@@ -383,6 +383,23 @@ mod tests {
     }
 
     #[test]
+    fn the_camera_follows_a_diagonal_run_at_seven_tenths_of_a_degree_and_her_lean_leads_it() {
+        // Walk-30 frames 2236-2262: the lean at 45 degrees to the camera, which turns 0.7125 a frame
+        // (not 1.0125 times sin 45 degrees); she goes 0.22 degrees past 45 across the camera as the frame began.
+        let (mut p, mut c) = (player(), cam());
+        let diagonal = Sticks { left: [1.0, 1.0], right: [0.0; 2] };
+        for _ in 0..4 {
+            step(&mut p, &mut c, &diagonal, DT, None, None);
+        }
+        let before = (c.yaw, p.at);
+        step(&mut p, &mut c, &diagonal, DT, None, None);
+        assert!(((c.yaw - before.0).abs() - 0.7121).abs() < 0.004, "{}", c.yaw - before.0);
+        let moved = (p.at.x - before.1.x, p.at.z - before.1.z);
+        let way = moved.0.atan2(moved.1).to_degrees() - before.0;
+        assert!((way.abs() - 45.22).abs() < 0.1, "{way}");
+    }
+
+    #[test]
     fn against_a_wall_she_slides_facing_the_stick_and_the_camera_follows_the_slide() {
         let wall = barrel_engine::walk::Wall { a: [-5000.0, 100.0], b: [5000.0, 100.0], low: -100.0, high: 300.0, outline: None };
         let walls = Walls::from_walls(vec![wall], 1000.0);

@@ -32,8 +32,15 @@ pub const STEP_GROUND: f32 = 5.0;
 // Measured: walk-30 frames 2922-3164 (sliding up a slope along a wall, every other frame she climbs
 // exactly 0.14 whatever the edge). FITTED: 0.1435, so that the first fence's short step is the
 // game's 1.896 on Barrel's floors; the game's own constant is not found (docs/ryza/open.md).
+// Measured: walk-30 frames 2922-2966 (the short frames' distance from the wall is 28.14, the long
+// frames' 28.00, and their steps lean 0.145 away from the wall and back).
+/// How far a capped frame ends from the wall, units.
+pub const WALL_AWAY: f32 = 0.145;
 /// The most she climbs in a frame after one that slid along a wall and climbed more.
 pub const CLIMB_CAP: f32 = 0.1435;
+/// How far past the cap a climb must go to count as climbing (a capped frame ends at it, give or
+/// take the ground's tilt under the step's end).
+const CLIMB_SLACK: f32 = 0.002;
 
 // Measured: walk-30 frames 2978-2990 (the ground falls 4.08 away in one frame, past the cliff
 // floor's edge; for 11 frames her steps are then 0.6 units, 0.9 of the last each frame, then
@@ -218,6 +225,7 @@ impl Player {
             None => free,
         };
         let before = self.at;
+        let wall_to = to;
         let slid = (to[0] - free[0]).abs() + (to[1] - free[1]).abs() > TOUCH;
         if let (Some(w), true, false, false) = (walls, slid, self.touching, landed) {
             // Measured: walk-30 frames 2915-2918: she runs up to the wall and stops where she
@@ -253,11 +261,17 @@ impl Player {
                             if reach(mid).is_some_and(|y| y - before.y > CLIMB_CAP) { hi = mid } else { lo = mid }
                         }
                         to = [before.x + (to[0] - before.x) * lo, before.z + (to[1] - before.z) * lo];
+                        // The short frame ends off the wall (the next frame's slide pushes her back).
+                        let push = [wall_to[0] - free[0], wall_to[1] - free[1]];
+                        let len = push[0].hypot(push[1]);
+                        if len > TOUCH {
+                            to = [to[0] + push[0] / len * WALL_AWAY, to[1] + push[1] / len * WALL_AWAY];
+                        }
                     }
                 }
                 if let Some(stand) = g.stand_on_ball(to[0], to[1], self.at.y, STEP_GROUND, self.radius) {
                     let y = stand.height;
-                    self.climbed = slid && y - before.y > CLIMB_CAP;
+                    self.climbed = slid && y - before.y > CLIMB_CAP + CLIMB_SLACK;
                     self.at = Vec3::new(to[0], y, to[1]);
                     // The ground fell away past a step, or she left a cliff's face: she falls, and lands.
                     let off_cliff = self.lift > CLIFF_LIFT && stand.lift < CLIFF_LIFT && y < before.y;
@@ -391,14 +405,55 @@ mod tests {
         let y0 = ground.height(0.0, 100.0, 0.0, 1.0).unwrap();
         let mut p = Player::new(Vec3::new(0.0, y0, 100.0), 0.0, &LENGTHS);
         let lean = [0.9397, 0.342];
-        let moves: Vec<f32> = (0..80).map(|_| p.step(lean, 1.0 / 60.0, Some(&ground), Some(&walls))[0]).collect();
+        let moves: Vec<f32> = (0..120).map(|_| p.step(lean, 1.0 / 60.0, Some(&ground), Some(&walls))[0]).collect();
         // Once along the wall the steps alternate: the projection (9.4), then as far as the ground
         // rises `CLIMB_CAP` (1.435 at a grade of 0.1).
-        let tail = &moves[60..];
+        let tail = &moves[100..];
         let (long, short): (Vec<f32>, Vec<f32>) = (tail.iter().step_by(2).copied().collect(), tail.iter().skip(1).step_by(2).copied().collect());
         let (hi, lo) = if long[0] > short[0] { (long, short) } else { (short, long) };
         assert!(hi.iter().all(|&m| (m - 9.4).abs() < 0.1), "{hi:?}");
         assert!(lo.iter().all(|&m| (m - CLIMB_CAP / 0.1).abs() < 0.05), "{lo:?}");
+    }
+
+    /// A floor tilted 25 degrees that falls along +x and ends at x = 500 at the height of a flat floor
+    /// under it (so she steps off onto it with a drop below `FALL_DROP`, only her lift lost).
+    fn cliff() -> Ground {
+        let tilt = 25.0f32.to_radians().tan();
+        let mesh = |vertices: Vec<[f32; 3]>| barrel_formats::g1co::Collision { nodes: vec![], triangles: vec![[0, 1, 2], [2, 1, 3]], vertices };
+        let top = |x: f32| (500.0 - x) * tilt;
+        let mut g = Ground::new(None, &mesh(vec![[-2000.0, 0.0, -1000.0], [5000.0, 0.0, -1000.0], [-2000.0, 0.0, 1000.0], [5000.0, 0.0, 1000.0]]), barrel_engine::walk::DEFAULT_SLOPE);
+        g.add_floors(&mesh(vec![[-2000.0, top(-2000.0), -1000.0], [500.0, 0.0, -1000.0], [-2000.0, top(-2000.0), 1000.0], [500.0, 0.0, 1000.0]]), barrel_engine::walk::DEFAULT_SLOPE);
+        g
+    }
+
+    #[test]
+    fn leaving_a_cliff_she_lands_and_coasts_before_the_stick_moves_her_again() {
+        let ground = cliff();
+        let mut p = Player::new(Vec3::new(0.0, 0.0, 0.0), 0.0, &LENGTHS);
+        p.at.y = ground.height_on_ball(0.0, 0.0, 1e6, 1e6, p.radius).unwrap();
+        let moves: Vec<f32> = (0..120).map(|_| p.step([1.0, 0.0], 1.0 / 60.0, Some(&ground), None)[0]).collect();
+        let landed = moves.iter().position(|&m| m < 5.0).expect("she coasts");
+        // The step before the landing is the lean's; the coast starts at its share and decays.
+        assert!((moves[landed - 1] - 10.0).abs() < 0.2, "{moves:?}");
+        let first = 10.0 * COAST_SHARE;
+        assert!((moves[landed] - first).abs() < 0.05, "{} {first}", moves[landed]);
+        assert!((moves[landed + 1] / moves[landed] - COAST_DECAY).abs() < 1e-3);
+        assert!(moves[landed + LANDING_FRAMES as usize - 1] < 0.5 && moves[landed + LANDING_FRAMES as usize] > 9.0, "{:?}", &moves[landed..landed + 14]);
+    }
+
+    #[test]
+    fn a_gentle_slope_is_no_cliff_and_she_walks_down_it_a_hair_faster() {
+        // A ramp falling 0.34 a unit along +x (the stairs' slope): no landing, and her weight pushes her on.
+        let ramp = barrel_formats::g1co::Collision {
+            nodes: vec![],
+            triangles: vec![[0, 1, 2], [2, 1, 3]],
+            vertices: vec![[-1000.0, 3000.0, -1000.0], [8000.0, -60.0, -1000.0], [-1000.0, 3000.0, 1000.0], [8000.0, -60.0, 1000.0]],
+        };
+        let ground = Ground::new(None, &ramp, barrel_engine::walk::DEFAULT_SLOPE);
+        let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
+        p.at.y = ground.height_on_ball(0.0, 0.0, 1e6, 1e6, p.radius).unwrap();
+        let moves: Vec<f32> = (0..30).map(|_| p.step([1.0, 0.0], 1.0 / 60.0, Some(&ground), None)[0]).collect();
+        assert!(moves.iter().skip(2).all(|&m| m > 10.0 && m < 10.2), "{moves:?}");
     }
 
     #[test]
