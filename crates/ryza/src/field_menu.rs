@@ -440,6 +440,8 @@ pub struct Nav {
     pub blur_out: Option<f32>,
     /// Frames the cursor's ring runs ahead of its loop (1 after the Settings screen).
     ring_skew: f32,
+    /// The frame the ring's loop runs from (the menu's first frame, or the frame the menu came back from a character pick); the ring is not drawn before it.
+    ring_from: f32,
 }
 
 /// The character pick (`field-menu-equip`: A on Equip at 2060, the pick's first frame 2102).
@@ -553,6 +555,11 @@ pub const PAGE_GONE: f32 = 36.0;
 /// blur and the extra button pictures all run from 2102), and from the pick's first frame to the card glow's loops (2103).
 pub const PICK_AT: f32 = 42.0;
 const PICK_LOOPS_LATER: f32 = 1.0;
+/// Frames from B in the character pick to the menu's coming back to its own: the cursor's ring loops again from there (`field-menu-pages`: B on
+/// 3020, the ring's opacity 4/255 on 3050 and 42/255 on 3060, its loop's 24 frames of rise).
+const PICK_OUT_FRAMES: f32 = 30.0;
+/// The glow's `on` after B in the pick: its loop runs from 18 frames later (`field-menu-pages`: 252/255 on 3040, 53/255 on 3100, B on 3020).
+const PICK_GLOW_LATER: f32 = 1.1;
 /// Frames from the pick's first frame to its help bar's first frame (the fade from 2106).
 const PICK_BAR_LATER: f32 = 4.0;
 /// The buttons darken over 20 frames (`anm_select_blackout` run at three times its speed), the photo blurs in over 30
@@ -575,7 +582,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0 }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0, ring_from: opened }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -691,6 +698,11 @@ impl Nav {
             Some(p) if at >= p.first && p.confirmed.is_none() => {
                 self.pick = None;
                 self.chosen = None;
+                self.ring_from = at + PICK_OUT_FRAMES;
+                // (the cursor's glow loops again from just after B)
+                self.on = [None; BUTTONS.len()];
+                self.off = [None; BUTTONS.len()];
+                self.on[self.cursor] = Some(at + PICK_GLOW_LATER);
             }
             Some(p) if p.confirmed.is_some_and(|c| at > c) && p.leaving.is_none() => p.leaving = Some(at),
             _ => {}
@@ -1369,8 +1381,10 @@ impl View {
         part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)]);
         part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
         // The ring runs from the menu's first frame, whichever button has the glow.
-        let t = ((frame - nav.opened + nav.ring_skew) % RING_LOOP_FRAMES) / 60.0;
-        let ring_alpha = self.ring_loop[0].at(t)[3] / 255.0 * on_alpha;
+        let since = frame - nav.ring_from;
+        // (STAND-IN: the loop's first frame is already a frame in, then the clock stalls one: `field-menu-pages` 3050 at 1 frame, 3060 at 10)
+        let t = ((if (0.0..1.0).contains(&since) { 1.0 } else { since } + nav.ring_skew) % RING_LOOP_FRAMES) / 60.0;
+        let ring_alpha = if since < 0.0 { 0.0 } else { self.ring_loop[0].at(t)[3] / 255.0 * on_alpha };
         let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
         let p = self.ring.pictures[0];
         let middle = [p[2] / PER_LAYOUT / 2.0, p[3] / PER_LAYOUT / 2.0];
