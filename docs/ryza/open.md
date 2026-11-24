@@ -1560,8 +1560,30 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
     2. The fence keeps her further off than Barrel does: from frame 2917 she slides along
        `A21-COMMON-FENCE-02_cplh1.g1co` (x 31454 to 31797, z 33856 to 33910) about 78 units
        from its face, and Barrel's 30-unit radius lets her 48 closer (52 units off by 2921, 342
-       at most by 3079). Open: whether `_cplh` shapes (as against `_cbvh`) are pushed out, or
-       she is wider against them, or another shape in front of the fence is not loaded.
+       at most by 3079). Measured since (2026-11-24, not solved):
+       - The fence's only collision is the one 388-byte `_cplh` hull per fence (no `_cbox`/`_cbvh`/
+         `_ccap` beside it, no unread kind placed there: the only unread files in Rasenboden are
+         the stumps' `_Group<N>.g1co`, far away; `_coll.bin`'s 4 records and `_le.koc`'s quads
+         near it (quads 0 and 5, tops 5945 and 5975, below her 5994 to 6006) are 79 and 198
+         units off her line). The hull is a thin ridge (a 25-deep base at the bottom, a ridge
+         line at the top, 150 high) and its header holds no margin; Barrel's placement of it
+         matches the model's bounds.
+       - The game's path is a straight line, slope 0.192 (10.87 degrees) from (31658, 33807)
+         at 2916 to (32138.6, 33899.3) at 3021, across fences 02 and 03 (their faces run at
+         12.4 and 14.2 degrees) and the 34-unit gap between them; it keeps 70.7 to 83.3 from
+         fence 02's front-bottom edge and 72.0 from fence 03's, then stops dead at 3021 (87
+         short of the next fence's start at x 32226, 85 from fence 03's front corner). So it
+         is not one hull face pushed out by a constant: no per-face offset or inflating the
+         hull by a radius (tried: faces pushed 40 and 48 along their normals; the hull's
+         footprint grown by 40 to 48 as a rounded prism) gives that line: grown hulls
+         reproduce the first contact (z 33806 at 2916 to 2920) but then slide twice as fast
+         (5.2 a frame against 2.7) and run on past fence 03's end.
+       - The early part does not see hulls at all (the same walk to 2779 is identical with the
+         hulls pushed out by 40), so the stair, gate and square match whatever the hulls do.
+       - Open: the slide speed (2.7 a frame at full lean, 74 degrees across the wall) says the
+         game's response is not a plain projection of her move on the face; her facing there
+         turns slowly (8 to 15 degrees by 2940 where Barrel's follows the slide to 81), so
+         the first thing to read is how the game's facing and camera follow a slide.
     3. The stairs' heights (7 up at the top step, 3.4 along), the camera starting at 393.25 and
        400 from her first step, the pitch's transient (0.6 degrees).
 - **Collision shapes outside their models** (small). With the placement list's per-file
