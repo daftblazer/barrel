@@ -211,6 +211,9 @@ const TOOLS_TITLE_EARLY: f32 = 1.0;
 /// The Gathering Tools page's title.
 pub const TOOLS_TITLE: u32 = 4_194_514;
 
+/// The Gathering Tools page's slide-in runs this many frames behind the age counted from A (`field-menu-pages` 2630 and 2640, A on 2580: the page at 0.604 and 0.937 of
+/// its opacity where the age gives 0.659 and 0.949); the menu's going out under it is on time. STAND-IN: fitted to those two frames.
+const TOOLS_SLIDE_LATE: f32 = 0.9;
 /// The page's strings: "Container", "Empty" and "All".
 pub const CONTAINER_TITLE: u32 = 6_684_760;
 const EMPTY_WORD: u32 = 6_684_711;
@@ -676,7 +679,7 @@ impl Page {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
-        let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
+        let into = |total: f32| look.leaving.map_or(look.age - TOOLS_SLIDE_LATE, |out| total - out);
         let (base, add, f) = cursor_colors(look.age + TOOLS_CURSOR_LAG);
         let over = |path: &[&str]| -> Over {
             match path {

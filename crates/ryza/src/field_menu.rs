@@ -99,6 +99,8 @@ const HELP_AT: f32 = 33.0;
 /// The same after the Settings screen (`field-menu`: 1/3 of the fade on 2440, the menu's frames from 2402), and the frames its plate starts later.
 const HELP_AT_BACK: f32 = 33.0;
 const BACK_PLATE_LATE: f32 = 0.2;
+/// The plate's lateness after the Container page (`field-menu-pages` 2190: the plate 0.873 of the way with the bar at 6/15 of its opacity). STAND-IN: one sample.
+const CONTAINER_BACK_PLATE_LATE: f32 = 0.4;
 
 // STAND-IN: The help bar's button glyphs (private-use characters of `mainfont01`) are the capture's; the game picks them by the pad's assignment. The words are the string table's.
 const HELP_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', 4_194_467), ('\u{4eb}', 4_194_451), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
@@ -1400,7 +1402,8 @@ impl View {
                     }
                 }
             }
-            if page.menu_out_later() > 0.0 && leaving.is_none() {
+            // (under a page of items the level plate goes out to the right from the page's first frame as on B: `field-menu-pages` 2050 and 2630, 9 and 49 frames after it)
+            if (page.menu_out_later() > 0.0 || page.items.is_some()) && leaving.is_none() {
                 // (under the Guide the level plate and the money go out too, to the right: `field-menu-pages` 3220: the plate at 0.988)
                 self.corner_out(&mut pen, shown, out);
             }
@@ -1535,7 +1538,10 @@ impl View {
             None => {
                 // (back from Settings it comes up one frame earlier, with its plate a fifth of a frame late, as the screen's own)
                 // (and from a page with its plate 0.2 frames early: `field-menu-equip` 2560, opacity 3/15 and the plate 0.50 of the way; STAND-IN, one sample)
-                let (at, late) = if nav.warm { (HELP_AT_BACK, if nav.blur_out.is_some() { -BACK_PLATE_LATE } else { BACK_PLATE_LATE }) } else { (HELP_AT, 0.0) };
+                let (at, late) = if nav.warm {
+                    let after_container = nav.left.as_ref().is_some_and(|p| p.items == Some(ItemPage::Container));
+                    (HELP_AT_BACK, if after_container { CONTAINER_BACK_PLATE_LATE } else if nav.blur_out.is_some() { -BACK_PLATE_LATE } else { BACK_PLATE_LATE })
+                } else { (HELP_AT, 0.0) };
                 if !nav.warm && age < FIELD_BAR_HOLD + HELP_FADE {
                     // The field's bar fading out as the menu comes up.
                     self.help_bar(&mut pen, Bar { alpha: 1.0 - (age - FIELD_BAR_HOLD) / HELP_FADE, grow: 1.0, words: true, extra: 0.0, entries: Entries::Field });
@@ -1641,7 +1647,9 @@ impl View {
         // The ring runs from the menu's first frame, whichever button has the glow.
         let since = frame - nav.ring_again.filter(|&again| frame >= again).unwrap_or(nav.ring_from);
         // (STAND-IN: the loop's first frame is already a frame in, then the clock stalls one: `field-menu-pages` 3050 at 1 frame, 3060 at 10)
-        let t = ((if (0.0..1.0).contains(&since) { 1.0 } else { since } + nav.ring_skew).rem_euclid(RING_LOOP_FRAMES)) / 60.0;
+        // (and so is every later cycle's: `field-menu-pages` 2600, 3050 at the boundary itself)
+        let phase = (since + nav.ring_skew).rem_euclid(RING_LOOP_FRAMES);
+        let t = (if since >= 0.0 && phase < 1.0 { 1.0 } else { phase }) / 60.0;
         let ring_alpha = if since < 0.0 && nav.pick_out.is_none() { 0.0 } else { self.ring_loop[0].at(t)[3] / 255.0 * on_alpha };
         let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
         let p = self.ring.pictures[0];
@@ -1915,6 +1923,20 @@ mod tests {
         assert_eq!(nav.ring_from, nav.opened);
         assert_eq!(nav.pick_out, Some(2200.0));
         assert_eq!(nav.on[nav.cursor], Some(2200.0 + PICK_GLOW_LATER));
+    }
+
+    /// `field-menu-pages`: A on the Container at 2000 (the menu opened on 1906): the ring's loop runs on to its boundary at 2027 and begins again 89 frames after it
+    /// (2116: 87, and 2 more for the first page); A on Gathering Tools on 2580 (boundary 2600) gives 2687.
+    #[test]
+    fn a_on_a_page_of_items_restarts_the_rings_loop_after_its_next_boundary() {
+        let mut nav = Nav::open(1906.0);
+        nav.choose(2000.0);
+        assert_eq!(nav.ring_again, Some(2027.0 + PAGE_RING_LATE + FIRST_PAGE_RING_LATE));
+        nav.pick = None;
+        nav.cursor = TOOLS;
+        nav.choose(2580.0);
+        assert_eq!(nav.ring_again, Some(2600.0 + PAGE_RING_LATE));
+        assert_eq!(nav.ring_from, 2116.0);
     }
 
     #[test]
