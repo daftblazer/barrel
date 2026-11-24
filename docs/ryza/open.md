@@ -349,13 +349,13 @@ Left (each a listed cause):
 
 Built and at 0 (91 field-menu-* rows): opening and closing from the field, the cursor, the help bar and its transients,
 Settings from the menu there and back (with the blurred menu under it), the character pick on Equip and Status, B back from
-a page, the Equipment page without its item card (2330-2370, 2410, 2420). The party's numbers come from the game's table
+a page, the Equipment page without its item card (2330-2370, 2410, 2420), the Status page (part 8). The party's numbers come from the game's table
 (`party_stats.rs`). Left, in the order worth doing:
 - Equipment page: the item card (`uil_a21_item_info.xml` `equip_arms`, frame at layout (354, 7); it needs the item table's
   effects, status and roles and the save's potentials, none read yet: about 650 quads at 2290), the slides and fades on a
   slot or character change (2380-2400: 2-3 mismatches), the page coming in and going out (2500, 2510: about 260), the cursor
   blink one frame behind from 2440 (1 mismatch each to 2490). Sections "part 6", "part 7" below.
-- Status page: not drawn (A on a Status card shows the pick). Answer key field-menu-status 2320-2620.
+- Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
 - Container, Gathering Tools, Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540).
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
@@ -1971,4 +1971,49 @@ Left, with causes:
 - The cursor blink's clock is one frame behind Barrel's from 2440 on (1 mismatch each: 2430 to 2490), the game's own hitch or a clock rule not
   found; the character change (2380 to 2400: the figure and name slide, 2 or 3 quads), the page coming in and the card sliding out
   (2300 to 2320, 2150 to 2200) and going out (2500+) are not animated.
-- The Status page is not drawn.
+- The Status page: built in part 8.
+### Field menu, part 8: the Status page, and how a page comes and goes
+
+Built (`crates/ryza/src/{field_page,field_menu,party_skills}.rs`; rows in the local `field-menu-rows-pages4.txt`, 39 new `field-menu-status`
+rows from 2330 on, all at 0 mismatches):
+- The page (A on a character in the Status pick): the figure (`uil_a21_menu_chara.xml`'s `chara_image_1`, at the Status layout's
+  `chara_image_pos` (490, 63): the middle, with the name plate `name_fl` under it), the skills panel (`uil_a21_menu_skill_info.xml`: the
+  tab row with its two glyph buttons and the Active and Passive tabs, the list's window `list_mini` (a vertical nine-slice whose
+  margins `0,744,1260,290` cover its whole width: one column), the rows `clone_line_format01_n`, the cursor and its added glow, the
+  description), the stat panel and the party icons as on the Equipment page, the title plate "Status" and the help bar. A small addition to
+  the walker: `pos_ratio_x` (a share of the parent's width: the tab names are centred by it), text wrapped at `limit_width`, a text's
+  `color` where it has no `font_color` (the AP's beige), additive nodes (`alpha_blend="add"`, now returned by `Page::quads`) and a picture
+  at no opacity not drawn.
+- The skills (`party_skills.rs`, `docs/tables.md` "Ryza DX: a character's skills"): from the game's tables, not the save: the normal
+  attack and each active skill learnt by the level and standing for the tactics level. STAND-IN: the tactics level is read as 1 (the
+  save's is not read); the row under the cursor is the first (no key moves it yet: RIGHT on 2480 draws nothing new, checked 2450 to 2490).
+- Coming in (the animations are the layouts' own: `uia_common.xml`'s `anm_common_slide_in_*`, outcubic over 30 frames from A):
+  the figure and the name plate (6 frames later: `delay="0.10"`) from below, the skills panel from the left, the stat panel from the right,
+  the title plate from above, the party icons fade in (`anm_common_juvenile_fade_in` at twice its speed: the cube of the time over 30),
+  all running from the A frame itself (2320: the page is first drawn on the next). The menu goes out under it as on B: the light and each
+  button by the layout's slide backwards (one `CLOSE_STEP` apart), what the blurred picture leaves in view being only the light and the
+  first button (their rectangles reach the screen's edge). The help bar's plate comes from the pick's width to the page's over 20 frames
+  (out cubic; 28 of 223 pixels left after 10).
+- Going out (B on 2620): every part plays its slide-in backwards from B (the name plate 6 frames later), the party icons' fade too; the help
+  bar goes as the menu's (the words first, the plate fades from 5 frames over 15), the menu comes back 30 frames after B (24 for the
+  Equipment page: `Pick::page_out`) while the plate is still going (36 frames, `PAGE_GONE`), so `Nav` keeps the page's pick in `left` and
+  the page is drawn from `Nav::page_leaving`.
+- The glow behind the party icon (`hilight_eff`) loops in 101 frames, not 100 (one lag of 0.3 fits Equipment 2410 and Status 2400, 2550,
+  2620; a loop of 100 needs 2.1, 0.4 and 1.9), a frame ahead after B. A half turn is upright but mirrored: the quad's uv runs backwards.
+
+STAND-INs named in the code: the Status tabs' glyphs (U+04E3, U+04E7: the capture's), `ROW_COLOR` (the names are 3/255 red in the capture,
+26 in the layout), the description's line step (22 layout pixels, as `boot`'s), `STATUS_PLATE_EXTRA` (the page's plate is 50 pixels wider
+than its two entries need), `STATUS_TITLE` (the string "Status" of the menu's words, 4194516; the capture shows its text only),
+the page's start and the loops' lags above, the skill rows (tactics level 1).
+
+Left, with causes:
+- Status 2690, 2700, 2710 (1, 2 and 4 mismatches): the menu's cursor ring after the page. Barrel's ring runs from the menu's first frame
+  (`Nav::opened`, a loop of 121); after a page the game's has its own phase (rect 0.6 of full and 4/255 on 2700, so it started on 2699, and
+  2/255 on 2710 where a rising ring should be at 45/255): not understood, and `Nav::ring_skew` is the Settings screen's.
+- Status 2320 (3 mismatches, from before: the ring's turn after LEFT, part 5).
+- Equipment page, goal 2 of this packet, not done: the character change's slides and fades (2380 to 2400: 3, 3 and 2 quads; the figure
+  and name of the next character slide in as `anm_chara_in` with `anm_chara_change_out` for the old one, 24 frames, outsine/insine: not wired
+  to the page's walker), the page going out (2510: 164, 2520: 264 mismatches: its slides backwards are not applied to the Equipment page,
+  whose layouts' `get_in` anims were not read: only the Status page's parts leave animated), the cursor blink one frame behind from 2430
+  (the blink's loop is probably also 121 frames, not tried).
+- No window run of the Status page was made (offscreen only).

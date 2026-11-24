@@ -1503,4 +1503,32 @@ mod tests {
         let nav = replay(&keys, 2230.0, &ORDER).unwrap();
         assert_eq!(nav.pick.unwrap().card, 2);
     }
+
+    fn status_keys() -> Vec<(f32, Key)> {
+        vec![(1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down), (2080.0, Key::Down), (2140.0, Key::Confirm), (2320.0, Key::Confirm), (2620.0, Key::Back)]
+    }
+
+    #[test]
+    fn the_status_page_is_up_from_the_frame_after_a_and_goes_out_over_36_frames() {
+        let keys = status_keys();
+        // (`field-menu-status`: A on 2320; its parts are at 0.704 of their slides on 2330)
+        assert!(replay(&keys, 2320.0, &ORDER).unwrap().page(2320.0).is_none());
+        assert!(replay(&keys, 2321.0, &ORDER).unwrap().page(2321.0).is_some());
+        assert!(replay(&keys, 2619.0, &ORDER).unwrap().page(2619.0).is_some());
+        assert_eq!(replay(&keys, 2620.0, &ORDER).unwrap().page_leaving(2620.0).map(|(_, out)| out), Some(0.0));
+        // B on 2620: the page's last part is gone on 2656, the menu is back from 2650
+        let nav = replay(&keys, 2630.0, &ORDER).unwrap();
+        assert!(nav.page(2630.0).is_none());
+        assert_eq!(nav.page_leaving(2630.0).map(|(_, out)| out), Some(10.0));
+        let nav = replay(&keys, 2652.0, &ORDER).unwrap();
+        assert_eq!(nav.blur_out, Some(2650.0));
+        assert_eq!(nav.page_leaving(2652.0).map(|(_, out)| out), Some(32.0));
+        assert!(replay(&keys, 2656.0, &ORDER).unwrap().page_leaving(2656.0).is_none());
+    }
+
+    #[test]
+    fn the_equipment_page_still_hands_the_menu_back_24_frames_after_b() {
+        let nav = replay(&page_keys(), 2524.0, &ORDER).unwrap();
+        assert_eq!(nav.blur_out, Some(2524.0));
+    }
 }

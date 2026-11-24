@@ -2762,3 +2762,21 @@ HP 57, attack 26, defence 23, speed 11, dexterity 2; Tao HP 31.
 STAND-IN: the 3 added to attack, defence and speed is read as the equip quality, the mean of the worn items' qualities (30 and
 30 here) over 10; Lv is 3 in the capture as well, so the two cannot be told apart with one level. The page's "Equip Quality" is
 the same number. Not read: the second number of the row, the element resists, the role levels.
+
+## Ryza DX: a character's skills (`Saves/party/party_skill.xml`, `Saves/skill/skill_data.xml`)
+
+What the Status page's "Active" tab lists (`barrel_ryza::party_skills`). `party_skill.xml` has a section for each character in the
+party tables' order (0 Ryza, 1 Klaudia, 2 Lent, 3 Tao, 4 Ampel, 5 Lila, 6 Agathe, 7 Romy, 8 Kilo): its first row carries `charaTag`
+(`CHARA_REISA`), the rows after it are places: the normal attack (`NORMALATTACK_1`), two empty places (`SKILL_NONE`: the normal
+attack's stronger forms), then the active skills `ACTIVESKILL_a_b` with `lv`/`endLv` (learnt from level, to level; -1 for none)
+and `tactics_s`/`tactics_e` (the tactics levels the form stands for: the three forms `_1`, `_2`, `_3` of a skill take 1, 2 to 3 and
+4 to 5), then the story's skills (`startEv`, `special="-1"`). `skill_data.xml` is one row a skill in the same order, so a section's
+row n is `skill_data` row `base + n`, `base` the row whose `macro` is `skill/SKILL_PARTY_<TAG>_0.ebd` (checked: Ryza's rows 0, 3 and
+4 are the attack and the first skill's two forms at 3 AP). A row has `name_id` (`STR_ACTION_NAME_n`: the string 19922945 + n),
+`comment` (`STR_ACTION_COMMENT_n`: 19988481 + n, the description), `cost` (the AP), `icon` (the battle icon) and `base_att`
+(`ATT_A_PHY` the physical attack's attribute icon 4, `ATT_A_MAGIC` 5).
+
+Shown on the page: the normal attack (no AP), then each active skill learnt by the character's level and standing for her tactics
+level. Checked against the capture (Ryza at level 3): "Ryza Special" and "Summoning Star" (3 AP). STAND-IN: the tactics level is read as 1
+(the save's own is not read); the section's place for a character other than Ryza and a row past the first dozen are the same rule,
+not tried.

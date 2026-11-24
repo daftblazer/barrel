@@ -844,6 +844,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_slide_in_is_fast_first_and_whole_after_30_frames() {
+        // `field-menu-status` 2330 and 2340 (A on 2320): 179/255 and 246/255 of the opacity, 8.9 and 1.1 layout pixels from the end.
+        let (a, b) = (Slide::in_from(10.0, [0.0, 30.0]), Slide::in_from(20.0, [0.0, 30.0]));
+        assert_eq!((a.alpha * 255.0).round(), 179.0);
+        assert!((a.dy - 8.89).abs() < 0.01 && (b.dy - 1.11).abs() < 0.01);
+        assert_eq!((b.alpha * 255.0).round(), 246.0);
+        let done = Slide::in_from(30.0, [-40.0, 0.0]);
+        assert_eq!((done.alpha, done.dx), (1.0, 0.0));
+        assert_eq!(Slide::in_from(-3.0, [0.0, 30.0]).alpha, 0.0);
+    }
+
+    #[test]
+    fn the_skills_cursor_glows_up_and_down_in_192_frames() {
+        // `field-menu-status` 2400, 80 frames after A: 83/255.
+        assert_eq!((cursor_glow(80.0) * 255.0).round(), 83.0);
+        assert_eq!(cursor_glow(0.0), 0.0);
+        assert_eq!((cursor_glow(96.0) * 255.0).round(), 100.0);
+        assert_eq!(cursor_glow(192.0 + 80.0), cursor_glow(80.0));
+    }
+
+    #[test]
     fn blink_goes_down_and_up_in_120_frames() {
         assert_eq!(blink(0.0), 1.0);
         assert_eq!(blink(60.0), 0.0);
