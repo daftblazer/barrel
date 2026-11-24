@@ -470,7 +470,21 @@ pub struct Pick {
     pub items: Option<ItemPage>,
     /// The item page's cursor: a cell of its grid (Container) or a place of its row (Gathering Tools).
     pub cell: usize,
+    /// The Guide's sub-page opened from its top (Items or Effects/Traits).
+    pub sub: Option<GuideSub>,
 }
+
+/// A sub-page of the Guide's top: its button's place (0 Items, 1 Effects/Traits), the frame of the A that opened it and of the B that leaves it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GuideSub {
+    pub button: usize,
+    pub since: f32,
+    pub back: Option<f32>,
+}
+
+/// Frames from B on a Guide sub-page to the top's being whole again: the page fades out over 15 frames and the top in over 15 after them
+/// (`field-menu-guide` 2480: B, 2490 the page at a third, 2500 the top at a third, 2510 whole).
+pub const GUIDE_SUB_BACK: f32 = 30.0;
 
 /// The Container's grid has eight cells to a row, the Gathering Tools' row five.
 pub const CONTAINER_COLUMNS: usize = 8;
@@ -646,7 +660,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0 });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None });
         }
         if matches!(self.cursor, CONTAINER | TOOLS | GUIDE_BUTTON) {
             // (no pick: the page is the button's; its first frame comes `ITEM_PAGE_LATER` frames after A, like a card's A on the Status page)
@@ -658,7 +672,7 @@ impl Nav {
             if self.cursor == GUIDE_BUTTON {
                 self.ring_again = Some(at + GUIDE_RING_AT);
             }
-            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0 });
+            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None });
         }
     }
 
@@ -674,8 +688,20 @@ impl Nav {
         }
     }
 
-    /// A on the picked card.
+    /// The Guide's sub-page standing at frame `at` (its B's fades included), if any.
+    pub fn sub(&self, at: f32) -> Option<&GuideSub> {
+        self.pick.as_ref().and_then(|p| p.sub.as_ref()).filter(|s| s.back.is_none_or(|b| at < b + GUIDE_SUB_BACK))
+    }
+
+    /// A on the picked card; on the Guide's top, A on Items or Effects/Traits opens that page (Monsters and Help are closed in the
+    /// capture's save: A does nothing, `field-menu-guide2` 2410).
     pub fn pick_confirm(&mut self, at: f32) {
+        if self.page(at).is_some_and(|p| p.items == Some(ItemPage::Guide)) && self.sub(at).is_none() {
+            if let Some(p) = self.pick.as_mut().filter(|p| p.cell < 2) {
+                p.sub = Some(GuideSub { button: p.cell, since: at, back: None });
+            }
+            return;
+        }
         if let Some(p) = self.pick.as_mut().filter(|p| at >= p.first && p.confirmed.is_none()) {
             p.confirmed = Some(at);
         }
@@ -701,10 +727,15 @@ impl Nav {
         if self.page(at).is_none() {
             return;
         }
+        let sub_up = self.sub(at).is_some();
         if let Some(p) = self.pick.as_mut().filter(|p| p.items.is_some()) {
             // The grid of the Container (eight to a row) or the row of tools (five): one cell a key (STAND-IN: the ends are not captured).
             let columns = if p.items == Some(ItemPage::Container) { CONTAINER_COLUMNS } else { TOOLS_COLUMNS };
             let rows = if p.items == Some(ItemPage::Container) { dy } else { 0 };
+            if sub_up && p.items == Some(ItemPage::Guide) {
+                // (the sub-pages' own cursors are not captured)
+                return;
+            }
             p.cell = (p.cell as i32 + dx + rows * columns as i32).max(0) as usize;
             if p.items == Some(ItemPage::Guide) {
                 // (the Guide's four buttons stand in a row; STAND-IN: the ends stop it, not captured)
@@ -746,6 +777,14 @@ impl Nav {
                 self.off = [None; BUTTONS.len()];
                 self.on[self.cursor] = Some(at + PICK_GLOW_LATER);
             }
+            // B on a Guide sub-page goes back to the top with its cursor on the first button (`field-menu-guide` 2780: after the Effects page).
+            Some(p) if p.sub.is_some_and(|s| s.back.is_none()) && p.leaving.is_none() => {
+                if let Some(s) = p.sub.as_mut() {
+                    s.back = Some(at);
+                }
+                p.cell = 0;
+            }
+            Some(p) if p.sub.is_some_and(|s| s.back.is_some_and(|b| at < b + GUIDE_SUB_BACK)) => {}
             Some(p) if p.confirmed.is_some_and(|c| at > c) && p.leaving.is_none() => p.leaving = Some(at),
             _ => {}
         }
@@ -1708,6 +1747,36 @@ mod tests {
         assert_eq!((back.left.as_ref().unwrap().page_gone(), back.left.as_ref().unwrap().backdrop_hold()), (30.0, 30.0));
     }
 
+    /// `field-menu-guide`: A on the Guide's top opens Items (2330), B goes back with the cursor on the first button (2480), RIGHT and A open Effects/Traits.
+    #[test]
+    fn a_on_the_guides_buttons_opens_the_sub_pages_and_b_goes_back_to_the_first_button() {
+        let right = Key::Screen(crate::options_run::Key::Right);
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down), (2080.0, Key::Down), (2120.0, Key::Down), (2180.0, Key::Confirm), (2330.0, Key::Confirm), (2480.0, Key::Back), (2560.0, right), (2600.0, Key::Confirm), (2750.0, Key::Back)];
+        let sub = |tick: f32| replay(&keys, tick, &ORDER).unwrap().sub(tick).copied();
+        assert_eq!(sub(2300.0), None);
+        assert_eq!(sub(2400.0), Some(GuideSub { button: 0, since: 2330.0, back: None }));
+        // (the page fades out over 15 frames and the top in over 15 after them: the top is whole again 30 frames after B)
+        assert_eq!(sub(2505.0).map(|s| s.back), Some(Some(2480.0)));
+        assert_eq!(sub(2510.0), None);
+        let top = replay(&keys, 2550.0, &ORDER).unwrap();
+        assert_eq!(top.pick.as_ref().map(|p| p.cell), Some(0));
+        assert_eq!(sub(2700.0).map(|s| s.button), Some(1));
+        // B on the top itself (no sub-page up) leaves the Guide as before
+        let mut more = keys.to_vec();
+        more.push((2830.0, Key::Back));
+        assert!(replay(&more, 2900.0, &ORDER).unwrap().pick.is_none());
+    }
+
+    /// `field-menu-guide2` 2410: A on Monsters (the third button) does nothing.
+    #[test]
+    fn a_on_a_closed_guide_button_opens_nothing() {
+        let right = Key::Screen(crate::options_run::Key::Right);
+        let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down), (2080.0, Key::Down), (2120.0, Key::Down), (2180.0, Key::Confirm), (2330.0, right), (2370.0, right), (2410.0, Key::Confirm)];
+        let nav = replay(&keys, 2500.0, &ORDER).unwrap();
+        assert_eq!(nav.pick.as_ref().map(|p| p.cell), Some(2));
+        assert_eq!(nav.sub(2500.0), None);
+    }
+
     #[test]
     fn b_in_the_character_pick_restarts_the_cursors_loops_from_the_menus_return() {
         let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2001.0, Key::Down), (2002.0, Key::Down), (2100.0, Key::Confirm), (2200.0, Key::Back)];
@@ -1721,7 +1790,7 @@ mod tests {
     fn the_guide_bar_fades_in_late_and_out_from_the_third_frame() {
         let (bar_in, bar_out) = (GUIDE_BAR_AT, GUIDE_BAR_OUT_AT);
         assert_eq!((bar_in, bar_out), (18.0, 3.0));
-        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0 }.slides());
+        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None }.slides());
     }
 
     #[test]

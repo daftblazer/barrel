@@ -147,16 +147,42 @@ pub struct ToolsLook<'a> {
 
 /// `STR_LIBRARY_DEFINE_nnn` is the string numbered `LIBRARY_BASE + nnn` (`str_library_define.xml`: the Guide's buttons are 24, 36, 40 and 46).
 const LIBRARY_BASE: u32 = 4_063_233;
-const LIBRARY_STRINGS: u32 = 64;
+const LIBRARY_STRINGS: u32 = 128;
 
 /// What the Guide page shows.
-pub struct GuideLook {
+pub struct GuideLook<'a> {
     /// The button under the cursor (Items, Effects/Traits, Monsters, Help).
     pub cursor: usize,
     /// Frames since the page's first frame (its first draws at 1), and, going out, since B.
     pub age: f32,
     pub leaving: Option<f32>,
+    /// A sub-page opened from the top, and the frames since the top's blink began (the top's own clock when none is up).
+    pub sub: Option<SubLook<'a>>,
 }
+
+/// A sub-page of the Guide: Items or Effects/Traits.
+pub struct SubLook<'a> {
+    pub page: SubPage<'a>,
+    /// Frames since A on the top, and, going back, since B on the page.
+    pub since: f32,
+    pub back: Option<f32>,
+    /// The Gather Rate in per cent, and the page's cursor (a card, an effect).
+    pub rate: u32,
+    pub cursor: usize,
+}
+
+/// What a sub-page lists.
+pub enum SubPage<'a> {
+    Items(&'a [crate::library::Card]),
+    Effects(&'a [crate::library::Effect]),
+}
+
+/// Frames from A on the Guide's top to the sub-page's first frame: the top fades out first (`field-menu-guide` 2330: A, 2340 the top at a third of
+/// its opacity, 2350 the page at a third coming in).
+pub const SUB_AT: f32 = GUIDE_FADE;
+
+/// The colour an item's picture takes while the library shows it only as a silhouette (`field-menu-guide` 2440).
+const SILHOUETTE: [f32; 4] = [139.0 / 255.0, 113.0 / 255.0, 88.0 / 255.0, 1.0];
 
 /// The Guide's fades take 15 frames (`anm_common_fade_in`); the page's own fade and the top's (a second one) run together coming in, and going
 /// out the top goes first and the background after it (`field-menu-pages` 3210: 136 and 72 of 255, 3320: the top at a third, the background whole,
@@ -190,6 +216,8 @@ const ITEM_ALPHA: f32 = 242.0 / 255.0;
 /// `field-menu-pages` 2080, 2100, 2110 and 2120 where the game's are.
 const CURSOR_LOOP: f32 = 120.0;
 const CURSOR_PHASE_LAG: f32 = -0.1;
+/// The Effects list's scroll bar's slider with the list not scrolled: from the bar's top, its length (STAND-IN: the capture's, the rule is not read).
+const EFFECT_THUMB: [f32; 2] = [18.0, 462.0];
 /// The tools' cursor: its loop started later (STAND-IN: `field-menu-pages` 2650).
 const TOOLS_CURSOR_LAG: f32 = -1.0;
 /// The scroll bar's slider with the grid not full: from the bar's top, its length (STAND-IN: the capture's, the rule is not read).
@@ -275,6 +303,9 @@ pub struct Page {
     /// The Guide's background and top page (`library/uil_library_00_bg.xml`, `uil_library_01_top.xml`).
     library_bg: Element,
     library_top: Element,
+    /// The Guide's Item page (`uil_library_04_item_top.xml`) and its Effect/Trait page (`uil_library_08_eff_esp.xml`).
+    library_items: Element,
+    library_eff: Element,
     /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
     text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
@@ -321,6 +352,8 @@ impl Page {
         let explore = layout("uil_a21_menu_explore_equip.xml")?;
         let library = |name: &str| -> Result<Element, String> { table::parse(&read(&format!("ui_en\\library\\{name}"))?).map_err(|e| format!("{name}: {e}")) };
         let (library_bg, library_top) = (library("uil_library_00_bg.xml")?, library("uil_library_01_top.xml")?);
+        let (library_items, mut library_eff) = (library("uil_library_04_item_top.xml")?, library("uil_library_08_eff_esp.xml")?);
+        stars_copy_the_first(&mut library_eff);
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -348,7 +381,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -408,9 +441,11 @@ impl Page {
                     || SHELF_STRINGS.contains(n)
                     || (TAB_NAMES..TAB_NAMES + 8).contains(n)
                     || (LIBRARY_BASE..LIBRARY_BASE + LIBRARY_STRINGS).contains(n)
+                    || *n == crate::library::UNKNOWN_NAME
+                    || (3_538_945..3_538_945 + 2000).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, text_styles, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -647,13 +682,18 @@ impl Page {
     /// The Guide page: the paper and its picture cards (`uil_library_00_bg.xml` and the top's own picture), the title, the four buttons with the
     /// cursor's highlight and, going out, the fades in the reverse order.
     pub fn guide_quads(&self, look: &GuideLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        // (the top while a sub-page is up or coming back: out over 15 frames from A, in over 15 from 15 frames after B)
+        let top_alpha = look.sub.as_ref().map(|s| match s.back {
+            Some(b) => ((b - GUIDE_FADE) / GUIDE_FADE).clamp(0.0, 1.0),
+            None => 1.0 - (s.since / GUIDE_FADE).clamp(0.0, 1.0),
+        });
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let fade = |frames: f32| (frames / GUIDE_FADE).clamp(0.0, 1.0);
         let (back, top) = match look.leaving {
             Some(out) => (1.0 - fade(out - GUIDE_FADE), 1.0 - fade(out)),
-            None => (fade(look.age - 1.0), fade(look.age - 1.0).powi(2)),
+            None => (fade(look.age - 1.0), top_alpha.unwrap_or(fade(look.age - 1.0).powi(2))),
         };
         // The highlight's glow over the cursor's button blinks (`anm_common_blink`: whole to none and back in 120 frames) at 125/255.
         let t = (look.age - 1.0).rem_euclid(120.0);
@@ -678,7 +718,99 @@ impl Page {
                 w.slid(Slide { alpha, dx: 0.0, dy: 0.0 }, |w| w.walk(node, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
             }
         }
+        if let Some(sub) = &look.sub {
+            let alpha = match sub.back {
+                Some(b) => 1.0 - fade(b),
+                None => fade(sub.since - SUB_AT),
+            };
+            match &sub.page {
+                SubPage::Items(cards) => self.guide_items(&mut w, &root, sub, cards, alpha),
+                SubPage::Effects(effects) => self.guide_effects(&mut w, &root, sub, effects, alpha),
+            }
+        }
         (w.out, w.additive, w.clips)
+    }
+
+    /// The Item page (`uil_library_04_item_top.xml`): the title, the four category tabs, the Gather Rate, the cards (ten places, the cursor's lit) and the page number.
+    fn guide_items(&self, w: &mut Walker, root: &Xf, sub: &SubLook, cards: &[crate::library::Card], alpha: f32) {
+        let age = sub.since - SUB_AT;
+        let t = (age - 1.0).rem_euclid(120.0);
+        let blink = if t < 60.0 { 1.0 - t / 60.0 } else { (t - 60.0) / 60.0 };
+        let string = |n: u32| self.strings.get(&n).cloned();
+        let tab = ["tab_clone", "tab_clone_1", "tab_clone_2", "tab_clone_3"];
+        let over = |path: &[&str]| -> Over {
+            match path {
+                ["top"] => Over { show: true, ..Default::default() },
+                ["top", "category", t, "node_on"] if *t == tab[0] => Over { show: true, ..Default::default() },
+                ["top", "category", "page_change", "l1", "select_L"] => Over { text: Some(TAB_LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                ["top", "category", "page_change", "r1", "select_R"] => Over { text: Some(TAB_RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                ["top", "node", "collect_per"] => Over { text: Some(sub.rate.to_string()), ..Default::default() },
+                ["top", "node_page", "pagebg", "text_page" | "text_maxpage"] => Over { text: Some("1".into()), ..Default::default() },
+                ["top", "node_item_top_body", item, rest @ ..] => {
+                    let k: usize = item.strip_prefix("node_item").and_then(|n| n.parse().ok()).unwrap_or(usize::MAX);
+                    let Some(card) = cards.get(k) else { return Over { hide: true, ..Default::default() } };
+                    match rest {
+                        ["node_center", "node_adjust_scaling", "node_hl"] => Over { show: k == sub.cursor, ..Default::default() },
+                        ["node_center", "node_adjust_scaling", "node_hl", "img_hl"] => Over { paint: Some([1.0, 1.0, 1.0, (120.0 * blink).round() / 255.0]), ..Default::default() },
+                        ["win", "tag", "text_title"] => Over { text: string(if card.revealed { card.name } else { crate::library::UNKNOWN_NAME }), ..Default::default() },
+                        ["item", "img_item"] => Over { image_no: Some(card.image), paint: (!card.revealed).then_some(SILHOUETTE), ..Default::default() },
+                        ["item", "text_level"] => Over { text: Some(card.level.to_string()), ..Default::default() },
+                        _ => Over::default(),
+                    }
+                }
+                _ => Over::default(),
+            }
+        };
+        if let Some(node) = find(&self.library_items, "top") {
+            w.slid(Slide { alpha, dx: 0.0, dy: 0.0 }, |w| w.walk(node, root.node(pair(&self.library_items, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+        }
+    }
+
+    /// The Effect/Trait page (`uil_library_08_eff_esp.xml`): the title, the Effects and Traits tabs (Effects lit), the Gather Rate, the list of the known
+    /// effects in two columns with the cursor's lit, the cursor's effect (name, stars, description) and the empty "Resulting Item" frame.
+    fn guide_effects(&self, w: &mut Walker, root: &Xf, sub: &SubLook, effects: &[crate::library::Effect], alpha: f32) {
+        let age = sub.since - SUB_AT;
+        let t = (age - 1.0).rem_euclid(120.0);
+        let blink = if t < 60.0 { 1.0 - t / 60.0 } else { (t - 60.0) / 60.0 };
+        let string = |n: u32| self.strings.get(&n).cloned();
+        let here = effects.get(sub.cursor);
+        let over = |path: &[&str]| -> Over {
+            match path {
+                ["node_top"] => Over { show: true, ..Default::default() },
+                ["node_top", "effesp_tab", "tab_clone_1", "on"] => Over { hide: true, ..Default::default() },
+                ["node_top", "effesp_tab", "page_change", "l1", "select_L"] => Over { text: Some(TAB_LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                ["node_top", "effesp_tab", "page_change", "r1", "select_R"] => Over { text: Some(TAB_RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                ["node_top", "node_collect_per", "collect_per"] => Over { text: Some(sub.rate.to_string()), ..Default::default() },
+                ["node_top", "node_page", "pagebg", "text_page" | "text_maxpage"] => Over { text: Some("1".into()), ..Default::default() },
+                ["node_top", "node_left", "select01_template", "menu_template", "scroll_bar"] => Over { thumb: Some(EFFECT_THUMB), ..Default::default() },
+                ["node_top", "node_left", "select01_template", "menu_template", "selector_item_list", line, rest @ ..] => {
+                    let k: usize = line.strip_prefix("clone_line_format").and_then(|n| n.parse::<usize>().ok()).map_or(usize::MAX, |n| n - 1);
+                    let Some(effect) = effects.get(k) else { return Over { hide: true, ..Default::default() } };
+                    match rest {
+                        ["menu_cursor"] => Over { show: k == sub.cursor, ..Default::default() },
+                        ["menu_cursor_active"] => Over { show: k == sub.cursor, paint: Some([1.0, 1.0, 1.0, (125.0 * blink).round() / 255.0]), ..Default::default() },
+                        ["", "name"] => Over { text: string(effect.name), ..Default::default() },
+                        _ => Over::default(),
+                    }
+                }
+                ["node_top", "node_right", "node_effesp", "node_memo", rest @ ..] => match (rest, here) {
+                    (["effect_name"], Some(e)) => Over { text: string(e.name), ..Default::default() },
+                    (["effect_text"], Some(e)) => Over { text: string(e.text), ..Default::default() },
+                    (["effect_text", "star", clone, "on"], Some(e)) => {
+                        let n: usize = clone.strip_prefix("clone_star_").and_then(|n| n.parse().ok()).unwrap_or(0);
+                        Over { show: n < usize::from(e.stars), hide: n >= usize::from(e.stars), ..Default::default() }
+                    }
+                    _ => Over::default(),
+                },
+                ["node_top", "node_right", "node_effesp", "node_eff"] => Over { show: true, ..Default::default() },
+                // (no resulting items are listed: the places stand empty)
+                ["node_top", "node_right", "node_effesp", "node_eff", "image_drops_bg", "node_items"] => Over { hide: true, ..Default::default() },
+                _ => Over::default(),
+            }
+        };
+        if let Some(node) = find(&self.library_eff, "node_top") {
+            w.slid(Slide { alpha, dx: 0.0, dy: 0.0 }, |w| w.walk(node, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+        }
     }
 
     /// The Container page: the tab row, the grid of the items, the count of free places, the card of the item under the cursor and the title
@@ -880,7 +1012,7 @@ impl Page {
                 _ => [&self.targets, &self.item, &self.cabinet].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
             };
         }
-        [&self.explore, &self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell].into_iter().find_map(|doc| find_with_children(doc, name))
+        [&self.explore, &self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell, &self.library_items, &self.library_eff].into_iter().find_map(|doc| find_with_children(doc, name))
     }
 
     /// The children a node's `clone_child_tree` gives: the template's, which may be a clone of another (the Container grid's `cell`).
@@ -906,6 +1038,14 @@ fn blink(frames: f32) -> f32 {
     let half = BLINK_FRAMES / 2.0;
     let a = if t < half { 1.0 - t / half } else { (t - half) / half };
     (a * 255.0).round() / 255.0
+}
+
+/// The Effects page's stars after the first are empty nodes the game fills with copies of the first (`clone_star`): say so in the layout.
+fn stars_copy_the_first(e: &mut Element) {
+    if e.attr("name").is_some_and(|n| n.starts_with("clone_star_")) && e.children.is_empty() {
+        e.attributes.push(("clone_child_tree".into(), "clone_star".into()));
+    }
+    e.children.iter_mut().for_each(stars_copy_the_first);
 }
 
 fn collect_styles(e: &Element, out: &mut BTreeSet<String>) {
@@ -1059,7 +1199,11 @@ impl Walker<'_> {
                 xf
             } else {
                 let turn = o.turn.unwrap_or_else(|| numbers(e, "rot").get(2).copied().unwrap_or(0.0));
-                let scale = o.scale.map_or_else(|| pair(e, "scale", [1.0; 2]), |s| [s; 2]);
+                let mut scale = o.scale.map_or_else(|| pair(e, "scale", [1.0; 2]), |s| [s; 2]);
+                // (a half turn about the vertical axis, `rot="0, 180, 0"`, mirrors the node across its left edge)
+                if numbers(e, "rot").get(1).is_some_and(|y| (y.abs() - 180.0).abs() < 0.5) {
+                    scale[0] = -scale[0];
+                }
                 let mut at = o.at.unwrap_or_else(|| pair(e, "pos", [0.0; 2]));
                 // (`pos_ratio_x` and `pos_ratio_y`: a share of the parent's width and height added to the place)
                 for (axis, name) in ["pos_ratio_x", "pos_ratio_y"].into_iter().enumerate() {

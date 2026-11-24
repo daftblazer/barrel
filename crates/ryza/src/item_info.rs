@@ -37,6 +37,8 @@ pub struct Row {
     /// The first category's place in the category table.
     pub category: Option<usize>,
     pub weapon: bool,
+    /// The kind (`kindTag`: `ITEM_KIND_WEAPON`, `ITEM_KIND_MATERIAL`, ...), which the library files the item under.
+    pub kind: String,
 }
 
 /// The item table with the category order.
@@ -92,6 +94,7 @@ impl Items {
                     wearers,
                     category: e.attr("cat_0").and_then(|c| order.iter().position(|o| o == c)),
                     weapon: e.attr("kindTag") == Some("ITEM_KIND_WEAPON"),
+                    kind: e.attr("kindTag").unwrap_or_default().to_string(),
                 }
             })
             .collect();

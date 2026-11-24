@@ -167,6 +167,13 @@ fn units(state: &[u8], path: &[&str]) -> Option<(Vec<Worn>, usize)> {
     Some((list.chunks_exact(UNIT_SIZE).filter_map(Worn::read).collect(), places))
 }
 
+/// The library's levels of one list (`knowledge` / `item`, `eff`, ...: a big-endian byte count, then an i32 an entry; `docs/formats.md`, "Knowledge").
+pub fn knowledge(state: &[u8], list: &str) -> Option<Vec<i32>> {
+    let d = find(state, &["knowledge", list])?;
+    let bytes = u32::from_be_bytes(d.get(..4)?.try_into().ok()?) as usize;
+    Some(d.get(4..4 + bytes)?.chunks_exact(4).map(|b| i32::from_be_bytes(b.try_into().unwrap())).collect())
+}
+
 /// The save's members in its own order (all of its `party` records, in the party or not).
 pub fn members(state: &[u8]) -> Option<Vec<Member>> {
     let d = find(state, &["party"])?;

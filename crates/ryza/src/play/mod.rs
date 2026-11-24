@@ -1154,6 +1154,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The container's items (the Container page's grid) and its places.
     let mut container: (Vec<barrel_ryza::save::Worn>, usize) = (Vec::new(), 0);
     let mut tools: Vec<barrel_ryza::save::Worn> = Vec::new();
+    // The Guide's lists: the library's tables and the save's levels of its items and effects.
+    let mut library = barrel_ryza::library::Library::default();
+    let (mut know_items, mut know_effects): (Vec<i32>, Vec<i32>) = (Vec::new(), Vec::new());
     let mut party_skills = barrel_ryza::party_skills::Skills::default();
     if let Some(save) = &a.save {
         let file = barrel_files::read(Path::new(save))?;
@@ -1173,6 +1176,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         container = barrel_ryza::save::container(&state).unwrap_or_default();
         tools = barrel_ryza::save::tools(&state).map(|t| t.0).unwrap_or_default();
+        know_items = barrel_ryza::save::knowledge(&state, "item").unwrap_or_default();
+        know_effects = barrel_ryza::save::knowledge(&state, "eff").unwrap_or_default();
+        if let Ok(l) = barrel_ryza::library::Library::read(&install.read("\\saves\\library\\libraryitem.xml")?, &install.read("\\saves\\library\\libraryeffdetail.xml")?) {
+            library = l;
+        }
         item_info = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?).ok();
         if let Ok(skills) = barrel_ryza::party_skills::Skills::read(&install.read("\\saves\\party\\party_skill.xml")?, &install.read("\\saves\\skill\\skill_data.xml")?) {
             party_skills = skills;
@@ -2051,7 +2059,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     };
     // The Equipment page, over the blurred picture of the menu (made after the backdrop: layers draw in the order they were made).
     let mut page = match (hud.is_some(), party_tables.as_ref()) {
-        (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t, &container.0.iter().chain(&tools).map(|u| barrel_ryza::field_page::ShelfItem { image: t.image(u.item), category: item_info.as_ref().and_then(|i| i.row(u.item)).and_then(|r| r.category) }).collect::<Vec<_>>())?),
+        (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t, &container.0.iter().chain(&tools).map(|u| barrel_ryza::field_page::ShelfItem { image: t.image(u.item), category: item_info.as_ref().and_then(|i| i.row(u.item)).and_then(|r| r.category) }).chain(item_info.as_ref().into_iter().flat_map(|i| (0..barrel_ryza::library::TABS).flat_map(|tab| library.cards(i, &know_items, tab, &|n| t.image(n)))).map(|c| barrel_ryza::field_page::ShelfItem { image: c.image, category: None })).collect::<Vec<_>>())?),
         _ => None,
     };
     let mut showing_page = false;
@@ -3095,7 +3103,19 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             };
             if let (Some((layer, view)), Some(pick)) = (page.as_mut(), page_now.filter(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide))) {
                 // The Guide's top: the paper with its cards, the title and the four buttons.
-                let look = barrel_ryza::field_page::GuideLook { cursor: pick.cell, age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving };
+                let cards = match (item_info.as_ref(), party_tables.as_ref()) {
+                    (Some(i), Some(t)) => library.cards(i, &know_items, 0, &|n| t.image(n)),
+                    _ => Vec::new(),
+                };
+                let effects = library.known_effects(&know_effects);
+                let sub = nav.sub(menu_tick).map(|s| barrel_ryza::field_page::SubLook {
+                    page: if s.button == 0 { barrel_ryza::field_page::SubPage::Items(&cards) } else { barrel_ryza::field_page::SubPage::Effects(&effects) },
+                    since: menu_tick - s.since,
+                    back: s.back.map(|b| menu_tick - b),
+                    rate: if s.button == 0 { library.item_rate(&know_items) } else { library.effect_rate(&know_effects) },
+                    cursor: 0,
+                });
+                let look = barrel_ryza::field_page::GuideLook { cursor: pick.cell, age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving, sub };
                 let (mut quads, additive, clips) = view.guide_quads(&look, (width, height));
                 quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
                 layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
