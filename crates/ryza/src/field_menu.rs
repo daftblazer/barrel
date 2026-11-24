@@ -458,11 +458,27 @@ pub struct Pick {
     pub slot_since: Option<f32>,
     /// The Status page (the button was Status) and not the Equipment page.
     pub status: bool,
+    /// The Status page's skill under the cursor (a row of its list).
+    pub row: usize,
+}
+
+impl Pick {
+    /// Frames from A on the card to the page's first frame.
+    pub fn page_at(&self) -> f32 {
+        if self.status { STATUS_PAGE_AT } else { PAGE_AT }
+    }
 }
 
 /// Frames from A on the character to the page's first frame (STAND-IN: the capture's page is whole by 2290, the first sample
 /// after 2150; the opening is not measured).
 pub const PAGE_AT: f32 = 10.0;
+
+/// The Status page's first frame, after A on the card (`field-menu-status`: A on 2320, the page's parts at 0.704 of their
+/// slides on 2330, so they began on 2320 and nothing shows before their first step).
+pub const STATUS_PAGE_AT: f32 = 1.0;
+
+/// STAND-IN: the tactics level the skills list is for (the save's own is not read; the capture's is the first).
+pub const TACTICS_LEVEL: u8 = 1;
 
 /// Frames from B on a page to the menu's coming back (`field-menu-equip`: B on 2500; the cards at 6/30 of their fade and the
 /// photo's blur at 24/30 left on 2530, so both ran from 2524).
@@ -525,7 +541,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0 });
         }
     }
 
@@ -550,7 +566,7 @@ impl Nav {
 
     /// Whether a page is up at frame `at`: A was pressed on a card `PAGE_AT` frames ago and B has not left it.
     pub fn page(&self, at: f32) -> Option<&Pick> {
-        self.pick.as_ref().filter(|p| p.confirmed.is_some_and(|c| at >= c + PAGE_AT) && p.leaving.is_none())
+        self.pick.as_ref().filter(|p| p.confirmed.is_some_and(|c| at >= c + p.page_at()) && p.leaving.is_none())
     }
 
     /// A direction on the Equipment page: the four slots are two rows of two (weapon and armour, the two accessories), so down
@@ -751,6 +767,8 @@ enum Entries {
     Pick,
     /// The Equipment page's: the pad's cross and "Select", B and "Back", A and "Confirm".
     Page,
+    /// The Status page's: the cross and "Select", B and "Back".
+    StatusPage,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
@@ -758,6 +776,15 @@ const PICK_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_439), ('\u{4d8}', 4_19
 
 /// The Equipment page's entries: the cross and "Select" (the table's own words), B and "Back", A and "Confirm".
 const PAGE_ENTRIES: [(char, u32); 3] = [('\u{4e2}', 4_194_366), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The Status page's plate is this much wider than its two entries need (layout pixels, the capture's 1544 against 1594) and its
+/// width comes from the pick's bar's over this many frames (`field-menu-status` 2330 and 2340: 28 of 223 pixels left after 10 frames,
+/// none after 20). STAND-IN: the cause of the extra width is not found (a third, empty entry's glyph and space are 50 pixels).
+const STATUS_PLATE_EXTRA: f32 = 50.0 / 1.5;
+const STATUS_BAR_FRAMES: f32 = 20.0;
+
+/// The Status page's entries: the cross and "Select", B and "Back" (`field-menu-status` 2400).
+const STATUS_ENTRIES: [(char, u32); 2] = [('\u{4e1}', 4_194_366), ('\u{4d8}', 4_194_368)];
 
 /// Frames the bar holds its opacity after the key that sends it out, and the frames its fade takes (`field-menu`: after A
 /// on 2220 the opacity is 1 on 2225, 2/3 on 2230 and 1/3 on 2235; after B on 2550 the same on 2555, 2560 and 2565).
@@ -895,10 +922,19 @@ fn along(c: &Curve, age: f32, frames: f32) -> [f32; 4] {
 
 impl View {
     /// The Equipment page's help bar, whole, on a `screen` of pixels; the plate's quads name this layer's `GUIDE` texture.
-    pub fn page_help(&self, screen: (u32, u32)) -> Vec<Quad> {
+    ///
+    /// On the Status page (`age` frames since A on the card) the plate comes from the pick's bar's width to its own over
+    /// `STATUS_BAR_FRAMES`, out cubic, and is `STATUS_PLATE_EXTRA` wider than its words need.
+    pub fn page_help(&self, screen: (u32, u32), status: bool, age: f32) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let extra = if status {
+            let (pick, own) = (self.plate_full(&self.help_line(&PICK_ENTRIES), k), self.plate_full(&self.help_line(&STATUS_ENTRIES), k) + STATUS_PLATE_EXTRA);
+            STATUS_PLATE_EXTRA + (pick - own) * (1.0 - (age / STATUS_BAR_FRAMES).clamp(0.0, 1.0)).powi(3)
+        } else {
+            0.0
+        };
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
-        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra: 0.0, entries: Entries::Page });
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries: if status { Entries::StatusPage } else { Entries::Page } });
         pen.finish().0
     }
 
@@ -945,7 +981,7 @@ impl View {
         pen.hidden.push(pen.out.len());
         pen.turned(WHITE, [0.0, 0.0, 0.125, 0.125], *mask_at, *mask_size, *mask_turn, white(cards));
         // A page (Equipment, Status) over the menu: only the background, the photo and the corner picture stay under it.
-        if nav.page(frame).is_some_and(|p| !p.status) {
+        if nav.page(frame).is_some() {
             let (put_at, put) = &self.put;
             pen.natural(MENU1, put, 0, *put_at, white(1.0));
             return pen.finish();
@@ -1159,6 +1195,19 @@ impl View {
         part(pen, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], middle, ring_scale, [1.0, 1.0, 1.0, byte(ring_alpha * slide * 255.0)]);
     }
 
+    /// The bar's line: each entry's button glyph and word, one space between.
+    fn help_line(&self, entries: &[(char, u32)]) -> String {
+        entries.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ")
+    }
+
+    /// The plate's full width in layout pixels for `line` on a screen `k` times the layout.
+    fn plate_full(&self, line: &str, k: f32) -> f32 {
+        let s = self.help_text.size * k / ATLAS_SIZE;
+        let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / k;
+        // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`).
+        words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left
+    }
+
     /// The help bar: the plate and the entries' words as `bar` says.
     fn help_bar(&self, pen: &mut Pen, bar: Bar) {
         let alpha = bar.alpha.clamp(0.0, 1.0);
@@ -1170,12 +1219,10 @@ impl View {
             Entries::Menu => &HELP_ENTRIES,
             Entries::Pick => &PICK_ENTRIES,
             Entries::Page => &PAGE_ENTRIES,
+            Entries::StatusPage => &STATUS_ENTRIES,
         };
-        let line = entries.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ");
-        let s = self.help_text.size * pen.k / ATLAS_SIZE;
-        let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
-        // STAND-IN: The plate is one atlas pixel of the text wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`).
-        let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let line = self.help_line(entries);
+        let full = self.plate_full(&line, pen.k);
         let width = PLATE_MIN + (full - PLATE_MIN) * bar.grow + bar.extra;
         let [x, y, w, h] = self.help.pictures[0];
         let [ml, mr] = self.help.margins.unwrap_or([0.0; 2]);

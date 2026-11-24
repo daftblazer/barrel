@@ -1150,6 +1150,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut field_music: Option<u32> = None;
     let mut menu_shown = barrel_ryza::field_menu::Shown { party: Vec::new(), money: 0 };
     let mut party_tables: Option<barrel_ryza::party_stats::Tables> = None;
+    let mut party_skills = barrel_ryza::party_skills::Skills::default();
     if let Some(save) = &a.save {
         let file = barrel_files::read(Path::new(save))?;
         if let Some(h) = barrel_ryza::saves::Header::parse(&file) {
@@ -1165,6 +1166,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
             }
             party_tables = Some(tables);
+        }
+        if let Ok(skills) = barrel_ryza::party_skills::Skills::read(&install.read("\\saves\\party\\party_skill.xml")?, &install.read("\\saves\\skill\\skill_data.xml")?) {
+            party_skills = skills;
         }
         let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
@@ -3048,9 +3052,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
-            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick).filter(|p| !p.status), backdrop.as_mut()) {
+            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick), backdrop.as_mut()) {
                 // The page's blurred picture of the menu and its vignettes come in from the page's first frame.
-                let first = pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_menu::PAGE_AT;
+                let first = pick.confirmed.unwrap_or(0.0) + pick.page_at();
                 let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(menu_tick - first, None), (width, height));
                 if pump.is_some() && !renderer.can_blur_screen() && !quads.is_empty() {
                     quads.remove(0);
@@ -3068,14 +3072,26 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
             // The Equipment page over the blurred menu.
             showing_page = false;
-            let menu_help = view.page_help((width, height));
-            if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), nav.page(menu_tick).filter(|p| !p.status), party_tables.as_ref()) {
+            let menu_help = view.page_help((width, height), nav.page(menu_tick).is_some_and(|p| p.status), nav.page(menu_tick).and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c));
+            if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), nav.page(menu_tick), party_tables.as_ref()) {
                 if let Some(member) = menu_shown.party.get(pick.card) {
-                    let look = barrel_ryza::field_page::Look { member, party: &menu_shown.party, card: pick.card, item_images: &|i| tables.image(i), slot: pick.slot, slot_age: menu_tick - pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_menu::PAGE_AT) + barrel_ryza::field_page::BLINK_LAG, age: menu_tick - pick.confirmed.unwrap_or(0.0) - barrel_ryza::field_menu::PAGE_AT };
-                    let mut quads = view.quads(&look, (width, height));
+                    let skills = if pick.status { party_skills.active(usize::from(member.id), member.level, barrel_ryza::field_menu::TACTICS_LEVEL) } else { Vec::new() };
+                    let look = barrel_ryza::field_page::Look {
+                        member,
+                        party: &menu_shown.party,
+                        card: pick.card,
+                        item_images: &|i| tables.image(i),
+                        slot: pick.slot,
+                        slot_age: menu_tick - pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_menu::PAGE_AT) + barrel_ryza::field_page::BLINK_LAG,
+                        age: menu_tick - pick.confirmed.unwrap_or(0.0),
+                        status: pick.status,
+                        skills: &skills,
+                        row: pick.row,
+                    };
+                    let (mut quads, additive) = view.quads(&look, (width, height));
                     // The page's own help bar: the menu's plate and words over the page's textures.
                     quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
-                    layer.set(&gpu, &quads)?;
+                    layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
                     showing_page = true;
                 }
             }

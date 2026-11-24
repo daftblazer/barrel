@@ -18,6 +18,7 @@ use barrel_render::text::{Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
 use crate::load_view::TEXT_TOP;
+use crate::party_skills::{Skill, ACTION_COMMENT, ACTION_NAME};
 use crate::options_view::segments;
 use crate::title::{numbers, pair, LAYOUT_HEIGHT};
 
@@ -38,6 +39,8 @@ const OUTLINE_ALPHA: f32 = 0.5;
 /// The help bar's plate: texture 3 of `a21_common.g1t`.
 const HELP_PLATE: usize = 3;
 const EQUIPMENT_TITLE: u32 = 6_684_752;
+/// The Status page's title plate string (the menu's own word "Status").
+const STATUS_TITLE: u32 = 4_194_516;
 /// The party icons' places in the layout.
 const ICON_PLACES: usize = 9;
 // STAND-IN: the shoulder buttons' glyphs (private-use characters of `MainFont00`) are the capture's; the game picks them by the pad's assignment
@@ -54,10 +57,34 @@ const EFFECT_FRAMES: f32 = 100.0;
 const EFFECT_PEAK: f32 = 2.818_787_6;
 const EFFECT_ALPHA: f32 = 100.0 / 255.0;
 const EFFECT_LAG: f32 = 2.1;
+// STAND-IN: the Status page's glow runs 0.4 frames behind the page's slides (`field-menu-status` 2400: 21/255; the Equipment page's is 2.1:
+// the loop starts when the layout is made, which is not the key's frame).
+const EFFECT_LAG_STATUS: f32 = 0.4;
 const CENTER_LIFT: f32 = 0.6875;
 const LEFT_BUTTON: char = '\u{4e6}';
 const RIGHT_BUTTON: char = '\u{4ea}';
+// STAND-IN: the Status tabs' shoulder-button glyphs (LB and RB) are the capture's.
+const TAB_LEFT_BUTTON: char = '\u{4e3}';
+const TAB_RIGHT_BUTTON: char = '\u{4e7}';
 const BROWN: [f32; 4] = [26.0, 0.0, 0.0, 255.0];
+/// The slide-in animations take 30 frames (`anm_common_slide_in_left` and the others of `uia_common.xml`); the name plate's
+/// starts 6 frames after the figure's (`delay="0.10"` of the chara layout's `get_in_ud`); the party icons fade in over 30
+/// (`anm_common_juvenile_fade_in`, 60 frames at twice the speed).
+const SLIDE_FRAMES: f32 = 30.0;
+const NAME_DELAY: f32 = 6.0;
+const FACE_FADE_FRAMES: f32 = 30.0;
+/// The skills list: the cursor's place in the window's body, a row's height, and the cursor's glow (`anm_cursor_blink_ex_skill`).
+const CURSOR_AT: [f32; 2] = [-13.0, 25.0];
+const ROW_STEP: f32 = 27.5;
+const CURSOR_GLOW_FRAMES: f32 = 192.0;
+const CURSOR_GLOW_PEAK: f32 = 100.0;
+// STAND-IN: the skills' names are drawn in this colour (3/255 red; the layout's own is 26) in the capture of the Status page: the
+// menu's own font colour is not read.
+const ROW_COLOR: [f32; 4] = [3.0 / 255.0, 0.0, 0.0, 1.0];
+/// A description's line step in layout pixels.
+// STAND-IN: fitted to the Status page's description (lines 33 pixels apart at 1080 lines with the layout's size 14 and line_space 14),
+// as `boot`'s `LINE_STEP`: the game's rule (the font's line height plus `line_space`) is not read.
+const LINE_STEP: f32 = 22.0;
 
 /// What the page reads from the game's files, by install path (`\saves\ui_en\...`).
 pub struct Files<'a> {
@@ -91,6 +118,10 @@ pub struct Look<'a> {
     pub age: f32,
     /// Frames the cursor has been on its slot (its blink's clock).
     pub slot_age: f32,
+    /// The Status page and not the Equipment page, with the character's active skills and the row the cursor is on.
+    pub status: bool,
+    pub skills: &'a [Skill],
+    pub row: usize,
 }
 
 /// A node the game's code changes: shown or hidden outright, another picture or another text.
@@ -107,6 +138,8 @@ struct Over {
     /// A text's size (layout pixels) and colour (0 to 1) where the layout names none.
     size: Option<f32>,
     color: Option<[f32; 4]>,
+    /// A text's colour whatever its layout says (the game's code sets it).
+    tint: Option<[f32; 4]>,
     /// The node's turn (degrees clockwise) and scale where an animation sets them.
     turn: Option<f32>,
     scale: Option<f32>,
@@ -124,11 +157,14 @@ pub struct Page {
     /// The title plate's layout (`uil_a21_caption.xml`) and the party icons' (`uil_a21_menu_faceicon.xml`).
     caption: Element,
     faces: Element,
+    /// The Status page's skills panel (`uil_a21_menu_skill_info.xml`).
+    skill: Element,
     glyphs: [HashMap<char, Glyph>; 2],
 }
 
 /// The style files the layouts' styles are in.
-const STYLE_FILES: [&str; 12] = [
+const STYLE_FILES: [&str; 13] = [
+    "ui_en\\gen_styles\\uis_gen_a21_status.xml",
     "ui_en\\gen_styles\\uis_gen_a21_item_info.xml",
     "ui_en\\gen_styles\\uis_gen_a21_caption.xml",
     "ui_cmn\\etc\\uis_a21_category_image.xml",
@@ -154,6 +190,7 @@ impl Page {
         let layout = |name: &str| -> Result<Element, String> { table::parse(&read(&format!("ui_en\\a21_main_menu\\{name}"))?).map_err(|e| format!("{name}: {e}")) };
         let (equip, chara, status) = (layout("uil_a21_menu_equip.xml")?, layout("uil_a21_menu_chara.xml")?, layout("uil_a21_menu_chara_status.xml")?);
         let faces = layout("uil_a21_menu_faceicon.xml")?;
+        let skill = layout("uil_a21_menu_skill_info.xml")?;
         let caption = table::parse(&read("ui_en\\a21_caption\\uil_a21_caption.xml")?).map_err(|e| format!("uil_a21_caption: {e}"))?;
         let mut styles: HashMap<String, Vec<Pic>> = HashMap::new();
         for f in STYLE_FILES {
@@ -174,7 +211,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -212,9 +249,16 @@ impl Page {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (STR_UI_BASE..STR_UI_BASE + 1000).contains(n) || (262_148..262_188).contains(n) || *n == EQUIPMENT_TITLE)
+            .filter(|(n, _)| {
+                (STR_UI_BASE..STR_UI_BASE + 1000).contains(n)
+                    || (262_148..262_188).contains(n)
+                    || *n == EQUIPMENT_TITLE
+                    || *n == STATUS_TITLE
+                    || (ACTION_NAME..ACTION_NAME + 1000).contains(n)
+                    || (ACTION_COMMENT..ACTION_COMMENT + 1000).contains(n)
+            })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -227,23 +271,88 @@ impl Page {
         &self.wanted
     }
 
-    /// The page's quads in draw order on a `screen` of pixels.
-    pub fn quads(&self, look: &Look, screen: (u32, u32)) -> Vec<Quad> {
+    /// The page's quads in draw order on a `screen` of pixels, and which of them are drawn added to what is under them.
+    pub fn quads(&self, look: &Look, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2] };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        // Frames since A on the card: the Status page's parts come in by it (the Equipment page's are whole by the time it is shown).
+        let clock = look.age;
+        let slide = |delay: f32, from: [f32; 2]| if look.status { Slide::in_from(clock - delay, from) } else { Slide::NONE };
+        let name = self.strings.get(&(262_148 + u32::from(look.member.id))).cloned().unwrap_or_default();
 
-        // The character's figure (`uil_a21_menu_chara.xml`'s `chara_image_1`, whose place the equip layout sets: `chara_image_pos`).
-        let at = find_pos(&self.equip, "chara_image_pos").unwrap_or([0.0; 2]);
+        // The character's figure (`uil_a21_menu_chara.xml`'s `chara_image_1`, whose place the equip layout sets: `chara_image_pos`;
+        // the Status page's layout puts it in the middle, with the name plate under it).
         let figure = Over { show: true, image_no: Some(usize::from(look.member.id)), ..Default::default() };
-        if let Some(e) = find(&self.chara, "chara_image_1") {
-            let xf = root.node(at, 0.0, [1.0; 2]);
-            w.image(e, xf, &figure);
+        if look.status {
+            let at = find_pos(&self.status, "chara_image_pos").unwrap_or([0.0; 2]);
+            if let Some(top) = find(&self.chara, "chara") {
+                let xf = root.node(at, 0.0, [1.0; 2]);
+                let parts = |hide_plate: bool| {
+                    let (figure, name) = (figure.clone(), name.clone());
+                    move |path: &[&str]| -> Over {
+                        match path {
+                            [_, "chara_image_1"] if !hide_plate => figure.clone(),
+                            [_, "chara_image_1"] => Over { hide: true, ..Default::default() },
+                            [_, "name_node"] if hide_plate => Over { hide: true, ..Default::default() },
+                            [_, "name_node"] | [_, "name_node", "name_fl"] => Over { show: true, ..Default::default() },
+                            [_, "name_node", "name_fl", "text_1"] => Over { text: Some(name.clone()), ..Default::default() },
+                            _ => Over::default(),
+                        }
+                    }
+                };
+                w.slid(slide(0.0, [0.0, 30.0]), |w| w.walk(top, xf, &mut Vec::new(), &parts(true), &HashMap::new()));
+                w.slid(slide(NAME_DELAY, [0.0, 30.0]), |w| w.walk(top, xf, &mut Vec::new(), &parts(false), &HashMap::new()));
+            }
+        } else {
+            let at = find_pos(&self.equip, "chara_image_pos").unwrap_or([0.0; 2]);
+            if let Some(e) = find(&self.chara, "chara_image_1") {
+                let xf = root.node(at, 0.0, [1.0; 2]);
+                w.image(e, xf, &figure);
+            }
+        }
+
+        // The Status page's skills: the tab row, the list in its window and the description of the skill under the cursor
+        // (`uil_a21_menu_skill_info.xml`), sliding in from the left.
+        if look.status {
+            if let Some(top) = find(&self.skill, "top") {
+                let origin = root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]);
+                w.slid(slide(0.0, [-40.0, 0.0]), |w| {
+                    if let Some(tabs) = find(&self.skill, "skill_select") {
+                        let tabs_over = |path: &[&str]| -> Over {
+                            match path {
+                                [_, "menu", _] => Over { hide: true, ..Default::default() },
+                                // The tabs' shoulder-button glyphs (the capture's: the game picks them by the pad's assignment).
+                                [.., "l_bt", "select_L"] => Over { text: Some(TAB_LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                                [.., "r_bt", "select_R"] => Over { text: Some(TAB_RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                                _ => Over::default(),
+                            }
+                        };
+                        w.walk(tabs, origin.node(pair(tabs, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &tabs_over, &HashMap::new());
+                        if let Some(list) = find(&self.skill, "menu_template") {
+                            let rows = |path: &[&str]| self.skill_row(look, clock, path);
+                            // (the menu's own place is the window's: the template's `pos` is for the layout viewer)
+                            w.walk(list, origin.node(pair(tabs, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &rows, &HashMap::new());
+                        }
+                    }
+                    if let Some(desc) = find(&self.skill, "skill_description") {
+                        let comment = look.skills.get(look.row).and_then(|s| self.strings.get(&s.comment)).cloned();
+                        let text = |path: &[&str]| -> Over {
+                            match path {
+                                [_] => Over { show: true, ..Default::default() },
+                                [_, "desc"] => Over { text: comment.clone(), ..Default::default() },
+                                _ => Over::default(),
+                            }
+                        };
+                        w.walk(desc, origin.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &text, &HashMap::new());
+                    }
+                });
+            }
         }
 
         // The four slots (`equip/battle`, shown by the game's code), the cursor's on `look.slot`.
         let names = ["weapon", "armor", "accessory1", "accessory2"];
-        if let Some(top) = find(&self.equip, "equip") {
+        if let Some(top) = find(&self.equip, "equip").filter(|_| !look.status) {
             let slots = |path: &[&str]| -> Over {
                 if let [.., "hilight", "__uimenu_cursor_active"] = path {
                     return Over { alpha: Some(blink(look.slot_age)), ..Default::default() };
@@ -265,10 +374,9 @@ impl Page {
             w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &slots, &HashMap::new());
         }
 
-        // The stat panel (`uil_a21_menu_chara_status.xml`'s `top`, shown by the game's code).
+        // The stat panel (`uil_a21_menu_chara_status.xml`'s `top`, shown by the game's code), sliding in from the right.
         if let Some(top) = find(&self.status, "top") {
             let s = look.member.stats;
-            let name = self.strings.get(&(262_148 + u32::from(look.member.id))).cloned().unwrap_or_default();
             let values = [("lv", look.member.level.to_string()), ("hp", s.hp.to_string()), ("atk", s.attack.to_string()), ("def", s.defense.to_string()), ("spd", s.speed.to_string()), ("all", s.equip_quality.to_string()), ("dex", s.dexterity.to_string())];
             let panel = |path: &[&str]| -> Over {
                 if path.len() == 1 {
@@ -287,7 +395,7 @@ impl Page {
                     _ => Over::default(),
                 }
             };
-            w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &panel, &HashMap::new());
+            w.slid(slide(0.0, [40.0, 0.0]), |w| w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &panel, &HashMap::new()));
         }
 
         // The party's icons, with the shoulder buttons' glyphs at their ends (`uil_a21_menu_faceicon.xml`). The icons fill
@@ -299,8 +407,7 @@ impl Page {
             let place = |name: &str| name.strip_prefix("face_icon").and_then(|i| i.parse::<usize>().ok()).and_then(|i| i.checked_sub(1 + first));
             let first_x = find_pos(&self.faces, &format!("face_icon{:02}", first + 1)).map_or(0.0, |p| p[0]);
             // The icons' animations run from A on the card (`anm_a21_menu_faceicon_rotation` and `_expandEff`, looping).
-            let clock = look.age + crate::field_menu::PAGE_AT;
-            let eff = (clock - EFFECT_LAG).rem_euclid(EFFECT_FRAMES);
+            let eff = (clock - if look.status { EFFECT_LAG_STATUS } else { EFFECT_LAG }).rem_euclid(EFFECT_FRAMES);
             let glow = if eff < EFFECT_PEAK { eff / EFFECT_PEAK } else { (EFFECT_FRAMES - eff) / (EFFECT_FRAMES - EFFECT_PEAK) } * EFFECT_ALPHA;
             let glow = (glow * 255.0).round() / 255.0;
             let icons = |path: &[&str]| -> Over {
@@ -316,21 +423,51 @@ impl Page {
                     _ => Over::default(),
                 }
             };
-            w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &icons, &HashMap::new());
+            // (`anm_common_juvenile_fade_in` at twice its speed: the cube of the time over 30 frames)
+            let fade = if look.status { Slide { alpha: (clock / FACE_FADE_FRAMES).clamp(0.0, 1.0).powi(3), dx: 0.0, dy: 0.0 } } else { Slide::NONE };
+            w.slid(fade, |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &icons, &HashMap::new()));
         }
 
-        // The title plate (`uil_a21_caption.xml`).
+        // The title plate (`uil_a21_caption.xml`), sliding in from above.
         if let Some(top) = find(&self.caption, "top") {
+            let title = self.strings.get(if look.status { &STATUS_TITLE } else { &EQUIPMENT_TITLE }).cloned();
             let plate = |path: &[&str]| -> Over {
                 match path {
                     ["top"] => Over { show: true, ..Default::default() },
-                    [.., "caption_text"] => Over { text: self.strings.get(&EQUIPMENT_TITLE).cloned(), ..Default::default() },
+                    [.., "caption_text"] => Over { text: title.clone(), ..Default::default() },
                     _ => Over::default(),
                 }
             };
-            w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new());
+            w.slid(slide(0.0, [0.0, -30.0]), |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new()));
         }
-        w.out
+        (w.out, w.additive)
+    }
+
+    /// What the game's code changes in the skills list's template: the rows (`clone_line_format01_n` for the n-th skill), the
+    /// cursor on `look.row` and the window's scroll bar (hidden).
+    fn skill_row(&self, look: &Look, clock: f32, path: &[&str]) -> Over {
+        const BODY: [&str; 3] = ["menu_template", "__uimenu_window", "__uimenu_body"];
+        let hide = Over { hide: true, ..Default::default() };
+        match path {
+            [_, "__uimenu_window", "__uimenu_scroll_bar"] => hide,
+            [a, b, c, "__uimenu_cursor", "__uimenu_cursor_active"] if [*a, *b, *c] == BODY => {
+                Over { show: true, at: Some([CURSOR_AT[0], CURSOR_AT[1] + ROW_STEP * look.row as f32]), ..Default::default() }
+            }
+            [a, b, c, "__uimenu_cursor", "__uimenu_cursor_active", "add"] if [*a, *b, *c] == BODY => Over { alpha: Some(cursor_glow(clock)), ..Default::default() },
+            [a, b, c, "__uimenu_item_list", clone, rest @ ..] if [*a, *b, *c] == BODY => {
+                let Some(skill) = clone.strip_prefix("clone_line_format01_").and_then(|n| n.parse::<usize>().ok()).and_then(|n| n.checked_sub(1)).and_then(|n| look.skills.get(n)) else { return hide };
+                match rest {
+                    ["attribute_icon1"] => Over { image_no: Some(skill.attribute), ..Default::default() },
+                    ["attribute_icon2"] => hide,
+                    ["buff_icon_base", "buff_icon"] => Over { image_no: Some(skill.icon), ..Default::default() },
+                    ["name"] => Over { text: self.strings.get(&skill.name).cloned(), tint: Some(ROW_COLOR), ..Default::default() },
+                    ["mp_value_base"] if skill.cost == 0 => hide,
+                    ["mp_value_base", "mp_value"] => Over { text: Some(skill.cost.to_string()), ..Default::default() },
+                    _ => Over::default(),
+                }
+            }
+            _ => Over::default(),
+        }
     }
 
     /// A style's picture `n`, its slot in the layer and its texture's size in style pixels.
@@ -344,7 +481,7 @@ impl Page {
 
     /// The node a `copy` names: its first definition with children, in the equip or status layout.
     fn template(&self, name: &str) -> Option<&Element> {
-        [&self.equip, &self.status, &self.faces].into_iter().find_map(|doc| find_with_children(doc, name))
+        [&self.equip, &self.status, &self.faces, &self.skill].into_iter().find_map(|doc| find_with_children(doc, name))
     }
 
     fn string(&self, id: &str) -> Option<&str> {
@@ -409,9 +546,61 @@ struct Walker<'a> {
     /// Screen pixels to a layout pixel.
     screen_k: f32,
     out: Vec<Quad>,
+    /// The quads of `out` drawn added to what is under them (`alpha_blend="add"`).
+    additive: Vec<usize>,
+    /// The size of the node whose children are being walked (a `pos_ratio` is a share of it).
+    parent: [f32; 2],
+}
+
+/// An animation's hold on a part of the page: its opacity and its offset in layout pixels.
+#[derive(Clone, Copy, Debug)]
+struct Slide {
+    alpha: f32,
+    dx: f32,
+    dy: f32,
+}
+
+impl Slide {
+    const NONE: Slide = Slide { alpha: 1.0, dx: 0.0, dy: 0.0 };
+
+    /// `anm_common_slide_in_*`: the opacity and the offset (from `from` to nothing) come in over 30 frames, fast first
+    /// (`easing_outcubic`), `frames` after the animation began.
+    fn in_from(frames: f32, from: [f32; 2]) -> Slide {
+        let e = 1.0 - (1.0 - (frames / SLIDE_FRAMES).clamp(0.0, 1.0)).powi(3);
+        Slide { alpha: e, dx: from[0] * (1.0 - e), dy: from[1] * (1.0 - e) }
+    }
+}
+
+/// The cursor's added glow on the skills list: `anm_cursor_blink_ex_skill`, 0 to 100/255 and back in 192 frames, looping.
+fn cursor_glow(frames: f32) -> f32 {
+    let t = frames.rem_euclid(CURSOR_GLOW_FRAMES);
+    let half = CURSOR_GLOW_FRAMES / 2.0;
+    let a = if t < half { t / half } else { (CURSOR_GLOW_FRAMES - t) / half } * CURSOR_GLOW_PEAK;
+    a.round() / 255.0
 }
 
 impl Walker<'_> {
+    /// Runs `draw` and moves what it drew by `slide` and scales its opacity (nothing is drawn at none).
+    fn slid(&mut self, slide: Slide, draw: impl FnOnce(&mut Walker)) {
+        if slide.alpha <= 0.0 {
+            return;
+        }
+        let start = self.out.len();
+        draw(self);
+        let (dx, dy) = (slide.dx * self.screen_k, slide.dy * self.screen_k);
+        for q in &mut self.out[start..] {
+            q.rect = [q.rect[0] + dx, q.rect[1] + dy, q.rect[2] + dx, q.rect[3] + dy];
+            match &mut q.spin {
+                Some(Spin::Corners(c)) => c.iter_mut().for_each(|p| *p = [p[0] + dx, p[1] + dy]),
+                Some(Spin::About { pivot, .. }) => *pivot = [pivot[0] + dx, pivot[1] + dy],
+                None => {}
+            }
+            if slide.alpha < 1.0 {
+                q.color[3] = (q.color[3] * slide.alpha * 255.0).round() / 255.0;
+            }
+        }
+    }
+
     /// Draws `e` and what is under it. `path` is the names from the walk's start; `over` the game's changes by path;
     /// `commands` the `command` changes a clone's parent gave by node name.
     fn walk(&mut self, e: &Element, xf: Xf, path: &mut Vec<String>, over: &dyn Fn(&[&str]) -> Over, commands: &HashMap<String, Vec<Element>>) {
@@ -438,6 +627,10 @@ impl Walker<'_> {
                 let turn = o.turn.unwrap_or_else(|| numbers(e, "rot").get(2).copied().unwrap_or(0.0));
                 let scale = o.scale.map_or_else(|| pair(e, "scale", [1.0; 2]), |s| [s; 2]);
                 let mut at = o.at.unwrap_or_else(|| pair(e, "pos", [0.0; 2]));
+                // (`pos_ratio_x` and `pos_ratio_y`: a share of the parent's width and height added to the place)
+                for (axis, name) in ["pos_ratio_x", "pos_ratio_y"].into_iter().enumerate() {
+                    at[axis] += e.attr(name).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * self.parent[axis];
+                }
                 if e.attr("pivot_pos_preset") == Some("center") {
                     // Turned and scaled about the picture's centre: the corner moves so the centre stays.
                     let c = self.node_size(e).map(|v| v / 2.0);
@@ -468,9 +661,12 @@ impl Walker<'_> {
                     children.push(c);
                 }
             }
+            let size = if e.name == "image" { self.node_size(e) } else { [0.0; 2] };
+            let outer = std::mem::replace(&mut self.parent, size);
             for c in children {
                 self.walk(c, me, path, over, &cmds);
             }
+            self.parent = outer;
         }
         path.pop();
     }
@@ -492,6 +688,7 @@ impl Walker<'_> {
             let (w, h) = (numbers(e, "size_w").first().copied(), numbers(e, "size_h").first().copied());
             [w.or(wh.first().copied()).unwrap_or(natural[0]), h.or(wh.get(1).copied()).unwrap_or(natural[1])]
         };
+        let from = self.out.len();
         let c = numbers(e, "color");
         let mut color = if c.len() >= 4 { [c[0] / 255.0, c[1] / 255.0, c[2] / 255.0, c[3] / 255.0] } else { [1.0; 4] };
         color[3] *= o.alpha.unwrap_or(1.0);
@@ -499,7 +696,8 @@ impl Walker<'_> {
             // A nine-slice: each margin at its size, the middle repeated (`options_view::segments`), rows then columns.
             Some([l, t, r, b]) => {
                 let u = 1.0 / p.per_layout;
-                let cols = segments(size[0], l, p.uvwh[2] - l - r, r, u);
+                // (margins that cover the picture's width, as `gen_a21_status01_list_mini`'s do, leave it whole across)
+                let cols = if l + r >= p.uvwh[2] { vec![(0.0, size[0], 0.0, p.uvwh[2])] } else { segments(size[0], l, p.uvwh[2] - l - r, r, u) };
                 let rows = segments(size[1], t, p.uvwh[3] - t - b, b, u);
                 for row in &rows {
                     for col in &cols {
@@ -514,6 +712,9 @@ impl Walker<'_> {
                 self.piece(xf, [0.0; 2], size, uv, color, texture);
             }
         }
+        if e.attr("alpha_blend") == Some("add") {
+            self.additive.extend(from..self.out.len());
+        }
     }
 
     /// A quad of `size` layout pixels at `at` in the node `xf`.
@@ -522,12 +723,48 @@ impl Walker<'_> {
         let (x0, x1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
         let (y0, y1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
         let upright = xf.b.abs() < 1e-6 && xf.c.abs() < 1e-6;
+        // A half turn is upright but mirrored: the picture's corners swap (the game's uv runs backwards).
+        let mut uv = uv;
+        if upright && xf.a < 0.0 {
+            uv.swap(0, 2);
+        }
+        if upright && xf.d < 0.0 {
+            uv.swap(1, 3);
+        }
         self.out.push(Quad { turn: false, spin: (!upright).then_some(Spin::Corners(corners)), rect: [x0, y0, x1, y1], uv, color, texture });
     }
 
     fn text(&mut self, e: &Element, xf: Xf, o: &Over) {
         let string = o.text.clone().or_else(|| e.attr("string_id").and_then(|s| self.page.string(s)).map(str::to_string));
         let Some(string) = string else { return };
+        let ky = xf.c.hypot(xf.d);
+        for (i, line) in self.wrap(e, &xf, o, &string).iter().enumerate() {
+            self.text_line(e, Xf { y: xf.y + i as f32 * LINE_STEP * ky, ..xf }, o, line);
+        }
+    }
+
+    /// A text's lines: the string as one, or broken at spaces so that no line (with the space it ends in) is wider than the
+    /// node's `limit_width` (layout pixels).
+    fn wrap(&self, e: &Element, xf: &Xf, o: &Over, string: &str) -> Vec<String> {
+        let Some(limit) = e.attr("limit_width").and_then(|v| v.trim().parse::<f32>().ok()) else { return vec![string.to_string()] };
+        let glyphs = &self.page.glyphs[usize::from(e.attr("font") != Some("MainFont01"))];
+        let size = e.attr("font_size").and_then(|v| v.trim().parse().ok()).or(o.size).unwrap_or(17.0);
+        let s = size * xf.a.hypot(xf.b) / ATLAS_SIZE;
+        let (mut lines, mut line, mut width) = (Vec::<String>::new(), String::new(), 0.0);
+        for word in string.split_inclusive(' ') {
+            let w: f32 = word.chars().filter_map(|c| glyphs.get(&c)).map(|g| g.advance as f32 * s).sum();
+            if !line.is_empty() && width + w > limit * xf.a.hypot(xf.b) {
+                lines.push(std::mem::take(&mut line));
+                width = 0.0;
+            }
+            line.push_str(word);
+            width += w;
+        }
+        lines.push(line);
+        lines
+    }
+
+    fn text_line(&mut self, e: &Element, xf: Xf, o: &Over, string: &str) {
         let font = usize::from(e.attr("font") != Some("MainFont01"));
         let glyphs = &self.page.glyphs[font];
         // The node's scale may differ along the two axes (a label squeezed to fit).
@@ -555,10 +792,13 @@ impl Walker<'_> {
                 [c[0], c[1], c[2], c[3]]
             } else if e.attr("copy") == Some("TEXTCOLOR_BEIGE") {
                 [255.0, 255.0, 228.0, 255.0]
+            } else if let Some(&[r, g, b, a]) = numbers(e, "color").get(..4) {
+                // (a text whose layout gives its `color` and no `font_color`: the skills list's AP)
+                [r, g, b, a]
             } else {
                 BROWN
             };
-            o.color.filter(|_| numbers(e, "font_color").len() < 4).unwrap_or_else(|| c.map(|v| v / 255.0))
+            o.tint.or_else(|| o.color.filter(|_| numbers(e, "font_color").len() < 4)).unwrap_or_else(|| c.map(|v| v / 255.0))
         };
         let mut run = |dx: f32, dy: f32, color: [f32; 4]| {
             let mut pen = left + dx;
