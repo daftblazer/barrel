@@ -353,7 +353,7 @@ Equip and Status, B back from a page, the Equipment page with its item card (229
 item card, the Container and Gathering Tools pages (part 9). The party's numbers come from the game's table (`party_stats.rs`). Left, in
 the order worth doing:
 - Equipment page: the slides and fades on a slot or character change (2380-2400: 2-3 mismatches), the page going out (2500, 2510: about
-  260), the cursor blink one frame behind from 2430 (1 mismatch each to 2490). Sections "part 6", "part 7", "part 9" below.
+  260), the cursor blink one frame behind from 2430 (1 mismatch each to 2490: a stall of the game's clock, part 9). Sections "part 6", "part 7", "part 9" below.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
 - Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540; Status pick and Guide from 2830).
@@ -2062,9 +2062,10 @@ Left, with causes:
 - The menu's ring after a page of items (Container 2190 and 2200: 10 and 2; Tools 2610, 2620 and 2750 on: 1 to 2 mismatches each): the cursor
   ring's phase after A or B, as the Status page's 2690 to 2710 (part 8).
 - The Container bar's shrink going out (2190: the plate 26 layout pixels wider than the game's at the same opacity).
-- The Equipment page: the character change's slides (2380 to 2400), the page going out (2510, 2520) and the blink from 2430 (1 mismatch
-  each): not tried. The slot cursor's blink on 2200 to 2260 is a frame off by turns (the game's own clock hitches: +1, +1, -1, 0 on 2200,
-  2230, 2260, 2290; 2290 is at 0).
+- The Equipment page: the character change's slides (2380 to 2400) and the page going out (2510, 2520): not tried. The slot cursor's blink
+  is a frame off by turns on 2200 to 2260 (+1, +1, -1, 0 on 2200, 2230, 2260, 2290: 2290 is at 0) and from 2430 to 2490 (1 mismatch each): a
+  loop of 121 frames fits 2430 to 2490 but breaks 2290 and 2420, so the cause is the game's own animation clock stalling a frame now and then
+  (here between 2420 and 2430), not the loop's length; left as it is (120).
 - Tabs other than the first, the scroll bar of a full grid, the favourites, sub-menu and sort, tools beyond the five places, the cursor's
   keys beyond a cell step: no capture.
 - No window run of the pages (offscreen only).
