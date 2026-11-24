@@ -193,6 +193,14 @@ pub struct Ground {
     cells: std::collections::HashMap<(i32, i32), Vec<u32>>,
 }
 
+/// Where a ball stands: its height and how much its rest on a tilted floor lifts it above the
+/// floor under its centre (`ball_height`).
+#[derive(Clone, Copy, Debug)]
+pub struct Stand {
+    pub height: f32,
+    pub lift: f32,
+}
+
 /// The side of `Ground`'s floor cells, units.
 const FLOOR_CELL: f32 = 256.0;
 
@@ -242,9 +250,20 @@ impl Ground {
     /// (`ball_height`): on a slope it stands higher than the floor under its centre, as the
     /// Ryza games' do (docs/ryza/open.md, "Ryza in the field"). The heightmap is taken as it is.
     pub fn height_on_ball(&self, x: f32, z: f32, y: f32, step_up: f32, radius: f32) -> Option<f32> {
+        self.stand_on_ball(x, z, y, step_up, radius).map(|s| s.height)
+    }
+
+    /// `height_on_ball` with the lift the ball's rest gave it over the floor under its centre
+    /// (none on the heightmap).
+    pub fn stand_on_ball(&self, x: f32, z: f32, y: f32, step_up: f32, radius: f32) -> Option<Stand> {
         let cell = ((x / FLOOR_CELL).floor() as i32, (z / FLOOR_CELL).floor() as i32);
         let floors = self.cells.get(&cell).into_iter().flatten().filter_map(|&k| ball_height(&self.floors[k as usize], x, z, radius));
-        self.terrain(x, z).into_iter().chain(floors).filter(|&h| h <= y + step_up).fold(None, |best, h| Some(best.map_or(h, |b: f32| b.max(h))))
+        self.terrain(x, z)
+            .map(|height| Stand { height, lift: 0.0 })
+            .into_iter()
+            .chain(floors)
+            .filter(|s| s.height <= y + step_up)
+            .fold(None, |best: Option<Stand>, s| Some(best.map_or(s, |b| if s.height > b.height { s } else { b })))
     }
 
     /// Where a character with its feet at `y` stands at (x, z): the highest of the heightmap and
@@ -263,7 +282,7 @@ impl Ground {
 /// triangle under the centre counts (not an edge or a corner within the radius): the game's
 /// feet change floor, and jump by that amount, where the centre does (walk-30 frames 2967 and
 /// 2978). None when (x, z) is not over the triangle.
-fn ball_height(t: &[[f32; 3]; 3], x: f32, z: f32, radius: f32) -> Option<f32> {
+fn ball_height(t: &[[f32; 3]; 3], x: f32, z: f32, radius: f32) -> Option<Stand> {
     let h = floor_height(t, x, z)?;
     let [a, b, c] = *t;
     let (e1, e2) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
@@ -272,7 +291,8 @@ fn ball_height(t: &[[f32; 3]; 3], x: f32, z: f32, radius: f32) -> Option<f32> {
     // STAND-IN: measured on slopes of 4 to 21 degrees; a steeper floor (a cliff sliver the walk
     // crosses in a frame) is taken at its plain height.
     let up = if len > 1e-6 { n[1].abs() / len } else { 1.0 };
-    Some(if up >= BALL_STEEPEST.cos() { h + radius * (1.0 / up - 1.0) } else { h })
+    let lift = if up >= BALL_STEEPEST.cos() { radius * (1.0 / up - 1.0) } else { 0.0 };
+    Some(Stand { height: h + lift, lift })
 }
 
 /// The steepest slope (radians) a ball's rest is lifted for by `ball_height`.
