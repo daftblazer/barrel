@@ -350,11 +350,12 @@ item card, the Container and Gathering Tools pages (part 9). The party's numbers
 the order worth doing:
 - Equipment page: done in part 12 (the character change, the page going out, the blink on the game's stalling animation clock); 2300 to 2320 (the page coming in) and 2590 are left.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
+- Part 15: the Gathering Tools page (2630 at 0: the animation clock's stall, no more fitted lateness) and the Guide Items cards' tilt (2350 to 2480 at 0); the rest is the ring's loop, the Container's item fade and the Guide top's highlight (section of part 15).
 - Part 14: the field after the Guide round trip (`field-menu-guide2` 3320 to 3540 at 0: the field's clock span follows the menu's own key rules, a button in the field holds the help bar back).
 - Part 13: the character pick going out (`field-menu-pages` 2440 to 2460, 3020 to 3040 at 0), the ring's loop across Container, Tools and Guide pages and picks, the items pages' level plate; what it leaves is listed at the end of its section.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
 - Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
-  and Effect/Trait pages are drawn and open and close as in the capture (part 11: the Effects page and the ways in and out are at 0 on most frames, the Items page 36 mismatches from the cards' tilt); Monsters and Help are
+  and Effect/Trait pages are drawn and open and close as in the capture (part 11: the Effects page and the ways in and out are at 0 on most frames, the Items page: the cards' tilt is built in part 15, 2350 to 2480 at 0); Monsters and Help are
   closed in the capture's save (A does nothing) or not captured. Answer keys field-menu-pages (every 10 frames 1990-3540), field-menu-guide, field-menu-guide2.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
@@ -2256,3 +2257,36 @@ Why this shape (a core both call, not `Run` for both): the title's cursor and cl
 (100 `checks-settings` rows), so forcing them into `Run`'s stepped cursor would change what is drawn; the rules that were copied (dialog,
 tabs, leaving, blink age, sounds) are what moved. Test: `the_title_replay_and_the_menu_run_take_a_key_script_to_the_same_screen`.
 Not shared on purpose: the cursor's source (holds vs steps) and the clock.
+
+### Field menu, part 15: the animation clock's stall explains the Tools page, the Items cards' tilt
+
+Built (`crates/ryza/src/{field_page,field_menu,play/mod}.rs`; 16 new frames at 0 in the local `field-menu-rows-pages11.txt`, named `field-menu-pages15-FRAME` and `field-menu-guide15-FRAME`).
+Counts before -> after: `field-menu-pages` 2630: 91 -> 0, 2750: 2 -> 0; `field-menu-guide` 2350 to 2480: 36 -> 0 each, 2490: 41 -> 5 (the bar's plate, as before).
+- The lateness constants (parts 12 and 13), reviewed against the clock rule. The game's animation clock falls one frame further behind the game's frames every `STALL_EVERY` frames counted from
+  frame 0 of the run (`field_page::animation_clock`). The first stall of part 12 was fitted (2265 + 161.3 a period); the three samples that bound the period fix it better as 161.7 from frame 0:
+  stalls at 1941, 2103, 2264, 2426, 2588, 2750, 2911 ... (the Equipment page's two samples allow 161.43 to 162, the Tools page below needs more than 161.25; 1 / 0.9938 = 161.3 is inside that rate's
+  error). `STALL_FIRST` is gone (offset 0).
+  - Went: `TOOLS_SLIDE_LATE` (0.9) and `TOOLS_CURSOR_LAG` (-1): A on the Tools button is 2580, the page's first frame is 41 clock frames later (`ITEM_PAGE_LATER`) and a stall (2588) falls inside
+    those frames, so every part of the page runs a frame behind the Container's (A on 2000, no stall until 2103). `Pick::page_age` counts the page's age on the clock from A (less the 41); the Tools
+    page's parts and its cursor loop take it. Its title plate, the menu's going out under the page, the help bar and the ring keep game frames from `confirmed` (the title plate kept
+    `TOOLS_TITLE_EARLY`, 1 frame, going out).
+  - Stayed (the clock rule does not reach them; each is one sample or the stall is not between its two frames): `PICK_BAR_BACK` 4.4 (B on 2440, sample 2450, no stall near), `CONTAINER_BACK_PLATE_LATE` 0.4
+    (B on 2150, sample 2190), `PAGE_RING_LATE` 87 and `FIRST_PAGE_RING_LATE` 2 (the restarts are 89, 87 and 87 frames after the old loop's boundaries 2021, 2594 and 3165, with 1, 0 and 1 stalls inside:
+    no constant in clock frames either), `STALL_EVERY` itself (fitted, above), `TOOLS_TITLE_EARLY`, `BLINK_FROM`, `ITEM_ALPHA`.
+- The Guide's Items cards (goal 4): the game turns each card's `node_center` (the paper, the cursor's highlight; the item picture, the name and the level stay upright) about its own origin
+  (`uil_library_04_item_top.xml`: layout (206, 262), `node_item_top_body` + base + `node_center`) and squashes it along its height, a plain `Xf::node(pos, turn, [1, squash])`. Solved from the trace's
+  corners (`barrel-parity` now prints a quad's `corners` on GAME and BARREL lines): card 1 +39.77 degrees, squash 0.96623; card 2 -59.106 degrees, squash 0.77800; both cards' pieces and the cursor's
+  larger set give the same fixed point to 0.01 pixel. `Over::scale` is now a pair (a node's scale along its two axes). STAND-IN: `CARD_TILTS` holds the two cards of the capture and repeats down the
+  list; the game's rule per card (a seed, the item) is not read.
+- The clock rule is not the item pictures' fade on the Container page: see below.
+
+Left, with causes:
+- Container coming in 2050 to 2070 (7, 6, 6): the item pictures' opacity (game 136, 213, 242 of 255; Barrel 129, 206, 237) is the page's chain times 242/255 one frame ahead at 2050 and 2060 (game
+  = chain at +0.7 to +1.3 frames, times 242/255; the cabinet quad on 2050 is 1/255 ahead too) while every other part is exact: the grid's own pictures seem to start an animation a frame earlier. No
+  stall lies between A (2000) and 2050, so it is not the clock's. Not reproduced.
+- The cursor ring (field-menu-pages 2920 to 3010: 2 to 4; field-menu-status 2690 to 2710: 1, 2, 4; field-menu-guide2 3300 and 3310: 2, 4): read off the capture's ring (cycle starts S from the shape, `ringtab`):
+  the menu's loop runs 121 frames a cycle (2021, 2231, 2352, 2473, 2594, 2802, 2922, 3043, 3165 ...) and is NOT on the stalling clock (a stall inside a cycle would make it 122). After A on a page of items
+  the next cycle begins 89, 87 and 87 frames after the old loop's boundary (2110, 2681 and 3252). The second character pick's own ring starts at 2922, the menu loop's boundary, where the first pick's
+  (2327) is 37 frames after its A with no boundary near: pick 2 starts 15 frames later than `PICK_AT` + 1 gives; no rule found (the stall on 2911 is inside A + 42 but moves it by 1). Not reproduced.
+- The Guide top's highlight after a return (`field-menu-guide` 2500 to 2550, 2770 to 2880, 3040 to 3150: 1 each): not worked again.
+- `field-menu-guide` 2490 (5): the bar's plate while the page goes out; `field-menu-equip` 2300 to 2320 and 2590 are as before.
