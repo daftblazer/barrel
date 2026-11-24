@@ -152,6 +152,13 @@ pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
 /// `t14` (`ECT_CAMERA_QUAKE_SET`): `{quake, seconds × 100}`, camera quake `cq_obj_<quake>`
 /// (`barrel_formats::quake`; `docs/events.md`, "Camera quakes").
 pub const CAMERA_QUAKE_SET: u32 = 0x7400_000e;
+/// Ryza's `s39` (`ECT_CHARA_MOTION_SET_SPEED`, 0x73000027, read here as the engine's own word): `{character,
+/// percent}`, as [`CHARA_MOTION_SPEED`] (the word's operand count differs from Escha's).
+pub const CHARA_MOTION_SPEED_RYZA: u32 = 0x73ee_0003;
+/// Ryza's `s38` (`ECT_CHARA_MOTION_SET_DIV`, 0x73000026, read here as the engine's own word): `{character, from,
+/// to, flag}`: the motion plays only between two points of its own, in hundredths of a frame at 60 a second
+/// (the opening's `13000 18100` on Ryza's motion 2281: frames 130 to 181).
+pub const CHARA_MOTION_RANGE: u32 = 0x73ee_0002;
 /// Ryza's `t26` (`ECT_CAMERA_FOV_MOVE`, 0x7400001a, read here as the engine's own word): `{hundredths of a
 /// degree}`: the manual camera's vertical field of view. The one operand carries no time: it is taken as
 /// set at once (the opening's shots, docs/ryza/open.md, "The opening (P5b)").
@@ -417,6 +424,8 @@ pub enum Step<'a> {
     CameraRoll { action: usize, from: f32, to: f32, seconds: f32, curve: u32 },
     /// The eye slides to `length` from the target ([`CAMERA_LENGTH_MOVE_SET`]).
     CameraDistance { action: usize, length: f32, seconds: f32, curve: u32 },
+    /// The motion the character plays now is limited to `from` to `to` seconds of it ([`CHARA_MOTION_RANGE`]).
+    MotionRange { action: usize, character: u32, from: f32, to: f32 },
     /// The manual camera's field of view, degrees ([`CAMERA_FOV`]).
     CameraFov { action: usize, degrees: f32 },
     /// The camera quake ends ([`CAMERA_QUAKE_STOP`]).
@@ -793,12 +802,15 @@ impl<'a> Player<'a> {
                 let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
                 out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: None });
             }
+            (CHARA_MOTION_RANGE, [character, from, to, ..]) => {
+                out.push(Step::MotionRange { action, character: self.slot(*character), from: f(*from) / 6000.0, to: f(*to) / 6000.0 });
+            }
             (CHARA_MOTION_SET, [character, motion, division, hundredths, ..]) => {
                 let blend = f(*hundredths) / 100.0;
                 out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: false, division: Some(*division) });
             }
             (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: self.slot(*character), division: *division }),
-            (CHARA_MOTION_SPEED, [character, percent, ..]) if self.motion_speeds => {
+            (CHARA_MOTION_SPEED | CHARA_MOTION_SPEED_RYZA, [character, percent, ..]) if self.motion_speeds || c.word == CHARA_MOTION_SPEED_RYZA => {
                 let speed = if *percent > 0 { *percent as f32 / 100.0 } else { 0.1 };
                 out.push(Step::MotionSpeed { action, character: self.slot(*character), speed });
             }
@@ -1648,6 +1660,7 @@ mod tests {
                 Step::CameraRoll { from, to, seconds, .. } => format!("camera rolls {from}° -> {to}° over {seconds} s"),
                 Step::CameraDistance { length, seconds, .. } => format!("eye slides to {length} out over {seconds} s"),
                 Step::CameraFov { degrees, .. } => format!("field of view {degrees}°"),
+                Step::MotionRange { character, from, to, .. } => format!("character {character}'s motion plays {from} to {to} s"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),

@@ -146,12 +146,24 @@ pub struct Playing {
     pub speed: f32,
     pub rate_from: f32,
     pub played: f32,
+    /// Only this stretch of the motion plays (seconds into it): from its start, round again if
+    /// the motion loops, and held on its end if not (`s38`).
+    pub range: Option<(f32, f32)>,
 }
 
 impl Playing {
     /// A motion starting at `since` at its own speed.
     pub fn new(motion: u32, since: f32, looping: bool, blend: f32, division: Option<u32>) -> Playing {
-        Playing { motion, since, looping, blend, division, speed: 1.0, rate_from: since, played: 0.0 }
+        Playing { motion, since, looping, blend, division, speed: 1.0, rate_from: since, played: 0.0, range: None }
+    }
+
+    /// Where in the motion it is at `now`: the seconds played, within its range when it has one.
+    pub fn position(&self, now: f32) -> f32 {
+        let played = self.elapsed(now);
+        match self.range {
+            Some((from, to)) if to > from => from + if self.looping { played % (to - from) } else { played.min(to - from) },
+            _ => played,
+        }
     }
 
     /// Seconds of the motion played by `now` (its speed counted).
@@ -532,6 +544,11 @@ impl Stage {
                 let now = self.time;
                 if let Some(p) = self.characters.get_mut(character).and_then(|b| b.motion.as_mut()) {
                     p.set_speed(*speed, now);
+                }
+            }
+            Step::MotionRange { character, from, to, .. } => {
+                if let Some(p) = self.characters.get_mut(character).and_then(|b| b.motion.as_mut()) {
+                    p.range = Some((*from, *to));
                 }
             }
             Step::MotionDivision { character, division, .. } => {

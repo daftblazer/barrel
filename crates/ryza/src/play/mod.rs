@@ -2241,6 +2241,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     if let (Some(s), Some(hash), false) = (sound.as_mut(), field_music, a.title) {
         s.schedule(barrel_ryza::sound::Cue::music(carry.music_at, hash));
     }
+    // STAND-IN: The title's music and voice stop as the opening begins; the real thing is the opening-key's own sound requests (not read: the sound tables are packed), and the event's music and voices are not played.
+    if let (Some(s), true) = (sound.as_mut(), a.opening) {
+        s.schedule(barrel_ryza::sound::Cue::stop(carry.frame));
+    }
     if let Some(s) = sound.as_mut() {
         s.set_volumes(&play.volumes);
     }
@@ -2469,7 +2473,6 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     pitch = (d.y / dist).asin().to_degrees();
                     yaw = d.x.atan2(d.z).to_degrees();
                     fov = snap.fov.map_or(fov, f32::to_radians);
-                    if frame_no == 0 { eprintln!("opening camera: eye {eye:?} target {target:?} fov {:?}", snap.fov); }
                 }
                 // Its telop and fade, in their own layer.
                 if let Some((layer, telops)) = opening_layer.as_mut() {

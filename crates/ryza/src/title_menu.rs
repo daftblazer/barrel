@@ -423,7 +423,7 @@ impl Menu {
         let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, live) } else { Vec::new() };
         let on = moves.last().map_or(first, |m| m.1);
         // STAND-IN: On New Game the chosen item's fade and the cursor's turn run a frame further than on Load Game or Settings (capture frame 1545 of the opening key: the item at 11/255, the cursor's corners to the game's); the real thing is each item's own leave animation.
-        let new_game_late = i32::from(input.choose.is_some_and(|c| frame >= c && self.chosen(input, c) == Some("new_game")));
+        let new_game_late = i32::from(input.choose.is_some_and(|c| frame > c && self.chosen(input, c) == Some("new_game")));
         let mut out = Vec::new();
         if since >= 1 {
             // The cursor's line: the middle of the item it is on, travelling from where it was.

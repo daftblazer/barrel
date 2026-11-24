@@ -217,7 +217,7 @@ impl Actor<'_> {
     /// Its joints' skinning matrices for `body` at stage time `now`.
     pub fn joints(&self, body: Option<&Body>, now: f32) -> Vec<Mat4> {
         let playing = body.and_then(|b| b.motion.as_ref());
-        self.joints_of(playing.map(|p| p.motion), playing.map_or(0.0, |p| p.elapsed(now)), now)
+        self.joints_of(playing.map(|p| p.motion), playing.map_or(0.0, |p| p.position(now)), now)
     }
 
     /// Its joints' skinning matrices playing motion `motion` (or its first, when it has not that
