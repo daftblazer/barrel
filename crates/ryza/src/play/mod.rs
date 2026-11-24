@@ -436,6 +436,9 @@ fn title_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 /// at 2782, and the last stick frame 3299 leaves it its 121 frames of rest before 3422).
 const PAD_LAG: f32 = 2.0;
 
+/// Frames a pressed button stays down in the captures' pad scripts (the third column of `pad.txt`).
+const PAD_HOLD: f32 = 6.0;
+
 /// The help bar at capture frame `tick` for a field whose arrival fell on `arrival`, the move
 /// stick out of its dead zone at the script frames of `spans` (`--hud-stick`): stepped from the
 /// arrival frame by frame.
@@ -3042,7 +3045,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         // The field stands still while the menu is up: its clock leaves the menu's frames out, and
         // its help bar comes up again as at an arrival from the menu's last frame.
-        let menu_spans = barrel_ryza::field_menu::spans(&menu_keys);
+        let menu_spans = barrel_ryza::field_menu::spans(&menu_keys, &field_menu.as_ref().map_or_else(Vec::new, |(_, v)| v.card_order(menu_shown.party.len())));
         let paused: f32 = menu_spans.iter().map(|&(from, to)| (to.map_or(f32::MAX, |t| t + barrel_ryza::field_menu::FIELD_RESUME_LAG).min(menu_tick) - from).max(0.0)).sum();
         let resumed = menu_spans.iter().filter_map(|&(_, to)| to).filter(|&to| to <= menu_tick).last();
         if title_layer.is_none() {
@@ -3216,7 +3219,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 place: barrel_ryza::field_hud::place_names(&a.field),
                 help: if let (Some(back), true) = (resumed, pump.is_none()) {
                     let mut bar = barrel_ryza::field_hud::HelpBar::returning();
-                    (0..(menu_tick - back).max(0.0) as u32).for_each(|_| bar.step(false, 1.0));
+                    // A button pressed in the field (the menu's keys after it closed) holds the bar back like the stick.
+                    let presses: Vec<f32> = menu_keys.iter().filter(|&&(at, key)| at >= back && key != barrel_ryza::field_menu::Key::Open).map(|&(at, _)| at + PAD_LAG).collect();
+                    (0..(menu_tick - back).max(0.0) as u32).for_each(|i| bar.step(presses.iter().any(|&from| (from..from + PAD_HOLD).contains(&(back + i as f32))), 1.0));
                     bar
                 } else if pump.is_none() && a.walk_from.is_none() {
                     // A still: the bar only where the arrival frame is given (`--hud-arrival`).

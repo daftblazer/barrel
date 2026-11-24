@@ -843,6 +843,30 @@ impl Nav {
         }
     }
 
+    /// A button at game frame `at` once the menu is up (on the Settings screen the keys are the screen's, `options_run`; it ends with `Return`).
+    pub fn press(&mut self, key: Key, at: f32, order: &[usize]) {
+        let n = self;
+        match key {
+            Key::Down if !n.in_settings && n.pick.is_none() => n.step(1, at),
+            Key::Up if !n.in_settings && n.pick.is_none() => n.step(-1, at),
+            Key::Confirm if !n.in_settings && n.pick.is_none() => n.choose(at),
+            Key::Confirm => n.pick_confirm(at),
+            Key::Down if n.page(at).is_some() => n.page_slot(0, 1, at),
+            Key::Up if n.page(at).is_some() => n.page_slot(0, -1, at),
+            Key::Screen(crate::options_run::Key::Left) if n.page(at).is_some() => n.page_slot(-1, 0, at),
+            Key::Screen(crate::options_run::Key::Right) if n.page(at).is_some() => n.page_slot(1, 0, at),
+            Key::Screen(crate::options_run::Key::TabNext) if n.page(at).is_some() => n.page_card(1, at, order.len()),
+            Key::Screen(crate::options_run::Key::TabPrev) if n.page(at).is_some() => n.page_card(-1, at, order.len()),
+            Key::Screen(crate::options_run::Key::Left) => n.pick_step(-1, at, order),
+            Key::Screen(crate::options_run::Key::Right) => n.pick_step(1, at, order),
+            Key::Return if n.in_settings => n.back_from_settings(at),
+            Key::Back if n.in_settings => {}
+            Key::Back if n.pick.is_some() => n.pick_back(at),
+            Key::Back => n.closed = Some(at),
+            _ => {}
+        }
+    }
+
     /// B in the pick: back to the menu (STAND-IN: at once, the capture has no B before the page); B on the page: the page goes
     /// and the menu comes back `PAGE_OUT` frames later.
     pub fn pick_back(&mut self, at: f32) {
@@ -930,7 +954,7 @@ pub const FIELD_RESUME_LAG: f32 = 2.0;
 /// The frames the menu took over the field, one span (first frame, frame the field comes back
 /// to, none while it is open) for each time it opened: the field stands still under it (the area
 /// name's banner stops fading and carries on from where it was when the menu closes).
-pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
+pub fn spans(keys: &[(f32, Key)], order: &[usize]) -> Vec<(f32, Option<f32>)> {
     let mut spans: Vec<(f32, Option<f32>)> = Vec::new();
     let mut nav: Option<Nav> = None;
     for &(at, key) in keys {
@@ -942,18 +966,14 @@ pub fn spans(keys: &[(f32, Key)]) -> Vec<(f32, Option<f32>)> {
                 nav = Some(Nav::open(at + OPEN_LAG));
                 spans.push((at + OPEN_LAG, None));
             }
-            (Key::Down, Some(n)) if !n.in_settings && n.pick.is_none() => n.step(1, at),
-            (Key::Up, Some(n)) if !n.in_settings && n.pick.is_none() => n.step(-1, at),
-            (Key::Confirm, Some(n)) if !n.in_settings && n.pick.is_none() => n.choose(at),
-            (Key::Confirm, Some(n)) => n.pick_confirm(at),
-            (Key::Return, Some(n)) if n.in_settings => n.back_from_settings(at),
-            (Key::Back, Some(n)) if n.in_settings => {}
-            (Key::Back, Some(n)) if n.pick.is_some() => n.pick_back(at),
-            (Key::Back, Some(_)) => {
-                if let Some(last) = spans.last_mut() {
-                    last.1 = Some(at + CLOSE_LAG + BG_FADE);
+            (_, Some(n)) => {
+                n.press(key, at, order);
+                if let Some(closed) = n.closed {
+                    if let Some(last) = spans.last_mut() {
+                        last.1 = Some(closed + CLOSE_LAG + BG_FADE);
+                    }
+                    nav = None;
                 }
-                nav = None;
             }
             _ => {}
         }
@@ -975,25 +995,7 @@ pub fn replay(keys: &[(f32, Key)], tick: f32, order: &[usize]) -> Option<Nav> {
         match (key, nav.as_mut()) {
             (Key::Open, None) if at + OPEN_LAG <= tick => nav = Some(Nav::open(at + OPEN_LAG)),
             // On the Settings screen the keys are the screen's (`options_run`); it ends with `Return`.
-            (_, Some(n)) if at <= tick && n.closed.is_none() => match key {
-                Key::Down if !n.in_settings && n.pick.is_none() => n.step(1, at),
-                Key::Up if !n.in_settings && n.pick.is_none() => n.step(-1, at),
-                Key::Confirm if !n.in_settings && n.pick.is_none() => n.choose(at),
-                Key::Confirm => n.pick_confirm(at),
-                Key::Down if n.page(at).is_some() => n.page_slot(0, 1, at),
-                Key::Up if n.page(at).is_some() => n.page_slot(0, -1, at),
-                Key::Screen(crate::options_run::Key::Left) if n.page(at).is_some() => n.page_slot(-1, 0, at),
-                Key::Screen(crate::options_run::Key::Right) if n.page(at).is_some() => n.page_slot(1, 0, at),
-                Key::Screen(crate::options_run::Key::TabNext) if n.page(at).is_some() => n.page_card(1, at, order.len()),
-                Key::Screen(crate::options_run::Key::TabPrev) if n.page(at).is_some() => n.page_card(-1, at, order.len()),
-                Key::Screen(crate::options_run::Key::Left) => n.pick_step(-1, at, order),
-                Key::Screen(crate::options_run::Key::Right) => n.pick_step(1, at, order),
-                Key::Return if n.in_settings => n.back_from_settings(at),
-                Key::Back if n.in_settings => {}
-                Key::Back if n.pick.is_some() => n.pick_back(at),
-                Key::Back => n.closed = Some(at),
-                _ => {}
-            },
+            (_, Some(n)) if at <= tick && n.closed.is_none() => n.press(key, at, order),
             _ => {}
         }
     }
