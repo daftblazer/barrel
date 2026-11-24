@@ -526,15 +526,12 @@ pub enum ItemPage {
 /// pulse runs; `field-menu-pages`: A on 2000, the page's parts at 0.53 of their slide on 2050, so they began on 2041).
 pub const ITEM_PAGE_LATER: f32 = 41.0;
 
-/// Frames from A on the Guide button to the cursor ring's loop beginning again (it shows after the page: `field-menu-pages` 3360 with
-/// the ring 100 frames into its loop, 3410 at 29 (the opacity 100/255): 3260, A on 3160). STAND-IN: one capture (the Container's and tools' rings after their pages did not move with it).
 /// Frames after the first loop boundary following A on a page of items (Container, Gathering Tools, Guide) to the cursor ring's loop beginning again
 /// (`field-menu-pages`: A on 2000, 2580 and 3160; the loop's boundaries after them 2027, 2600 and 3171, its next first frames 2116, 2687 and 3258: 89, 87 and 87;
 /// the character pick's B does not move the loop). STAND-IN: the number is fitted to those three, no reason found; the first page after the menu opened is
 /// 2 frames later (`FIRST_PAGE_RING_LATE`, as if the opening loop began 2 frames after the menu's first).
 const PAGE_RING_LATE: f32 = 87.0;
 const FIRST_PAGE_RING_LATE: f32 = 2.0;
-
 
 /// Frames from B on the Container page to the menu's coming back, and to the page's going: at once (`field-menu-pages` 2150: B, the page still
 /// whole but for its cursor; 2160: only the menu, at 0.027 of its fade, so its first frame was 2151). STAND-IN: one frame.

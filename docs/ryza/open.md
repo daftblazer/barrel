@@ -354,6 +354,7 @@ item card, the Container and Gathering Tools pages (part 9). The party's numbers
 the order worth doing:
 - Equipment page: done in part 12 (the character change, the page going out, the blink on the game's stalling animation clock); 2300 to 2320 (the page coming in) and 2590 are left.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
+- Part 13: the character pick going out (`field-menu-pages` 2440 to 2460, 3020 to 3040 at 0), the ring's loop across Container, Tools and Guide pages and picks, the items pages' level plate; what it leaves is listed at the end of its section.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
 - Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
   and Effect/Trait pages are drawn and open and close as in the capture (part 11: the Effects page and the ways in and out are at 0 on most frames, the Items page 36 mismatches from the cards' tilt); Monsters and Help are
@@ -2185,3 +2186,41 @@ Left, with causes (frames counted in `field-menu-pages`, `-guide`, `-status`):
   a frame from 2520), so it is not a phase shift; RIGHT 2830 and 3100 are inside it.
 - The Item page's card tilt (36 mismatches, 2350 to 2480): not started.
 - `field-menu-equip` 2300 to 2320 (the page coming in, ~650) and 2590 (3) were not in this packet's list and are as before.
+
+### Field menu, part 13: the character pick going out, the ring's loop across pages, the items pages' coming in
+
+Built (`crates/ryza/src/{field_menu,field_page}.rs`; 54 new `field-menu-pages` frames at 0 in the local `field-menu-rows-pages9.txt`, named `field-menu-pages13-FRAME`).
+Counts before -> after (`field-menu-pages`): 2440, 3020: 79 -> 0; 2450, 3030: 49 -> 0 (2460 to 2620, 3040 to 3170: 1 -> 0); 2190: 10 -> 0, 2200 to 2330: 2 -> 0;
+2640: 299 -> 0; 2760 to 2910: 2 -> 0 (the ring after Tools); 2630: 300 -> 91.
+- B on the character pick (`Nav::pick_out`): the cards (the buttons on the left) go back from their dimming over the same 20 frames as on the way in: the tint runs `anm_select_blackout` back
+  (179/255 on the B frame, 217 ten frames on, 255 by +20) and the second drawing of each button through the blur fades by the same cubic (1 on B, 32/255 on +10), the glow's ring and
+  glow quads are tinted with the buttons (`View::glow(.., tint)`), the level plate and the money come back as the menu's own do (over 20 frames from B). The glow's `on` is one frame
+  after B (`PICK_GLOW_LATER` 1.1 -> 1.0: 128/255 on 2450). The help bar: the pick's line stands for `PICK_BAR_BACK` = 4.4 frames, then the menu's line with the plate widening
+  from the pick's width to the menu's over 6.4 frames (STAND-IN: one sample, 0.875 of the way on +10, frames of 10 apart).
+- The cursor ring's loop: the ring's loop is never restarted by a character pick (the old rule, "from B + 30", agreed with `field-menu-pages` 3050 by chance; the capture's 2480 is B + 40).
+  The old cycles run on under the pick and show at their tail on +10 and +20 (`field-menu-pages` 2450, 2460, 3030); the ring is drawn from the loop clock whatever the sign of
+  the frames since the last restart. Every cycle's first frame (its boundary) is drawn as the loop's frame 1, as the menu's first is.
+- A on Container, Gathering Tools or the Guide restarts the ring's loop (`Nav::ring_restart`): the loop goes on to its next boundary and begins again `PAGE_RING_LATE` = 87 frames after it
+  (89 for the first page after the menu opened). From the capture: the loop's first frames 2116, 2687 and 3258 after A on 2000, 2580 and 3160, the boundaries 2027, 2600 and 3171.
+  STAND-IN: the number is fitted to those three, no reason found (a page's own length is 150 frames in the capture; the loop jumps back 34 frames). It replaces `GUIDE_RING_AT` (the Guide
+  of `field-menu-guide` has the same counts as before: its ring frames are not worse).
+- The items pages' coming in: the menu's level plate and the money go out to the right from the page's first frame as on B (`field-menu-pages` 2050, 2630: the plate at 0.694 of its opacity,
+  9 frames in), 2050 and 2630 had one quad too few. The Gathering Tools page's slide-in runs `TOOLS_SLIDE_LATE` = 0.9 frame behind the Container's (STAND-IN: 2630 and 2640, the rectangles
+  are exact, the opacity is 2/255 high on 2630). The bar's plate after the Container page comes back 0.4 frames late (`CONTAINER_BACK_PLATE_LATE`, one sample, 2190).
+
+Left, with causes:
+- Gathering Tools 2630: 91 (the page's opacity is 154/255 where Barrel has 156: position and opacity do not share one lateness; the game's fade shape is not read).
+- Container coming in 2050 to 2070 (7, 6, 6): the grid's item pictures (`a21_item_s`) fade as 136, 213, 242 of 255 where Barrel has 129, 206, 237: the game's opacity is
+  the page's chain without `ITEM_ALPHA`'s 242/255 (capped at 242) on 2050, by 7/255 more on 2060; not worked out.
+- The ring after the second pick (Status, `field-menu-pages` 2920 to 3010: 2 to 4 each): the picked card's own ring and turning ring (`pick_glow`) begin on 2928, not on 2913 (the pick's first
+  frame 2912 plus one, as in pick 1 and in `field-menu-status`); 2929 is a boundary of the menu ring's loop, but pick 1's 2333 is not one. The same 16 frames, the other way, are `field-menu-status`
+  2260 to 2320 (the ring 17 frames into its loop after LEFT). No rule found.
+- `field-menu-status` 2690 to 2710 (1, 2, 4): the game's ring after the page's B (2620) is absent on 2690 and at its first frame on 2700; no rule for the restart found (the page's own B
+  is not the pages' A: the ring's loop there begins about 80 frames after the menu came back).
+- The Guide top's highlight after a return (`field-menu-guide` 2500 to 2550, 2770 to 2880, 3040 to 3150, RIGHT 2830 and 3100; `field-menu-guide2` 2500 on): read off the capture the
+  blink runs at the usual 125/255 in 60 frames (2.08 a frame, so it is NOT half the slope: part 12 had it wrong), but its clock is another one than Barrel's `age - 1`. After the Items
+  page (B 2480) the game's blink is whole on 2492.7 (B + 12.7) and falls from there; after the Effects page (B 2750) it is at its lowest on 2775 (the cursor goes to the first button on B + 25),
+  rises and the key RIGHT on 2830 does not restart it (81/255 on 2830, its peak on 2851); after the Items page the second time (B 3020) it is whole on 3046.6 (B + 26.6). Each button
+  seems to run a blink of its own; the starts are not B + a constant. Not solved.
+- `field-menu-guide2` 3320 on (200 to 350 mismatches): the field's HUD coming back after the menu closes from the Settings round trip, the HUD's opacity .137 where Barrel has .165; not looked at.
+- The Item page's card tilt (36 mismatches, `field-menu-guide` 2350 to 2480) and `field-menu-equip` 2300 to 2320 (~650) are as in part 12.
