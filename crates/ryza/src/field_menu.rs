@@ -520,7 +520,7 @@ impl Pick {
     }
 
     /// Frames from the page's A to the menu's going out under it: at once, but under the Guide it stands until the page's own parts have
-    /// faded in (`field-menu-pages` 3210: the light whole, 3220 at 0.988: it began on 3218 or 3219; the bar's fade began there too).
+    /// faded in (`field-menu-pages` 3210: the light whole; see `GUIDE_MENU_OUT_AT`).
     pub fn menu_out_later(&self) -> f32 {
         if self.items == Some(ItemPage::Guide) { GUIDE_MENU_OUT_AT } else { 0.0 }
     }
@@ -939,10 +939,9 @@ const GUIDE_TOP_ENTRIES: [(char, u32); 2] = [('\u{4d8}', 4_194_368), ('\u{4da}',
 /// The Guide page's bar fades in 15 frames from 18 frames after the page's own age began (the first frame is 1; `field-menu-pages` 3220: 1/15 of its
 /// opacity, 3230: 11/15) and out from 2 frames after B (3320: 8/15), its plate whole. STAND-IN: the bar's other parts are one sample each.
 const GUIDE_BAR_AT: f32 = 18.0;
-const GUIDE_BAR_OUT_AT: f32 = 2.0;
-const GUIDE_MENU_OUT_AT: f32 = 18.0;
-/// The level plate and the money go this many frames before the buttons (3220: 0.988, 3230: 0.0745 of the plate's opacity: 3 and 13 frames in).
-const GUIDE_CORNER_EARLY: f32 = 2.0;
+const GUIDE_BAR_OUT_AT: f32 = 3.0;
+/// (3210: the light whole, 3220 the level plate at 0.988 and 3230 the first card at 0.616 and the plate at 0.0745: 3, 13 and about 14 frames in.)
+const GUIDE_MENU_OUT_AT: f32 = 16.0;
 /// Its plate is this much wider than its two entries need (layout pixels: 25.67 of 1080 lines, `field-menu-pages` 3250). STAND-IN, as `STATUS_PLATE_EXTRA`.
 const GUIDE_PLATE_EXTRA: f32 = 25.667 / 1.5;
 
@@ -1240,7 +1239,7 @@ impl View {
             }
             if page.menu_out_later() > 0.0 && leaving.is_none() {
                 // (under the Guide the level plate and the money go out too, to the right: `field-menu-pages` 3220: the plate at 0.988)
-                self.corner_out(&mut pen, shown, out + GUIDE_CORNER_EARLY);
+                self.corner_out(&mut pen, shown, out);
             }
             let (put_at, put) = &self.put;
             pen.natural(MENU1, put, 0, *put_at, white(1.0));
