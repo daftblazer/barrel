@@ -22,8 +22,6 @@ pub const RUN_LEAN: f32 = 0.6;
 // Measured: walk-30 frames 2150-2170 (her facing turns 0.2 rad, 11.46 degrees, every frame).
 /// How fast she turns toward where she goes, radians a second (0.2 a frame at 60 a second).
 pub const TURN_RATE: f32 = 12.0;
-/// She has moved, for her facing and the camera, when she goes further than this in a frame (units).
-const MOVED_LEAST: f32 = 1e-3;
 // STAND-IN: The fallback collision size and step height are chosen; the real thing is the character tables' values and the game's own step rule.
 /// Her size against the walls when the character tables give none (`chara::Chara`), and the
 /// highest step she climbs.
@@ -153,12 +151,13 @@ impl Player {
             None => self.at = Vec3::new(to[0], self.at.y, to[1]),
         }
         let moved = [self.at.x - before.x, self.at.z - before.z];
-        // Turn toward where she went (the lean, or along a wall she slid on; not at all while
-        // she is held), the short way round.
-        // Measured: walk-30 frames 2920-3040 (against a wall her facing and the camera follow
-        // her slide, and keep still when she is stuck in a corner).
-        if moved[0].hypot(moved[1]) > MOVED_LEAST {
-            let want = moved[0].atan2(moved[1]);
+        // Turn toward where the stick points (a wall she slides along does not turn her, nor does
+        // being held), the short way round.
+        // Measured: walk-30 frames 2917-3060 (against the fence her facing keeps the stick's
+        // direction, the camera's yaw a frame late, as she slides 70 degrees across it and when she
+        // stands stuck in its corner).
+        {
+            let want = lean[0].atan2(lean[1]);
             let mut d = (want - self.turn).rem_euclid(std::f32::consts::TAU);
             // Measured: walk-30 frames 2560-2575 and 2780-2795 (179.2 degrees the negative way
             // and 179.99 the positive way: the short way, however near half a turn).

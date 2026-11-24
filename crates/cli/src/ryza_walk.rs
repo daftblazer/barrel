@@ -119,6 +119,37 @@ pub fn run(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// `walk-near INSTALL FIELD X Z RADIUS`: the placed collision shapes (hulls, meshes, boxes) whose box lies
+/// within RADIUS of the point (x, z): their box and, for a shape of 40 vertices or fewer, its vertices.
+pub fn near(args: &[&str]) -> Result<()> {
+    let [root, field, x, z, r] = args else { return Err("walk-near INSTALL FIELD X Z RADIUS".into()) };
+    let (x, z, r): (f32, f32, f32) = (x.parse()?, z.parse()?, r.parse()?);
+    let install = barrel_ryza::install::Install::open(Path::new(root))?;
+    let files = install.field(field)?;
+    let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
+    let placements = barrel_engine::field::named(&main, &format!("{}.opl2", files.area)).map(barrel_formats::opl2::parse).transpose()?.ok_or("no placements")?;
+    let (solids, _) = barrel_ryza::solids::placed_meshes(&placements, &objects);
+    for (k, c) in solids.iter().enumerate() {
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for v in &c.vertices {
+            for a in 0..3 {
+                lo[a] = lo[a].min(v[a]);
+                hi[a] = hi[a].max(v[a]);
+            }
+        }
+        if hi[0] < x - r || lo[0] > x + r || hi[2] < z - r || lo[2] > z + r {
+            continue;
+        }
+        println!("shape {k}: {} triangles, {} vertices, x {:.1} to {:.1}, y {:.1} to {:.1}, z {:.1} to {:.1}", c.triangles.len(), c.vertices.len(), lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
+        if c.vertices.len() <= 40 {
+            for v in &c.vertices {
+                println!("    {:.1} {:.1} {:.1}", v[0], v[1], v[2]);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

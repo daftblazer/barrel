@@ -20,6 +20,7 @@ pub mod g1a;
 pub mod g1co;
 pub mod g1h;
 pub mod g1m;
+pub mod g1pf;
 pub mod g1t;
 pub mod game;
 pub mod inflate;

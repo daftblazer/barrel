@@ -8,7 +8,7 @@
 //! The rules are measured on a 30 second walk of the original (`walk-30`, the frames named in
 //! each constant's comment, `docs/ryza/open.md`, "Walking her, measured").
 
-use barrel_engine::walk::{Ground, Walls};
+use barrel_engine::walk::{Ground, Wall, Walls};
 use barrel_formats::elixir::Elixir;
 use glam::Vec3;
 
@@ -29,6 +29,11 @@ pub const CAMERA_TURN_RATE: f32 = 90.0;
 // Measured: walk-30 frames 2150-2170 (full lean to the camera's right: 1.0125 degrees a frame) and
 // frames 2230-2330 (to its front left, 45 degrees: 0.71 times that). Only full leans were
 // walked, so how it depends on the lean's length is not measured; it is taken as none.
+// Measured: walk-30 frames 2918-3017 (sliding along the fence at 180 to 520 units a second, the camera
+// turned 1.19 times what her speed over 600 a second gives: 1.19 times 1/600 is 1/504).
+/// The speed (units a second) from which the camera's follow is at its full rate; below it the rate
+/// falls in proportion (a slide along a wall is slow; a run is full speed).
+pub const FOLLOW_FULL_SPEED: f32 = 504.0;
 /// How fast the camera turns toward where she goes, at a right angle to its view, degrees a second.
 pub const FOLLOW_RATE: f32 = 60.75;
 // Measured: walk-30 frames 2720-2754 (right stick y 20000/32767: 0.376 degrees a frame for the
@@ -143,11 +148,12 @@ impl Camera {
     /// While she moves along `way` (game x, z), taken against a camera of yaw `from`, the camera
     /// turns toward it, the more the more it is across that view.
     pub fn follow(&mut self, way: [f32; 2], from: f32, dt: f32) {
-        if way[0].hypot(way[1]) < 1e-3 {
+        let speed = way[0].hypot(way[1]) / dt;
+        if speed < 1e-3 {
             return;
         }
         let across = (way[0].atan2(way[1]).to_degrees() - from).to_radians();
-        self.yaw += FOLLOW_RATE * across.sin() * dt;
+        self.yaw += FOLLOW_RATE * across.sin() * (speed / FOLLOW_FULL_SPEED).min(1.0) * dt;
     }
 
     /// How far below `PULL_PITCH` the view is looking up, degrees.
@@ -217,6 +223,16 @@ pub fn load_terrain(install: &Install, field: &str, area: &str, main: &Elixir, o
         .ok()
         .and_then(|b| crate::koc::parse(&b).ok())
         .map(|q| Walls::from_walls(crate::koc::walls(&q), 2000.0));
+    // The walkable mesh's borders: walls as high as she can be (the fences' only walls).
+    let borders = install
+        .read(&format!("\\data\\x64\\field\\{0}\\{0}.g1pf", field.to_ascii_lowercase()))
+        .ok()
+        .and_then(|b| barrel_formats::g1pf::parse(&b).ok())
+        .map(|m| Walls::from_walls(m.borders().into_iter().map(|(a, b)| Wall { a, b, low: f32::MIN, high: f32::MAX, outline: None }).collect(), 2000.0));
+    let walls = match (walls, borders) {
+        (Some(w), Some(b)) => Some(w.join(b)),
+        (w, b) => w.or(b),
+    };
     let placements = barrel_engine::field::named(main, &format!("{area}.opl2")).map(barrel_formats::opl2::parse).transpose()?;
     let (mut solids, fit) = placements.map(|p| crate::solids::placed_meshes(&p, objects)).unwrap_or_default();
     eprintln!("model collision: {fit:?}");
