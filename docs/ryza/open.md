@@ -354,12 +354,13 @@ item card, the Container and Gathering Tools pages (part 9). The party's numbers
 the order worth doing:
 - Equipment page: done in part 12 (the character change, the page going out, the blink on the game's stalling animation clock); 2300 to 2320 (the page coming in) and 2590 are left.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
+- Part 14: the field after the Guide round trip (`field-menu-guide2` 3320 to 3540 at 0: the field's clock span follows the menu's own key rules, a button in the field holds the help bar back).
 - Part 13: the character pick going out (`field-menu-pages` 2440 to 2460, 3020 to 3040 at 0), the ring's loop across Container, Tools and Guide pages and picks, the items pages' level plate; what it leaves is listed at the end of its section.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
 - Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
   and Effect/Trait pages are drawn and open and close as in the capture (part 11: the Effects page and the ways in and out are at 0 on most frames, the Items page 36 mismatches from the cards' tilt); Monsters and Help are
   closed in the capture's save (A does nothing) or not captured. Answer keys field-menu-pages (every 10 frames 1990-3540), field-menu-guide, field-menu-guide2.
-- The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
+- The title's Settings still runs its own copy of the Options code (`play::run_once`): part 14 says why it is a pass of its own.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
 - Fixed 2026-11-23: anti-aliasing changed live in a window made the field worse (user: smeared, oversaturated; MSAA
@@ -2222,5 +2223,27 @@ Left, with causes:
   page (B 2480) the game's blink is whole on 2492.7 (B + 12.7) and falls from there; after the Effects page (B 2750) it is at its lowest on 2775 (the cursor goes to the first button on B + 25),
   rises and the key RIGHT on 2830 does not restart it (81/255 on 2830, its peak on 2851); after the Items page the second time (B 3020) it is whole on 3046.6 (B + 26.6). Each button
   seems to run a blink of its own; the starts are not B + a constant. Not solved.
-- `field-menu-guide2` 3320 on (200 to 350 mismatches): the field's HUD coming back after the menu closes from the Settings round trip, the HUD's opacity .137 where Barrel has .165; not looked at.
+- `field-menu-guide2` 3320 on: done in part 14 (0).
 - The Item page's card tilt (36 mismatches, `field-menu-guide` 2350 to 2480) and `field-menu-equip` 2300 to 2320 (~650) are as in part 12.
+
+### Field menu, part 14: the field after the Guide round trip
+
+Built (`crates/ryza/src/field_menu.rs`, `play/mod.rs`; 23 new `field-menu-guide2` frames, 3320 to 3540, at 0 in the local `field-menu-rows-pages10.txt`, named `field-menu-guidesub2-FRAME`).
+Counts before -> after: 3320: 206 -> 0; 3330: 347 -> 0; 3340 to 3450: 274 -> 0; 3460: 347 -> 0; 3470 to 3540 0 after (not measured before).
+- Cause 1 (the 200 to 350): `field_menu::spans` (the frames the menu holds the field's clock) had its own, shorter copy of the key rules (no card change, no page keys), so
+  in a run with the Guide's pages it lost the pick and took B on the Guide top at 3300 for a press on nothing, ending the span at the second B (3420) instead of the first: the area banner
+  stayed frozen at 0.165 through 3320 to 3460 where the game's fades out by 3350. The keys are now one function, `Nav::press`, that `replay` and `spans` both call (the field's clock no
+  longer depends on a second copy of the rules). The "HUD opacity .137 against .165" of part 13 was the banner.
+- Cause 2: after the menu closes a button pressed in the field (B on 3420 in `pad.txt`) holds the field's help bar back like the move stick does: the bar fades out over 15 frames from the
+  press + `PAD_LAG` (7/15 on 3430) and stays out. The bar after a return now steps with the menu's keys after the return as presses (`PAD_HOLD` = 6 frames, the pad script's hold).
+- Unit test: `the_spans_close_where_the_menu_does_after_a_guide_round_trip`.
+
+Left, with causes:
+- `field-menu-guide2` 3300 and 3310 (2 and 4): the Guide card's ring while the menu closes on B from the Guide top (game 200 px wide at 0.36 on 3300, Barrel 144 px at 0.13): the ring's loop clock
+  after the page round trip, see the ring entries of part 13.
+- The title's Settings still runs its own copy of the Options code. Not done in part 14: the copy is not just key code. The title's cursor is the list's hold record (`title_input.list_holds`,
+  `options::cursor_on`, `options_base`) and its offscreen frames replay scripted keys through `leave::replay` (an event list: holds, tabs, changes, B, A) on the title's clock, with the
+  screen's blink, return spin and cover (`COVER_FULL`) from the title's menu; `options_run::Run` steps its own cursor (`State::step`) on a clock of its own and models none of these. One
+  implementation needs `Run` to take the title's clock and the hold-driven cursor (and the title's drawing to read its state), and the 100 `checks-settings` rows would have to stay at 0 through it:
+  a pass of its own.
+- Gathering Tools 2630 (91) and Container coming in 2050 to 2070 (7, 6, 6): not looked at in part 14 (no new cause found in the data; part 13's STAND-INs, `TOOLS_SLIDE_LATE` and the others, are unchanged).

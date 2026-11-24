@@ -2046,4 +2046,19 @@ mod tests {
         let nav = replay(&page_keys(), 2524.0, &ORDER).unwrap();
         assert_eq!(nav.blur_out, Some(2524.0));
     }
+
+    /// The Guide round trip of `field-menu-guide2`: the spans follow the menu's own replay, so the field's clock runs again from the
+    /// menu's last frame (B on the Guide top at 3300 closes it), not from a later B that pressed nothing.
+    #[test]
+    fn the_spans_close_where_the_menu_does_after_a_guide_round_trip() {
+        use crate::options_run::Key as S;
+        let keys = [
+            (1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down), (2080.0, Key::Down), (2120.0, Key::Down), (2180.0, Key::Confirm),
+            (2330.0, Key::Screen(S::Right)), (2370.0, Key::Screen(S::Right)), (2410.0, Key::Confirm), (2600.0, Key::Back), (2800.0, Key::Screen(S::Right)),
+            (2840.0, Key::Confirm), (3040.0, Key::Back), (3300.0, Key::Back), (3420.0, Key::Back),
+        ];
+        let spans = spans(&keys, &ORDER);
+        assert_eq!(spans, vec![(1906.0, Some(3300.0 + CLOSE_LAG + BG_FADE))]);
+        assert!(replay(&keys, 3300.0 + CLOSE_LAG + BG_FADE, &ORDER).is_none());
+    }
 }
