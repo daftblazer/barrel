@@ -107,17 +107,60 @@ pub struct Member {
     pub worn: [Option<Worn>; 4],
 }
 
-/// An item unit of a `Party` record: its number in `itemData.xml` (the table's row) and its quality.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// An item unit of the save (`docs/formats.md`, "Ryza DX saves"): the worn items of a `Party` record, the container's and the tools'.
+/// Little-endian: a serial (+0), the item's number in `itemData.xml` (+2; `0xffff` for none), its quality (+4), its level (+8),
+/// four effects (+14: a number in the effects' strings, `0xffff` for none), three potentials (+22: a row of `item_potential.xml`,
+/// 290 for none), their levels (+28) and the weapon's free slots (+45).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Worn {
     pub item: u16,
     pub quality: u16,
+    pub level: u8,
+    pub effects: [u16; 4],
+    pub potentials: [u16; 3],
+    pub potential_levels: [u8; 3],
+    pub slots: u8,
 }
 
-/// The first of a `Party` record's four item units, and their size in bytes: each is a little-endian
-/// slot number, the item's number (`0xffff` for none) and its quality, then more not read.
+impl Worn {
+    /// A unit read from its 0x42 bytes; `None` for an empty place.
+    pub fn read(u: &[u8]) -> Option<Worn> {
+        let le = |at: usize| u.get(at..at + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+        let item = le(2)?;
+        if item == 0xffff {
+            return None;
+        }
+        Some(Worn {
+            item,
+            quality: le(4)?,
+            level: *u.get(8)?,
+            effects: [le(14)?, le(16)?, le(18)?, le(20)?],
+            potentials: [le(22)?, le(24)?, le(26)?],
+            potential_levels: [*u.get(28)?, *u.get(29)?, *u.get(30)?],
+            slots: *u.get(45)?,
+        })
+    }
+}
+
+/// The first of a `Party` record's four item units, and a unit's size in bytes (`Worn`).
 const WORN_AT: usize = 0x190;
-const WORN_SIZE: usize = 0x42;
+pub const UNIT_SIZE: usize = 0x42;
+const WORN_SIZE: usize = UNIT_SIZE;
+
+/// The container's items (`item` / `m_unitContainer`: a big-endian byte count, then a unit each, an empty place's item `0xffff`):
+/// the filled places in order, and the number of places.
+pub fn container(state: &[u8]) -> Option<(Vec<Worn>, usize)> {
+    units(state, "m_unitContainer")
+}
+
+/// The units of the `item` record's list `name`.
+fn units(state: &[u8], name: &str) -> Option<(Vec<Worn>, usize)> {
+    let d = find(state, &["item", name])?;
+    let bytes = u32::from_be_bytes(d.get(..4)?.try_into().ok()?) as usize;
+    let list = d.get(4..4 + bytes)?;
+    let places = list.chunks_exact(UNIT_SIZE).count();
+    Some((list.chunks_exact(UNIT_SIZE).filter_map(Worn::read).collect(), places))
+}
 
 /// The save's members in its own order (all of its `party` records, in the party or not).
 pub fn members(state: &[u8]) -> Option<Vec<Member>> {
@@ -135,9 +178,7 @@ pub fn members(state: &[u8]) -> Option<Vec<Member>> {
         let mut worn = [None; 4];
         for (k, w) in worn.iter_mut().enumerate() {
             let at = WORN_AT + k * WORN_SIZE;
-            let item = u16::from_le_bytes(c.get(at + 2..at + 4)?.try_into().ok()?);
-            let quality = u16::from_le_bytes(c.get(at + 4..at + 6)?.try_into().ok()?);
-            *w = (item != 0xffff).then_some(Worn { item, quality });
+            *w = Worn::read(c.get(at..at + UNIT_SIZE)?);
         }
         out.push(Member { id: word(0)? as u8, level: word(1)? as u8, worn });
         rest = &rest[size..];
@@ -202,7 +243,7 @@ mod tests {
             // ... and the party: Ryza (0) at level 3 wears the first staff (row 406) and the first armour (456).
             let party = members(&state).unwrap();
             assert_eq!((party[0].id, party[0].level), (0, 3));
-            assert_eq!(party[0].worn[0], Some(Worn { item: 406, quality: 30 }));
+            assert_eq!(party[0].worn[0].map(|w| (w.item, w.quality)), Some((406, 30)));
             assert_eq!(party[0].worn[1].map(|w| w.item), Some(456));
             assert_eq!(party[0].worn[2], None);
         }
@@ -224,6 +265,6 @@ mod tests {
         let m = members(&state).unwrap();
         assert_eq!(m.len(), 1);
         assert_eq!((m[0].id, m[0].level), (0, 5));
-        assert_eq!(m[0].worn, [Some(Worn { item: 406, quality: 30 }), None, None, None]);
+        assert_eq!(m[0].worn.map(|w| w.map(|w| (w.item, w.quality))), [Some((406, 30)), None, None, None]);
     }
 }

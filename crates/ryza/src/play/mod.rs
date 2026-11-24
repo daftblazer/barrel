@@ -1150,6 +1150,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut field_music: Option<u32> = None;
     let mut menu_shown = barrel_ryza::field_menu::Shown { party: Vec::new(), money: 0 };
     let mut party_tables: Option<barrel_ryza::party_stats::Tables> = None;
+    let mut item_info: Option<barrel_ryza::item_info::Items> = None;
     let mut party_skills = barrel_ryza::party_skills::Skills::default();
     if let Some(save) = &a.save {
         let file = barrel_files::read(Path::new(save))?;
@@ -1167,6 +1168,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
             party_tables = Some(tables);
         }
+        item_info = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?).ok();
         if let Ok(skills) = barrel_ryza::party_skills::Skills::read(&install.read("\\saves\\party\\party_skill.xml")?, &install.read("\\saves\\skill\\skill_data.xml")?) {
             party_skills = skills;
         }
@@ -3077,27 +3079,29 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 (None, Some((p, out))) => (Some(p), Some(out)),
                 _ => (None, None),
             };
-            let menu_help = view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving);
+            let menu_help = view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.is_some_and(|p| p.slot_since.is_none()), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving);
             if let (Some((layer, view)), Some(pick), Some(tables)) = (page.as_mut(), page_now, party_tables.as_ref()) {
                 if let Some(member) = menu_shown.party.get(pick.card) {
                     let skills = if pick.status { party_skills.active(usize::from(member.id), member.level, barrel_ryza::field_menu::TACTICS_LEVEL) } else { Vec::new() };
+                    let card = item_info.as_ref().zip(member.worn.get(pick.slot).copied().flatten()).map(|(items, unit)| items.card(&unit, &menu_shown.party.iter().map(|m| m.id).collect::<Vec<_>>(), tables.image(unit.item)));
                     let look = barrel_ryza::field_page::Look {
+                        item: card.as_ref(),
                         member,
                         party: &menu_shown.party,
                         card: pick.card,
                         item_images: &|i| tables.image(i),
                         slot: pick.slot,
-                        slot_age: menu_tick - pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_menu::PAGE_AT) + barrel_ryza::field_page::BLINK_LAG,
+                        slot_age: menu_tick - pick.slot_since.unwrap_or(pick.confirmed.unwrap_or(0.0) + barrel_ryza::field_page::BLINK_FROM) + barrel_ryza::field_page::BLINK_LAG,
                         age: menu_tick - pick.confirmed.unwrap_or(0.0),
                         status: pick.status,
                         skills: &skills,
                         row: pick.row,
                         leaving,
                     };
-                    let (mut quads, additive) = view.quads(&look, (width, height));
+                    let (mut quads, additive, clips) = view.quads(&look, (width, height));
                     // The page's own help bar: the menu's plate and words over the page's textures.
                     quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
-                    layer.set_blended_by(&gpu, &quads, &[], &|i| additive.contains(&i))?;
+                    layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
                     showing_page = true;
                 }
             }

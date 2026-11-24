@@ -264,7 +264,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -799,6 +799,8 @@ enum Entries {
     Page,
     /// The Status page's: the cross and "Select", B and "Back".
     StatusPage,
+    /// The Equipment page's with the table of contents (the item's entry in the book) between "Select" and "Back".
+    PageGuide,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
@@ -812,6 +814,12 @@ const PAGE_ENTRIES: [(char, u32); 3] = [('\u{4e2}', 4_194_366), ('\u{4d8}', 4_19
 /// none after 20). STAND-IN: the cause of the extra width is not found (a third, empty entry's glyph and space are 50 pixels).
 const STATUS_PLATE_EXTRA: f32 = 50.0 / 1.5;
 const STATUS_BAR_FRAMES: f32 = 20.0;
+
+/// The Equipment page's entries with the table of contents (`field-menu-equip` 2200 to 2300, the cursor on the weapon).
+const PAGE_GUIDE_ENTRIES: [(char, u32); 4] = [('\u{4e2}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// "Table of Contents" (the item card's guide entry).
+const TABLE_OF_CONTENTS: u32 = 6_684_709;
 
 /// The Status page's entries: the cross and "Select", B and "Back" (`field-menu-status` 2400).
 const STATUS_ENTRIES: [(char, u32); 2] = [('\u{4e1}', 4_194_366), ('\u{4d8}', 4_194_368)];
@@ -955,7 +963,10 @@ impl View {
     ///
     /// On the Status page (`age` frames since A on the card) the plate comes from the pick's bar's width to its own over
     /// `STATUS_BAR_FRAMES`, out cubic, and is `STATUS_PLATE_EXTRA` wider than its words need.
-    pub fn page_help(&self, screen: (u32, u32), status: bool, age: f32, leaving: Option<f32>) -> Vec<Quad> {
+    ///
+    /// `guide`: the table of contents is among the entries. STAND-IN: the Equipment page has it until the first key on the page
+    /// (it goes with the first move down in the capture, 2300 to 2310: the real rule is not found).
+    pub fn page_help(&self, screen: (u32, u32), status: bool, guide: bool, age: f32, leaving: Option<f32>) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let extra = if status {
             let (pick, own) = (self.plate_full(&self.help_line(&PICK_ENTRIES), k), self.plate_full(&self.help_line(&STATUS_ENTRIES), k) + STATUS_PLATE_EXTRA);
@@ -966,7 +977,7 @@ impl View {
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         // (going out it follows the menu's bar: the words first, then the plate fades)
         let gone = leaving.map(Bar::out);
-        self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else { Entries::Page } });
+        self.help_bar(&mut pen, Bar { alpha: gone.map_or(1.0, |b| b.alpha), grow: 1.0, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if guide { Entries::PageGuide } else { Entries::Page } });
         pen.finish().0
     }
 
@@ -1278,6 +1289,7 @@ impl View {
             Entries::Pick => &PICK_ENTRIES,
             Entries::Page => &PAGE_ENTRIES,
             Entries::StatusPage => &STATUS_ENTRIES,
+            Entries::PageGuide => &PAGE_GUIDE_ENTRIES,
         };
         let line = self.help_line(entries);
         let full = self.plate_full(&line, pen.k);

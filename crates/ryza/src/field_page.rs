@@ -14,9 +14,10 @@
 use std::collections::{BTreeSet, HashMap};
 
 use barrel_formats::table::{self, Element};
-use barrel_render::text::{Glyph, Quad, Spin};
+use barrel_render::text::{Clip, Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
+use crate::item_info::{Card, CATEGORY_BASE, EFFECT_BASE, NAME_BASE, POTENTIAL_BASE};
 use crate::load_view::TEXT_TOP;
 use crate::party_skills::{Skill, ACTION_COMMENT, ACTION_NAME};
 use crate::options_view::segments;
@@ -50,6 +51,9 @@ const BLINK_FRAMES: f32 = 120.0;
 /// STAND-IN: the cursor's blink is read from the frame before the key's (`field-menu-equip`: DOWN on 2300, the opacity of 217/255 on
 /// 2410, 111 frames into the curve).
 pub const BLINK_LAG: f32 = 1.0;
+/// The slot cursor's blink runs from this many frames after A on the card, before any move (`field-menu-equip` 2290: phase 29 of 120).
+/// STAND-IN: one sample (the page itself is first drawn at `PAGE_AT`).
+pub const BLINK_FROM: f32 = 2.0;
 /// The icon highlight's animations: a turn in 360 frames; the glow's 100 frames, its opacity peak (frame 2.82, 100 of 255) and a lag
 /// STAND-IN fitted to the capture's opacity of 33/255 on 2410.
 const ROTATION_FRAMES: f32 = 360.0;
@@ -125,6 +129,8 @@ pub struct Look<'a> {
     pub row: usize,
     /// Frames since B on the page, while its parts go out (their slide-ins backwards).
     pub leaving: Option<f32>,
+    /// The item under the Equipment page's cursor.
+    pub item: Option<&'a Card>,
 }
 
 /// A node the game's code changes: shown or hidden outright, another picture or another text.
@@ -146,6 +152,8 @@ struct Over {
     /// The node's turn (degrees clockwise) and scale where an animation sets them.
     turn: Option<f32>,
     scale: Option<f32>,
+    /// A picture cut at this share of its width (the quality gauge).
+    crop: Option<f32>,
 }
 
 pub struct Page {
@@ -162,6 +170,11 @@ pub struct Page {
     faces: Element,
     /// The Status page's skills panel (`uil_a21_menu_skill_info.xml`).
     skill: Element,
+    /// The item card (`uil_a21_item_info.xml`) and the parts it copies (`uil_a21_item_info_clone_targets.xml`).
+    item: Element,
+    targets: Element,
+    /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
+    text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
 }
 
@@ -195,6 +208,16 @@ impl Page {
         let faces = layout("uil_a21_menu_faceicon.xml")?;
         let skill = layout("uil_a21_menu_skill_info.xml")?;
         let caption = table::parse(&read("ui_en\\a21_caption\\uil_a21_caption.xml")?).map_err(|e| format!("uil_a21_caption: {e}"))?;
+        let item = table::parse(&read("ui_en\\a21_item_info\\uil_a21_item_info.xml")?).map_err(|e| format!("item_info: {e}"))?;
+        let targets = table::parse(&read("ui_en\\a21_item_info\\uil_a21_item_info_clone_targets.xml")?).map_err(|e| format!("item_info targets: {e}"))?;
+        let mut text_styles = HashMap::new();
+        for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
+            for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
+                if let Some(name) = t.attr("name") {
+                    text_styles.insert(name.to_string(), t.attributes.clone());
+                }
+            }
+        }
         let mut styles: HashMap<String, Vec<Pic>> = HashMap::new();
         for f in STYLE_FILES {
             let root = table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?;
@@ -214,12 +237,12 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
         for name in &used {
-            if name == "etc_a21_item_l" || name == "etc_a21_chara_stand_card" {
+            if name == "etc_a21_item_l" || name == "etc_a21_chara_stand_card" || name == "etc_a21_category_image" {
                 continue;
             }
             for p in styles.get(name).into_iter().flatten() {
@@ -259,9 +282,13 @@ impl Page {
                     || *n == STATUS_TITLE
                     || (ACTION_NAME..ACTION_NAME + 1000).contains(n)
                     || (ACTION_COMMENT..ACTION_COMMENT + 1000).contains(n)
+                    || (NAME_BASE..NAME_BASE + 1000).contains(n)
+                    || (EFFECT_BASE..EFFECT_BASE + 2000).contains(n)
+                    || (CATEGORY_BASE..CATEGORY_BASE + 100).contains(n)
+                    || (POTENTIAL_BASE..POTENTIAL_BASE + 400).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -275,9 +302,9 @@ impl Page {
     }
 
     /// The page's quads in draw order on a `screen` of pixels, and which of them are drawn added to what is under them.
-    pub fn quads(&self, look: &Look, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>) {
+    pub fn quads(&self, look: &Look, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2] };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // Frames since A on the card: the Status page's parts come in by it (the Equipment page's are whole by the time it is shown).
         let clock = look.age;
@@ -379,6 +406,12 @@ impl Page {
             w.walk(top, root.node(pair(top, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &slots, &HashMap::new());
         }
 
+        // The item card of the slot under the cursor, at the item-info place of the equip layout (`item_info_pos` and its battle child).
+        if let Some(card) = look.item.filter(|_| !look.status) {
+            let at = [find_pos(&self.equip, "item_info_pos").unwrap_or([0.0; 2]), find_pos(&self.equip, "item_info_pos_battle").unwrap_or([0.0; 2])];
+            self.item_card(&mut w, &root, "equip_arms", Some([at[0][0] + at[1][0], at[0][1] + at[1][1]]), card, look.party);
+        }
+
         // The stat panel (`uil_a21_menu_chara_status.xml`'s `top`, shown by the game's code), sliding in from the right.
         if let Some(top) = find(&self.status, "top") {
             let s = look.member.stats;
@@ -445,7 +478,102 @@ impl Page {
             };
             w.slid(slide(0.0, [0.0, -30.0]), |w| w.walk(top, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &plate, &HashMap::new()));
         }
-        (w.out, w.additive)
+        (w.out, w.additive, w.clips)
+    }
+
+    /// The item card `kind` (`equip_arms`, `normal_arms`, ...) of `uil_a21_item_info.xml` for `card`, its `top` node at `at` (its own
+    /// place where none is given), drawn into `w`.
+    fn item_card(&self, w: &mut Walker, root: &Xf, kind: &str, at: Option<[f32; 2]>, card: &Card, party: &[crate::field_menu::Member]) {
+        let Some(top) = find(&self.item, kind).and_then(|k| find(k, "top")) else { return };
+        let at = at.unwrap_or_else(|| pair(top, "pos", [0.0; 2]));
+        let row = |s: &str| s.strip_prefix("node:").and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
+        let text = |s: String| Over { text: Some(s), ..Default::default() };
+        let hide = || Over { hide: true, ..Default::default() };
+        let string = |n: u32| self.strings.get(&n).cloned().unwrap_or_default();
+        let faces = card.equippable.len();
+        let look_face = |k: usize| party.get(k).map_or(0, |m| usize::from(m.id));
+        let over = |path: &[&str]| -> Over {
+            let [_, _, rest @ ..] = path else { return Over::default() };
+            match rest {
+                ["name", "name", "item_name"] => text(string(card.name)),
+                ["common", "icon", "item_icon"] => Over { image_no: Some(card.image), ..Default::default() },
+                ["common", "rarity", "rarity_icon"] => Over { image_no: Some(card.rank), ..Default::default() },
+                ["common", "lv", _, "lv_value"] => text(card.level.to_string()),
+                ["common", "elem", "elem_value"] => text(card.elem_value.to_string()),
+                ["common", "elem", "list", n, "on"] => Over { show: card.elements.get(row(n)).copied().unwrap_or(false), ..Default::default() },
+                ["common", "weapon_slot"] => Over { show: card.slots.is_some(), ..Default::default() },
+                ["common", "weapon_slot", "value"] => text(card.slots.unwrap_or(0).to_string()),
+                ["common", "quality", _, gauge] => {
+                    let k: usize = gauge.strip_prefix("quality_gauge_").and_then(|n| n.parse().ok()).unwrap_or(0);
+                    let share = ((f32::from(card.quality) - 100.0 * k as f32) / 100.0).clamp(0.0, 1.0);
+                    if share <= 0.0 { hide() } else { Over { crop: Some(share), ..Default::default() } }
+                }
+                ["common", "quality", "quality_value"] => text(card.quality.to_string()),
+                ["effect", "effect", "list", n, "", "text"] => card.effects.get(row(n)).map_or_else(hide, |&e| text(string(e))),
+                ["potential", "potential", "list", n, "text"] => card.traits.get(row(n)).map_or_else(hide, |&(t, _)| text(string(t))),
+                ["potential", "potential", "list", n, "lv"] if row(n) >= card.traits.len() => hide(),
+                ["potential", "potential", "list", n, "lv", "text"] => card.traits.get(row(n)).map_or_else(hide, |&(_, l)| text(l.to_string())),
+                ["potential", "potential", "list", _, "lock_icon"] => hide(),
+                ["status", "status", "list", stat, "value"] => {
+                    let i = ["hp", "atk", "def", "spd"].iter().position(|s| s == stat).unwrap_or(0);
+                    text(card.status[i].to_string())
+                }
+                ["role", "role", "list", stat, "value"] => {
+                    let i = ["atk", "def", "spd"].iter().position(|s| s == stat).unwrap_or(0);
+                    text(card.roles[i].to_string())
+                }
+                ["equip_chara", "equip_chara", "pos", "list", n, face] => {
+                    let k = row(n);
+                    let lit = card.equippable.get(k).copied().unwrap_or(false);
+                    match (*face, k < faces) {
+                        ("on", true) if lit => Over { image_no: Some(look_face(k)), ..Default::default() },
+                        ("off", true) if !lit => Over { image_no: Some(look_face(k)), show: true, ..Default::default() },
+                        _ => hide(),
+                    }
+                }
+                ["equip_chara", "equip_chara", "pos", "list", n] => {
+                    // The icons are centred on the `center` node, one `FACE_STEP` apart (STAND-IN: measured on the capture's cards).
+                    let left = FACE_CENTER_X - ((faces.max(1) - 1) as f32 * FACE_STEP + FACE_SIZE) / 2.0 + row(n) as f32 * FACE_STEP;
+                    Over { at: Some([left, 0.0]), ..Default::default() }
+                }
+                ["category", "category", "", ..] => hide(),
+                ["category", "category", "list", n, rest @ ..] => match (row(n), card.category, rest) {
+                    (0, Some(c), ["cat_icon"]) => Over { image_no: Some((c - CATEGORY_BASE) as usize), ..Default::default() },
+                    (0, Some(c), ["cat_name"]) => text(string(c)),
+                    (0, Some(_), _) => Over::default(),
+                    _ => hide(),
+                },
+                _ => Over::default(),
+            }
+        };
+        let xf = root.node(at, 0.0, [1.0; 2]);
+        w.card = true;
+        w.walk(top, xf, &mut Vec::new(), &over, &HashMap::new());
+        w.card = false;
+    }
+
+    /// A text style's attributes (the item card's `copy` names) joined to a text node's own.
+    fn styled(&self, e: &Element) -> Element {
+        let mut attributes = e.attributes.clone();
+        let mut next = e.attr("copy").map(str::to_string);
+        for _ in 0..4 {
+            let Some(style) = next.take().and_then(|n| self.text_styles.get(&n)) else { break };
+            for (k, v) in style {
+                if k != "name" && k != "copy" && !attributes.iter().any(|(a, _)| a == k) {
+                    attributes.push((k.clone(), v.clone()));
+                }
+            }
+            next = style.iter().find(|(k, _)| k == "copy").map(|(_, v)| v.clone());
+        }
+        // A text that gives both a `font_color` and its own `color` is tinted by the second (the category's heading at no opacity).
+        if let (Some(f), Some(c)) = (numbers_of(&attributes, "font_color"), e.attr("color").map(|_| numbers(e, "color"))) {
+            if f.len() >= 4 && c.len() >= 4 {
+                let tinted: Vec<String> = (0..4).map(|i| (f[i] * c[i] / 255.0).to_string()).collect();
+                attributes.retain(|(k, _)| k != "font_color");
+                attributes.push(("font_color".into(), tinted.join(",")));
+            }
+        }
+        Element { name: e.name.clone(), attributes, children: e.children.clone() }
     }
 
     /// What the game's code changes in the skills list's template: the rows (`clone_line_format01_n` for the n-th skill), the
@@ -486,7 +614,18 @@ impl Page {
 
     /// The node a `copy` names: its first definition with children, in the equip or status layout.
     fn template(&self, name: &str) -> Option<&Element> {
-        [&self.equip, &self.status, &self.faces, &self.skill].into_iter().find_map(|doc| find_with_children(doc, name))
+        if name.contains('/') {
+            // A path (`clone_targets/effect/node`): each name the first node of that name under the one before it.
+            return [&self.targets, &self.item].into_iter().find_map(|doc| {
+                let mut parts = name.split('/');
+                let mut at = find(doc, parts.next()?)?;
+                for part in parts {
+                    at = at.children.iter().find_map(|c| find(c, part))?;
+                }
+                Some(at)
+            });
+        }
+        [&self.equip, &self.status, &self.faces, &self.skill, &self.targets].into_iter().find_map(|doc| find_with_children(doc, name))
     }
 
     fn string(&self, id: &str) -> Option<&str> {
@@ -555,6 +694,13 @@ struct Walker<'a> {
     additive: Vec<usize>,
     /// The size of the node whose children are being walked (a `pos_ratio` is a share of it).
     parent: [f32; 2],
+    /// Walking the item card: texts take their styles' attributes and siblings of one name are told apart by a count (`node`,
+    /// `node:1`, ...) in the paths.
+    card: bool,
+    ordinal: usize,
+    /// The last stencil mask (`stencil_mask="create"`) and the clips of what `masked` nodes drew after it.
+    mask: Option<usize>,
+    clips: Vec<Clip>,
 }
 
 /// An animation's hold on a part of the page: its opacity and its offset in layout pixels.
@@ -609,7 +755,19 @@ impl Walker<'_> {
     /// Draws `e` and what is under it. `path` is the names from the walk's start; `over` the game's changes by path;
     /// `commands` the `command` changes a clone's parent gave by node name.
     fn walk(&mut self, e: &Element, xf: Xf, path: &mut Vec<String>, over: &dyn Fn(&[&str]) -> Over, commands: &HashMap<String, Vec<Element>>) {
-        let name = e.attr("name").unwrap_or("").to_string();
+        // (the item card's texts copy a style: its font, size, colour and place by `pos_ratio_x`)
+        let styled;
+        let e = if self.card && e.name == "text" && e.attr("copy").is_some() {
+            styled = self.page.styled(e);
+            &styled
+        } else {
+            e
+        };
+        let mut name = e.attr("name").unwrap_or("").to_string();
+        let nth = std::mem::take(&mut self.ordinal);
+        if self.card && nth > 0 {
+            name = format!("{name}:{nth}");
+        }
         path.push(name.clone());
         let names: Vec<&str> = path.iter().map(String::as_str).collect();
         let mut o = over(&names);
@@ -645,11 +803,17 @@ impl Walker<'_> {
                 }
                 xf.node(at, turn, scale)
             };
+            let before = self.out.len();
             match e.name.as_str() {
                 "image" => self.image(e, me, &o),
                 "text" => self.text(e, me, &o),
                 _ => {}
             }
+            // A stencil's mask is the picture itself (in the trace, not on the screen); what a `masked` node draws is clipped by it.
+            if e.attr("stencil_mask") == Some("create") && self.out.len() > before {
+                self.mask = Some(self.out.len() - 1);
+            }
+            let masked_from = self.out.len();
             // A copied node's children: the template's (found by name) and its own; the clone's `command`s change them.
             let mut children: Vec<&Element> = Vec::new();
             let mut cmds: HashMap<String, Vec<Element>> = commands.clone();
@@ -668,10 +832,19 @@ impl Walker<'_> {
             }
             let size = if e.name == "image" { self.node_size(e) } else { [0.0; 2] };
             let outer = std::mem::replace(&mut self.parent, size);
+            let mut seen: HashMap<String, usize> = HashMap::new();
             for c in children {
+                if self.card {
+                    let n = seen.entry(c.attr("name").unwrap_or("").to_string()).or_default();
+                    self.ordinal = *n;
+                    *n += 1;
+                }
                 self.walk(c, me, path, over, &cmds);
             }
             self.parent = outer;
+            if let (Some(mask), Some("masked")) = (self.mask, e.attr("stencil_mask")) {
+                self.clips.push(Clip { mask, quads: masked_from..self.out.len() });
+            }
         }
         path.pop();
     }
@@ -685,6 +858,12 @@ impl Walker<'_> {
 
     fn image(&mut self, e: &Element, xf: Xf, o: &Over) {
         let Some(style) = e.attr("style") else { return };
+        if style == "common_white_image" {
+            // The common white (`ui/sys_white.g1t`, its first pixel of the 8 by 8): the stencil masks of the item card's lists.
+            let size = self.node_size(e);
+            self.piece(xf, [0.0; 2], size, [0.0, 0.0, 0.125, 0.125], [1.0; 4], WHITE);
+            return;
+        }
         let n = o.image_no.or_else(|| e.attr("image_no").and_then(|v| v.trim().parse().ok())).unwrap_or(0);
         let Some((texture, p, (aw, ah))) = self.page.picture(style, n).map(|(t, p, a)| (t, p, (a[0], a[1]))) else { return };
         let natural = [p.uvwh[2] / p.per_layout, p.uvwh[3] / p.per_layout];
@@ -717,7 +896,12 @@ impl Walker<'_> {
                 }
             }
             None => {
-                let uv = [p.uvwh[0] / aw, p.uvwh[1] / ah, (p.uvwh[0] + p.uvwh[2]) / aw, (p.uvwh[1] + p.uvwh[3]) / ah];
+                let mut uv = [p.uvwh[0] / aw, p.uvwh[1] / ah, (p.uvwh[0] + p.uvwh[2]) / aw, (p.uvwh[1] + p.uvwh[3]) / ah];
+                let mut size = size;
+                if let Some(share) = o.crop {
+                    size[0] *= share;
+                    uv[2] = uv[0] + (uv[2] - uv[0]) * share;
+                }
                 self.piece(xf, [0.0; 2], size, uv, color, texture);
             }
         }
@@ -783,7 +967,9 @@ impl Walker<'_> {
         // STAND-IN: the glyphs' spacing, as `field_menu`'s text: 0.25 px of 1080 lines for each layout size above 12 times `word_space`.
         // (A node squeezed to `kx` of the layout scale takes the cube of it: "Equip Quality" at 0.92.)
         let squeeze = (k / self.screen_k).powi(2);
-        let spacing = e.attr("word_space").and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * 0.25 * (size - 12.0).max(0.0) * k / 1.5 * squeeze;
+        // (the item card's: a sixteenth of the layout size, fitted to its 14 pixel lines at `word_space` -1)
+        let per_size = if self.card { size / 16.0 } else { 0.25 * (size - 12.0).max(0.0) };
+        let spacing = e.attr("word_space").and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * per_size * k / 1.5 * squeeze;
         let advance = |g: &Glyph| g.advance as f32 * s + spacing;
         let width: f32 = string.chars().filter_map(|c| glyphs.get(&c)).map(advance).sum();
         let [x, y] = xf.apply([0.0, 0.0]);
@@ -830,6 +1016,17 @@ impl Walker<'_> {
         }
         run(0.0, 0.0, color);
     }
+}
+
+/// The centre of the equippable faces in the card's `list` node (the `center` node's place less the list's), their size and the step
+/// from one to the next: STAND-IN, 79 pixels of 1080 lines between the faces of both cards (the layout says 41.33 for its nine places).
+const FACE_CENTER_X: f32 = 180.0;
+const FACE_SIZE: f32 = 42.0;
+const FACE_STEP: f32 = 52.667;
+
+fn numbers_of(attributes: &[(String, String)], name: &str) -> Option<Vec<f32>> {
+    let v = attributes.iter().find(|(k, _)| k == name)?;
+    Some(v.1.split(',').filter_map(|t| t.trim().parse().ok()).collect())
 }
 
 fn find_with_children<'a>(e: &'a Element, name: &str) -> Option<&'a Element> {

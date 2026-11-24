@@ -118,7 +118,7 @@ mod tests {
     }
 
     fn worn(weapon: u16) -> [Option<Worn>; 4] {
-        [Some(Worn { item: weapon, quality: 30 }), Some(Worn { item: 456, quality: 30 }), None, None]
+        [Some(Worn { item: weapon, quality: 30, ..Default::default() }), Some(Worn { item: 456, quality: 30, ..Default::default() }), None, None]
     }
 
     #[test]
