@@ -509,6 +509,8 @@ pub struct Player<'a> {
     /// Waits take the frames the game's countdown takes ([`counted_wait`]); see
     /// [`Player::counted_waits`].
     counted_waits: bool,
+    /// [`Player::inline_actions`].
+    inline_actions: bool,
     /// The random commands' numbers; see [`Player::chance`].
     chance: Option<Chance<'a>>,
     /// Where [`Player::schedule`] stops an event that loops; see [`Player::until`].
@@ -530,6 +532,10 @@ pub fn fade_hold(seconds: f32) -> f32 {
     let frames = ((seconds.max(0.0) * 1000.0).round() / 16.0).ceil().max(3.0);
     frames / 60.0
 }
+
+/// A frame, the amount an inline action's first wait and its starter's return fall short (see
+/// [`Player::inline_actions`]).
+const INLINE_SHORT: f32 = 1.0 / 60.0;
 
 pub fn counted_wait(seconds: f32) -> f32 {
     let step = 1.0f32 / 60.0;
@@ -578,7 +584,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, chance: None, until: None })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, chance: None, until: None })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -644,6 +650,22 @@ impl<'a> Player<'a> {
     pub fn counted_waits(mut self) -> Self {
         self.counted_waits = true;
         self
+    }
+
+    /// An action `w1` starts holds the action that started it until it has run its own waits
+    /// (`p1`, a fade's hold): Ryza DX's. The game runs `w1`'s action on the event's own queue, in
+    /// line with the starter's commands, where the other commands of the action go to their
+    /// subjects' queues and do not hold it. Off by default: the other games' actions run
+    /// alongside (docs/events.md, "Atelier Ryza DX's events").
+    pub fn inline_actions(mut self) -> Self {
+        self.inline_actions = true;
+        self
+    }
+
+    /// How long a wait of `seconds` holds a thread; `short` takes a frame off an inline action's first.
+    fn held(&self, seconds: f32, short: bool) -> f32 {
+        let held = if self.counted_waits { counted_wait(seconds) } else { seconds.max(0.0) };
+        if short && self.inline_actions { (held - INLINE_SHORT).max(0.0) } else { held }
     }
 
     /// Gives the random commands ([`VAR_RANDOM`], [`WAIT_RANDOM`]) their numbers.
@@ -942,6 +964,13 @@ impl<'a> Player<'a> {
         if !self.actions.is_empty() {
             threads.push((0.0, 0, 0));
         }
+        // Each thread's event-queue clock (the time its own `p` waits and fade holds reach, which
+        // the subjects' waits do not move) and, for an action the starter waits on
+        // ([`Player::inline_actions`]), the starter's thread and the time it started it.
+        let mut event_clock: Vec<f32> = vec![0.0];
+        let mut caller: Vec<Option<(usize, f32)>> = vec![None];
+        // Whether an inline action's first wait has been taken.
+        let mut shortened: Vec<bool> = vec![false];
         let mut out = Vec::new();
         let mut steps = Vec::new();
         // Each character's motion: (motion, division, started at, whether the command loops it).
@@ -954,9 +983,23 @@ impl<'a> Player<'a> {
         let mut scratch = crate::stage::Stage::default();
         let mut move_end: HashMap<u32, f32> = HashMap::new();
         let mut turn_end: HashMap<u32, f32> = HashMap::new();
-        while let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len()).min_by(|&i, &j| {
-            threads[i].0.partial_cmp(&threads[j].0).unwrap().then(i.cmp(&j))
-        }) {
+        loop {
+            // An action that has run all its commands lets its starter go on, from where its own
+            // waits left the event's queue.
+            for i in 0..threads.len() {
+                if threads[i].2 >= self.actions[threads[i].1].len()
+                    && let Some((starter, at)) = caller[i].take()
+                {
+                    // STAND-IN: the action's first wait and the starter's resuming are each a frame short; fitted to the game's loads (docs/ryza/open.md, "The opening (P5b)").
+                    let reached = event_clock[i];
+                    threads[starter].0 = if reached > at { (reached - INLINE_SHORT).max(at) } else { at };
+                }
+            }
+            let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len() && threads[i].0.is_finite()).min_by(|&i, &j| {
+                threads[i].0.partial_cmp(&threads[j].0).unwrap().then(i.cmp(&j))
+            }) else {
+                break;
+            };
             let (now, action, pc) = threads[t];
             threads[t].2 = pc + 1;
             let c = self.actions[action][pc];
@@ -1007,7 +1050,9 @@ impl<'a> Player<'a> {
                         _ => low,
                     };
                     out.push(Timed { time: now, action, step: Step::Wait { seconds } });
-                    threads[t].0 += if self.counted_waits { counted_wait(seconds) } else { seconds.max(0.0) };
+                    let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true));
+                    threads[t].0 += held;
+                    event_clock[t] += held;
                     continue;
                 }
                 _ => {}
@@ -1021,11 +1066,21 @@ impl<'a> Player<'a> {
                 && n < self.actions.len() && !self.started[n] {
                     self.started[n] = true;
                     threads.push((now, n, 0));
+                    event_clock.push(now);
+                    caller.push(None);
+                    shortened.push(false);
+                    if self.inline_actions {
+                        let child = threads.len() - 1;
+                        caller[child] = Some((t, threads[t].0));
+                        threads[t].0 = f32::INFINITY;
+                    }
                     out.push(Timed { time: now, action, step: Step::StartAction { action: n } });
                 }
             for s in steps.drain(..) {
                 if let Step::Wait { seconds } = s {
-                    threads[t].0 += if self.counted_waits { counted_wait(seconds) } else { seconds.max(0.0) };
+                    let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true));
+                    threads[t].0 += held;
+                    event_clock[t] += held;
                 }
                 let held = match (&s, self.reading) {
                     (Step::Message { text, .. }, Some(f)) => f(&text.replace("<CR>", "")).max(0.0),
@@ -1049,7 +1104,10 @@ impl<'a> Player<'a> {
                     }
                     Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
                     // Ryza DX's events wait on their fades.
-                    Step::Fade { seconds, .. } if self.counted_waits => threads[t].0 += fade_hold(*seconds),
+                    Step::Fade { seconds, .. } if self.counted_waits => {
+                        threads[t].0 += fade_hold(*seconds);
+                        event_clock[t] += fade_hold(*seconds);
+                    }
                     Step::CharacterMove { character, .. } => {
                         scratch.apply(&s);
                         match scratch.move_left(*character) {

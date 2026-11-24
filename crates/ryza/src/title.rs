@@ -328,6 +328,15 @@ impl Title {
             out.extend(m.quads(frame, p, i, screen));
         }
         out.extend(self.version_quads(k, left));
+        // New Game chosen: all but the copyright line fade out together (`new_game`).
+        if let Some(c) = menu.and_then(|(m, i)| i.choose.filter(|&c| frame >= c && m.chosen(i, c) == Some("new_game"))) {
+            let left = crate::new_game::layer_left(frame, c);
+            out.retain_mut(|q| {
+                q.color[3] *= left;
+                // the game's opacity is a byte: under one step of it nothing is drawn
+                q.color[3] * 255.0 >= 1.0
+            });
+        }
         out.push(place(&self.copyright, [0.0; 2], 1.0));
         out
     }

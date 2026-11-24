@@ -19,14 +19,14 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The title's event: its characters, their turns and motions (docs/renderer.md, "The backdrop").
 pub const TITLE_EVENT: &str = "tt01_010";
 
-// STAND-IN: The event's start (EVENT_START) is fitted to a capture's frames; the real thing is the game's loading between the event's first commands and its placements (40 frames in the capture's run), which Barrel does not time.
-/// Seconds of the title that pass before the event's clock starts. In the game's run the
-/// event's first command is at capture frame 874 (a frame before the title's first), its
-/// characters load until 917 and their motions are set then; Barrel's player sets them 3
-/// frames into the event (the first fade's hold), so 38 frames puts them a frame from there.
-/// Fitted: at 38 the bones are within 0.012 of the capture's at frames 1400 and 1500 (0.1 and
-/// more a frame either side).
-pub const EVENT_START: f32 = 38.0 / 60.0;
+/// Seconds of the title that pass before the event's clock starts (negative: it starts first).
+/// In the game's run the event's first command is at capture frame 874, a frame before the
+/// title's first (875); the player's loading (`w1` holding the starter through its action's
+/// waits, `Player::inline_actions`) then puts every later command where the game has it. A
+/// frame the game draws shows its stage after that frame's step, a tick on from the commands'
+/// own time (the fades' rates and the characters' bones at the capture's frames 930 to 1500
+/// agree to a frame), so the stage's clock is the title's plus two frames.
+pub const EVENT_START: f32 = -2.0 / 60.0;
 
 /// A character's files, read: its model container and texture pack as stored, and the motions
 /// the event plays on it.

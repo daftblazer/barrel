@@ -16,7 +16,7 @@ pub fn path(name: &str) -> Option<String> {
 // STAND-IN: Events are read without their messages; the real thing is the game's message tables playing each line.
 /// The event's steps on its timeline (no messages read yet: its lines come up by number).
 pub fn schedule(event: &Ebd) -> Result<Vec<Timed<'_>>, String> {
-    let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?.counted_waits();
+    let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?.counted_waits().inline_actions();
     Ok(player.schedule())
 }
 
@@ -96,7 +96,7 @@ fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Re
     };
     let chance = barrel_engine::event::Chance { whole: Box::new(whole), seconds: Box::new(seconds) };
     let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?;
-    Ok(player.counted_waits().chance(chance).until(until))
+    Ok(player.counted_waits().inline_actions().chance(chance).until(until))
 }
 
 /// The event's commands as Barrel's player takes them, for comparing with the game's own log

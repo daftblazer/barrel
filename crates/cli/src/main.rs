@@ -46,6 +46,7 @@ usage:
   barrel-tool ebm-scan DIR          read every message file under DIR
   barrel-tool opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
                                in PAK archives: Sophie 2, the Ryza games)
+  barrel-tool ryza-actions INSTALL EVENT  a Ryza DX event's actions as the script has them: `aACTION#INDEX word operands` in hex
   barrel-tool ryza-commands INSTALL EVENT [DRAWS]  a Ryza DX event's commands as Barrel's player takes them: `frame aACTION word operands...`
       in hex (frames at 60 a second from the event's start), for tools/cmddiff.py against the game's log;
       DRAWS (numbers with commas) are what its random commands draw, in order; a looping event stops at 10 minutes
@@ -164,6 +165,7 @@ fn main() -> ExitCode {
         ["opl2", file] => opl2_list(file),
         ["chara-gltf", root, chara, out, rest @ ..] => chara_gltf_cmd(Path::new(root), chara, Path::new(out), rest),
         ["ryza-commands", root, event] =>ryza_commands(Path::new(root), event, ""),
+        ["ryza-actions", root, event] => ryza_actions(Path::new(root), event),
         ["ryza-commands", root, event, draws] => ryza_commands(Path::new(root), event, draws),
         ["walk", args @ ..] => ryza_walk::run(args),
         ["walk-near", args @ ..] => ryza_walk::near(args),
@@ -3504,6 +3506,21 @@ fn opl2_scan_paks(paks: &[&str]) -> Result<()> {
 }
 
 /// A Ryza DX event's commands in the order and at the frames Barrel's player takes them.
+/// A Ryza DX event's actions as the script has them: one line per command, `aACTION#INDEX word operands` in hex.
+fn ryza_actions(root: &Path, event: &str) -> Result<()> {
+    let install = barrel_ryza::install::Install::open(root)?;
+    let path = barrel_ryza::event::path(event).ok_or(format!("{event}: not an event name"))?;
+    let e = Ebd::parse(&install.read(&path)?).map_err(|err| format!("{path}: {err}"))?;
+    let table = barrel_formats::ebd::OperandTable::ryza();
+    for (n, a) in e.actions.iter().enumerate() {
+        for (i, c) in barrel_formats::ebd::decode(&a.words, &table).map_err(|err| format!("a{n}: {err}"))?.iter().enumerate() {
+            let words: Vec<String> = std::iter::once(c.word).chain(c.operands.iter().copied()).map(|w| format!("{w:x}")).collect();
+            println!("a{n}#{i} {}", words.join(" "));
+        }
+    }
+    Ok(())
+}
+
 fn ryza_commands(root: &Path, event: &str, draws: &str) -> Result<()> {
     let given: Vec<f32> = draws.split(',').filter_map(|n| n.trim().parse().ok()).collect();
     let install = barrel_ryza::install::Install::open(root)?;
