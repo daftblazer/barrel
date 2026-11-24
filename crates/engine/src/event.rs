@@ -152,6 +152,10 @@ pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
 /// `t14` (`ECT_CAMERA_QUAKE_SET`): `{quake, seconds × 100}`, camera quake `cq_obj_<quake>`
 /// (`barrel_formats::quake`; `docs/events.md`, "Camera quakes").
 pub const CAMERA_QUAKE_SET: u32 = 0x7400_000e;
+/// Ryza's `t26` (`ECT_CAMERA_FOV_MOVE`, 0x7400001a, read here as the engine's own word): `{hundredths of a
+/// degree}`: the manual camera's vertical field of view. The one operand carries no time: it is taken as
+/// set at once (the opening's shots, docs/ryza/open.md, "The opening (P5b)").
+pub const CAMERA_FOV: u32 = 0x74ee_0001;
 /// `t16` (`ECT_CAMERA_QUAKE_STOP`): ends the quake.
 pub const CAMERA_QUAKE_STOP: u32 = 0x7400_0010;
 /// `t10` (`ECT_CAMERA_ROT_MOVE_SET`, the manual camera's): `{from, to, seconds ×100, curve}`:
@@ -413,6 +417,8 @@ pub enum Step<'a> {
     CameraRoll { action: usize, from: f32, to: f32, seconds: f32, curve: u32 },
     /// The eye slides to `length` from the target ([`CAMERA_LENGTH_MOVE_SET`]).
     CameraDistance { action: usize, length: f32, seconds: f32, curve: u32 },
+    /// The manual camera's field of view, degrees ([`CAMERA_FOV`]).
+    CameraFov { action: usize, degrees: f32 },
     /// The camera quake ends ([`CAMERA_QUAKE_STOP`]).
     QuakeStop { action: usize },
     /// A voice clip plays (`u31` `{clip}`, or `s102` `{character, clip}` from a character).
@@ -665,7 +671,7 @@ impl<'a> Player<'a> {
     /// How long a wait of `seconds` holds a thread; `short` takes a frame off an inline action's first.
     fn held(&self, seconds: f32, short: bool) -> f32 {
         let held = if self.counted_waits { counted_wait(seconds) } else { seconds.max(0.0) };
-        if short && self.inline_actions { (held - INLINE_SHORT).max(0.0) } else { held }
+        if short && self.inline_actions && self.counted_waits { (held - INLINE_SHORT).max(0.0) } else { held }
     }
 
     /// Gives the random commands ([`VAR_RANDOM`], [`WAIT_RANDOM`]) their numbers.
@@ -811,6 +817,7 @@ impl<'a> Player<'a> {
             }),
             (CAMERA_QUAKE_SET, [quake, rest @ ..]) => out.push(Step::Quake { action, quake: *quake, seconds: rest.first().map_or(0.0, |&s| f(s) / 100.0) }),
             (CAMERA_QUAKE_STOP, _) => out.push(Step::QuakeStop { action }),
+            (CAMERA_FOV, [hundredths, ..]) => out.push(Step::CameraFov { action, degrees: f(*hundredths) / 100.0 }),
             (CAMERA_ROT_MOVE_SET, [from, to, hundredths, curve, ..]) => {
                 out.push(Step::CameraRoll { action, from: f(*from), to: f(*to), seconds: f(*hundredths) / 100.0, curve: *curve })
             }
@@ -992,7 +999,7 @@ impl<'a> Player<'a> {
                 {
                     // STAND-IN: the action's first wait and the starter's resuming are each a frame short; fitted to the game's loads (docs/ryza/open.md, "The opening (P5b)").
                     let reached = event_clock[i];
-                    threads[starter].0 = if reached > at { (reached - INLINE_SHORT).max(at) } else { at };
+                    threads[starter].0 = if reached > at && self.counted_waits { (reached - INLINE_SHORT).max(at) } else { reached.max(at) };
                 }
             }
             let Some(t) = (0..threads.len()).filter(|&i| threads[i].2 < self.actions[threads[i].1].len() && threads[i].0.is_finite()).min_by(|&i, &j| {
@@ -1461,6 +1468,39 @@ mod tests {
     }
 
     #[test]
+    fn an_inline_action_holds_its_starter_through_its_own_waits() {
+        let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
+        // Action 0 starts 1 (three waits of 0.1 s, then a mark) and then 2, which has no waits; a
+        // wait after them marks the starter's time.
+        let mark = 0x7300_0006;
+        let event = Ebd {
+            actions: vec![
+                act(vec![START_ACTION, 1, START_ACTION, 2, mark, 0, END]),
+                act(vec![TIME_WAIT, 10, TIME_WAIT, 10, TIME_WAIT, 10, END]),
+                act(vec![mark, 1, END]),
+            ],
+            resources: vec![],
+        };
+        let table = OperandTable::new(&[(START_ACTION, Some(1)), (TIME_WAIT, Some(1)), (mark, Some(1))]);
+        let at = |player: Player| -> Vec<(usize, f32)> {
+            player.schedule().iter().filter_map(|t| match &t.step {
+                Step::Command { word, operands, .. } if *word == mark => Some((operands[0] as usize, t.time)),
+                _ => None,
+            }).collect()
+        };
+        // alongside: both marks come at once
+        assert_eq!(at(Player::new(&event, &[], &table).unwrap()), [(0, 0.0), (1, 0.0)]);
+        // inline: action 2 and the starter's next command wait for action 1's three tenths of a second
+        let inline = at(Player::new(&event, &[], &table).unwrap().inline_actions());
+        assert_eq!(inline.len(), 2);
+        assert!(inline.iter().all(|&(_, time)| (time - 0.3).abs() < 1e-4), "{inline:?}");
+        // a started action with no waits holds nothing
+        let quick = Ebd { actions: vec![act(vec![START_ACTION, 1, mark, 0, END]), act(vec![mark, 1, END])], resources: vec![] };
+        let marks = at(Player::new(&quick, &[], &table).unwrap().inline_actions());
+        assert!(marks.iter().all(|&(_, time)| time == 0.0), "{marks:?}");
+    }
+
+    #[test]
     fn motion_waits_last_the_division() {
         let act = |words: Vec<u32>| Action { flags: 0, name: vec![], description: vec![], words };
         // s11 0 76 0 1 40, s6 0, s13 0 1 1, s6 0, then a wait to mark the time.
@@ -1607,6 +1647,7 @@ mod tests {
                 Step::QuakeStop { .. } => "quake stops".to_string(),
                 Step::CameraRoll { from, to, seconds, .. } => format!("camera rolls {from}° -> {to}° over {seconds} s"),
                 Step::CameraDistance { length, seconds, .. } => format!("eye slides to {length} out over {seconds} s"),
+                Step::CameraFov { degrees, .. } => format!("field of view {degrees}°"),
                 Step::Voice { clip, .. } => format!("voice {clip}"),
                 Step::Effect { effect, .. } => format!("effect {effect}"),
                 Step::ScreenEffect { kind, seconds, .. } => format!("screen effect {kind} over {seconds} s"),

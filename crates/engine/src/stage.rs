@@ -304,6 +304,8 @@ pub struct Stage {
     /// The field map the event is in (its latest `FieldChange`).
     pub field: Option<u32>,
     pub manual_camera: bool,
+    /// The manual camera's field of view (degrees), once an event has set one.
+    pub manual_fov: Option<f32>,
     /// The latest screen effect (`u13`): kind, parameter, seconds, and the stage time it started.
     pub screen_effect: Option<(u32, i32, f32, f32)>,
     /// The latest fade (`u22`): preset, seconds, and the stage time it started.
@@ -521,6 +523,7 @@ impl Stage {
                 b.mover = Mover::anchored(b.position, to, yaw, movement, *extra);
             }
             Step::FieldChange { map, .. } => self.field = Some(*map),
+            Step::CameraFov { degrees, .. } => self.manual_fov = Some(*degrees),
             Step::Fade { preset, seconds, .. } => self.fade = Some((*preset, *seconds, self.time)),
             Step::Light { change, .. } => self.lights.apply(*change),
             Step::Telop { card, .. } => self.telop = Some(*card),
@@ -675,7 +678,7 @@ impl Stage {
                 let (e, t) = followed.map_or_else(|| c.eye_target(), |p| c.eye_target_from(p));
                 (Some(e), Some(t), Some(c.fov.now()), 0.0)
             }
-            _ => (self.eye.position, self.target.position, None, self.roll.to_radians()),
+            _ => (self.eye.position, self.target.position, self.manual_fov, self.roll.to_radians()),
         };
         let tilts = self.characters.iter().filter(|(_, b)| b.tilt != 0.0).map(|(&n, b)| (n, b.tilt)).collect();
         Snapshot { characters: self.characters.iter().map(|(&n, b)| (n, (b.position, b.facing))).collect(), eye, target, fov, roll, tilts }

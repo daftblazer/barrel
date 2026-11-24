@@ -710,4 +710,10 @@ pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[
     (0x7410000e, 0x74100009),
     (0x74100010, 0x7410000b),
     (0x74100012, 0x7410000d),
+    // the manual camera: eye and target set together, the target's point and move (the eye's
+    // point and move have the same numbers); the field of view's move is Ryza's own
+    (0x7400000c, 0x74000009),
+    (0x74000007, 0x74000006),
+    (0x74000008, 0x74000007),
+    (0x7400001a, 0x74ee0001),
 ];

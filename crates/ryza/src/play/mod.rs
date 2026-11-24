@@ -1371,6 +1371,19 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         (Some(steps), true) => steps.iter().filter_map(|t| match t.step { barrel_engine::event::Step::Telop { card, .. } => Some(card), _ => None }).collect(),
         _ => Default::default(),
     };
+    // Everyone the opening ever stages (its stage run through once): their models are loaded up front.
+    let opening_slots: std::collections::BTreeSet<u32> = match (&title_steps, a.opening) {
+        (Some(steps), true) => {
+            let mut scratch = barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), steps.clone());
+            let mut seen = std::collections::BTreeSet::new();
+            while !scratch.finished() {
+                scratch.tick();
+                seen.extend(scratch.stage.characters.keys().copied());
+            }
+            seen
+        }
+        _ => Default::default(),
+    };
     let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
     let added = title_event.as_ref().map(barrel_ryza::event::added).transpose()?.unwrap_or_default();
     let mut cast_files: Vec<actors::Files> = Vec::new();
@@ -1388,10 +1401,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             play.tick();
         }
         // the people the stage has placed, then the props only the event's `q5` adds
-        // (the opening's people are not drawn yet)
-        let slots: std::collections::BTreeSet<u32> = play.stage.characters.keys().chain(added.keys()).copied().filter(|_| !a.opening).collect();
+        let slots: std::collections::BTreeSet<u32> = play.stage.characters.keys().chain(added.keys()).chain(opening_slots.iter()).copied().collect();
         for slot in slots {
-            cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()), added.get(&slot))?);
+            match actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()), added.get(&slot)) {
+                Ok(files) => cast_files.extend(files),
+                // the opening's cast is wider than the title's: a character that cannot be read is left out
+                Err(e) if a.opening => eprintln!("slot {slot}: {e}"),
+                Err(e) => return Err(e),
+            }
         }
     }
     let cast_models = cast_files.iter().map(actors::Files::container).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1524,7 +1541,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 let Some(play) = &title_play else { continue };
                 // a prop has no body on the stage: the event's `q5` places it for good
                 let body = play.stage.characters.get(&actor.slot);
-                if body.is_none() && !actor.is_prop() {
+                if body.is_none() && !actor.is_prop() && !a.opening {
                     continue;
                 }
                 let joints = actor.joints(body, play.stage.time);
@@ -2452,6 +2469,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     pitch = (d.y / dist).asin().to_degrees();
                     yaw = d.x.atan2(d.z).to_degrees();
                     fov = snap.fov.map_or(fov, f32::to_radians);
+                    if frame_no == 0 { eprintln!("opening camera: eye {eye:?} target {target:?} fov {:?}", snap.fov); }
                 }
                 // Its telop and fade, in their own layer.
                 if let Some((layer, telops)) = opening_layer.as_mut() {
@@ -2471,6 +2489,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             for actor in &cast {
                 if let Some(body) = play.stage.characters.get(&actor.slot) {
                     actor.pose(body, play.stage.time, &mut instances, &mut palette);
+                } else if a.opening && !actor.is_prop() {
+                    // not on the stage (yet, or any more): nothing of it is drawn
+                    instances[actor.instance as usize].model = Mat4::ZERO;
                 }
             }
         }
