@@ -34,6 +34,28 @@ pub const STEP_UP: f32 = 60.0;
 /// The most she climbs in a frame after one that slid along a wall and climbed more.
 pub const CLIMB_CAP: f32 = 0.1435;
 
+// Measured: walk-30 frames 2978-2990 (the ground falls 4.08 away in one frame, past the cliff
+// floor's edge; for 11 frames her steps are then 0.6 units, 0.9 of the last each frame, then
+// the stick moves her again).
+/// The frames she stays after a fall (a landing), moving as she coasts instead of by the stick.
+pub const LANDING_FRAMES: u32 = 11;
+// FITTED: 0.088 of the 6.82 step before it gives the first coasting step 0.54 of the game's
+// 0.545; whether the share or the 0.6 is the game's is one sample.
+/// Her coasting step as a share of the step before the landing, and its decay a frame.
+pub const COAST_SHARE: f32 = 0.088;
+pub const COAST_DECAY: f32 = 0.9;
+// STAND-IN: the most her feet drop in a frame without a fall: the stairs' descent drops 3.4 a frame
+// (3.51 at its steepest, walk-30 frame 1918) and walks down; the fall's drop is 4.08 (the game's
+// feet end 4.00 down). The midpoint is taken; the game's own limit is not found.
+const FALL_DROP: f32 = 3.75;
+
+// FITTED: walk-30 frames 1914-1933 (down the stairs' slope of 0.34 her steps are 10.05 along z,
+// 10.01 at 0.05) and 2968-2977 (+0.7 percent down the cliff's 0.33): 0.17 a frame drops her
+// weight; the floor pushes her out down the slope, `SLIP_FALL * slope / (1 + slope^2)` along it.
+// Not the game's own constant (unfound).
+/// How far her weight falls each frame (units) before the ground stops it.
+pub const SLIP_FALL: f32 = 0.17;
+
 // STAND-IN: The mixing time between motions is chosen; the real thing is the game's own blend times.
 /// How long the last motion takes to mix out, seconds.
 pub const BLEND: f32 = 0.2;
@@ -89,11 +111,26 @@ pub struct Player {
     touching: bool,
     /// She met a wall last frame and stands this one.
     stall: bool,
+    /// Landing frames left, and her coasting step (x, z).
+    landing: u32,
+    coast: [f32; 2],
 }
 
 impl Player {
     pub fn new(at: Vec3, turn: f32, lengths: &[(u32, f32)]) -> Player {
-        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT, climbed: false, touching: false, stall: false }
+        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT, climbed: false, touching: false, stall: false, landing: 0, coast: [0.0; 2] }
+    }
+
+    /// How far her weight pushes her down the slope under her this frame (x, z): the ball's
+    /// fall of `SLIP_FALL` a frame is stopped by the floor, which pushes it out along its normal.
+    fn slip(&self, g: &Ground) -> [f32; 2] {
+        const H: f32 = 2.0;
+        let at = |x: f32, z: f32| g.height_on_ball(x, z, self.at.y, STEP_UP, self.radius);
+        let (x, z) = (self.at.x, self.at.z);
+        let (Some(x0), Some(x1), Some(z0), Some(z1)) = (at(x - H, z), at(x + H, z), at(x, z - H), at(x, z + H)) else { return [0.0; 2] };
+        let grad = [(x1 - x0) / (2.0 * H), (z1 - z0) / (2.0 * H)];
+        let k = SLIP_FALL / (1.0 + grad[0] * grad[0] + grad[1] * grad[1]);
+        [-grad[0] * k, -grad[1] * k]
     }
 
     fn length(&self, m: u32) -> f32 {
@@ -144,7 +181,18 @@ impl Player {
         }
         self.moving = self.gait;
         // Along the lean, at once, at its speed.
-        let delta = [lean[0] * FULL_SPEED * dt, lean[1] * FULL_SPEED * dt];
+        let mut delta = [lean[0] * FULL_SPEED * dt, lean[1] * FULL_SPEED * dt];
+        let landed = self.landing > 0;
+        if landed {
+            // Landed: the stick is ignored, what is left of her last step coasts on.
+            self.landing -= 1;
+            self.coast = self.coast.map(|c| c * COAST_DECAY);
+            delta = self.coast;
+        }
+        if let (Some(g), false) = (ground, landed) {
+            let slip = self.slip(g);
+            delta = [delta[0] + slip[0], delta[1] + slip[1]];
+        }
         let free = [self.at.x + delta[0], self.at.z + delta[1]];
         let mut to = match walls {
             // A wall whose top is within a step of her feet (a floor's edge, a kerb) she steps
@@ -154,7 +202,7 @@ impl Player {
         };
         let before = self.at;
         let slid = (to[0] - free[0]).abs() + (to[1] - free[1]).abs() > 1e-3;
-        if let (Some(w), true, false) = (walls, slid, self.touching) {
+        if let (Some(w), true, false, false) = (walls, slid, self.touching, landed) {
             // Measured: walk-30 frames 2915-2918: she runs up to the wall and stops where she
             // meets it, loses the rest of the move, and stands the next frame too.
             let (mut lo, mut hi) = (0.0f32, 1.0f32);
@@ -170,7 +218,9 @@ impl Player {
             to = [self.at.x, self.at.z];
             self.stall = false;
         }
-        self.touching = slid;
+        if !landed {
+            self.touching = slid;
+        }
         match ground {
             // Off the ground, or up a ledge higher than a step: she stays.
             Some(g) => {
@@ -189,6 +239,11 @@ impl Player {
                 if let Some(y) = g.height_on_ball(to[0], to[1], self.at.y, STEP_UP, self.radius) {
                     self.climbed = slid && y - before.y > CLIMB_CAP;
                     self.at = Vec3::new(to[0], y, to[1]);
+                    // The ground fell away past a step: she falls, and lands.
+                    if before.y - y > FALL_DROP && !landed {
+                        self.landing = LANDING_FRAMES;
+                        self.coast = [(to[0] - before.x) * COAST_SHARE / COAST_DECAY, (to[1] - before.z) * COAST_SHARE / COAST_DECAY];
+                    }
                 }
             }
             None => self.at = Vec3::new(to[0], self.at.y, to[1]),

@@ -19,6 +19,14 @@ use crate::player::Player;
 // frames 2640-2700 (6000/32767: not at all); a straight line through both.
 /// The left stick's dead zone, of its full throw; beyond it the lean rises linearly to 1.
 pub const MOVE_DEAD_ZONE: f32 = 0.2257;
+// Measured: walk-30 frames 2236-2262 and 2580-2584 (the left stick pushed fully left or down she
+// moves 10.08 units a frame, 1.008 of the 10.00 of a full push right or up; at the corner of
+// left and up too) in the same direction, not skewed. 32767 / 32512 is 1.00784. STAND-IN: only the
+// two axes and the one corner are sampled; how the factor grows with the throw (here in
+// proportion to the larger negative push) and a corner of right and down are not.
+/// How much longer a full negative throw of the left stick (left, down) makes her lean than a
+/// positive one, and so the longest lean.
+pub const MOVE_NEGATIVE: f32 = 1.0078;
 // Measured: walk-30 frames 2340-2400 (right stick x full turns the camera 1.5 degrees a frame) and
 // frames 2420-2540 (-20000/32767 turns it 0.8 a frame), a straight line through both.
 /// The right stick's dead zone, of its full throw.
@@ -34,6 +42,19 @@ pub const CAMERA_TURN_RATE: f32 = 90.0;
 /// The speed (units a second) from which the camera's follow is at its full rate; below it the rate
 /// falls in proportion (a slide along a wall is slow; a run is full speed).
 pub const FOLLOW_FULL_SPEED: f32 = 504.0;
+// Measured: walk-30 frames 2250-2310 (the lean at 45 degrees to the camera, which follows her 0.712
+// a frame: her facing, which keeps the stick's direction, is 0.22 degrees ahead of the camera as
+// the frame began), frames 2210-2229 (at 90 degrees, 1.01 a frame: exactly the camera as the frame
+// began) and 2430-2540 (the right stick turning it 0.8 a frame, the lean ahead: exactly it). The
+// lead is taken as 0.44 times sin(a) cos(a) for a lean at the angle `a` to the camera: the
+// two angles sampled, its form between them (and behind her) is a stand-in. Why it is there is
+// not found.
+/// How far her lean is taken ahead of the camera as the frame began, degrees, at 45 degrees across it.
+pub const FOLLOW_LEAD: f32 = 0.44;
+// FITTED: with `FOLLOW_LEAD` the turn is 0.7121 a frame at 45 degrees (the 0.7125 measured) when the
+// across angle is taken that part of the turn short; 0.5 without the lead.
+/// The part of its own turn the camera's follow is taken across less.
+pub const FOLLOW_MID: f32 = 0.77;
 /// How fast the camera turns toward where she goes, at a right angle to its view, degrees a second.
 pub const FOLLOW_RATE: f32 = 60.75;
 // Measured: walk-30 frames 2720-2754 (right stick y 20000/32767: 0.376 degrees a frame for the
@@ -153,7 +174,15 @@ impl Camera {
             return;
         }
         let across = (way[0].atan2(way[1]).to_degrees() - from).to_radians();
-        self.yaw += FOLLOW_RATE * across.sin() * (speed / FOLLOW_FULL_SPEED).min(1.0) * dt;
+        // Measured: walk-30 frames 2230-2320 (the lean at 45 degrees to the camera, which turns
+        // 0.7121 a frame, not 0.716): the turn is taken against the view as it is halfway
+        // through it, so it is the fixed point of `turn = rate * sin(across - turn / 2)`.
+        let rate = FOLLOW_RATE * (speed / FOLLOW_FULL_SPEED).min(1.0) * dt;
+        let mut turn = rate * across.sin();
+        for _ in 0..4 {
+            turn = rate * (across - FOLLOW_MID * turn.to_radians()).sin();
+        }
+        self.yaw += turn;
     }
 
     /// How far below `PULL_PITCH` the view is looking up, degrees.
@@ -184,6 +213,8 @@ impl Camera {
 /// yaw `yaw` degrees.
 pub fn lean(left: [f32; 2], yaw: f32) -> [f32; 2] {
     let [x, y] = dead_zone(left, MOVE_DEAD_ZONE);
+    let push = (-left[0]).max(-left[1]).clamp(0.0, 1.0);
+    let (x, y) = (x * (1.0 + (MOVE_NEGATIVE - 1.0) * push), y * (1.0 + (MOVE_NEGATIVE - 1.0) * push));
     let (s, c) = yaw.to_radians().sin_cos();
     [s * y - c * x, c * y + s * x]
 }
@@ -194,7 +225,9 @@ pub fn step(player: &mut Player, cam: &mut Camera, sticks: &Sticks, dt: f32, gro
     // Measured: walk-30 frames 2420-2559 (her facing keeps a frame behind a camera turning, which
     // turns exactly the stick's 0.8 degrees a frame: the follow is taken against the same yaw).
     let from = cam.yaw;
-    let way = lean(sticks.left, from);
+    let across = lean(sticks.left, 0.0);
+    let a = across[0].atan2(across[1]);
+    let way = lean(sticks.left, from + FOLLOW_LEAD * a.sin() * a.cos() * (across[0].hypot(across[1])).min(1.0));
     cam.steer(sticks.right, dt);
     let moved = player.step(way, dt, ground, walls);
     // The camera follows where she went, which against a wall is along it.
@@ -281,9 +314,11 @@ mod tests {
         assert!((m * 600.0 - 108.9).abs() < 0.5, "{m}");
         let m = dead_zone([-20000.0 / 32767.0, 0.0], LOOK_DEAD_ZONE)[0];
         assert!((m * 90.0 / 60.0 + 0.8).abs() < 0.01, "{m}");
-        // A square's corner is a full lean.
+        // A square's corner is a full lean; pushed left or down a hair more (walk-30 frames 2236-2262).
         let [x, y] = dead_zone([1.0, 1.0], MOVE_DEAD_ZONE);
         assert!(((x * x + y * y).sqrt() - 1.0).abs() < 1e-5);
+        let [x, y] = lean([-1.0, 1.0], 0.0);
+        assert!(((x * x + y * y).sqrt() - MOVE_NEGATIVE).abs() < 1e-5);
     }
 
     #[test]
