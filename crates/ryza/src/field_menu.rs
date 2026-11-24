@@ -444,6 +444,8 @@ pub struct Nav {
     ring_from: f32,
     /// A frame the ring's loop begins again on, over `ring_from` from then.
     ring_again: Option<f32>,
+    /// The frame of the B that left the character pick for the menu: the buttons' dimming, the blurred photo and the corner plates come back from it.
+    pick_out: Option<f32>,
 }
 
 /// The character pick (`field-menu-equip`: A on Equip at 2060, the pick's first frame 2102).
@@ -524,7 +526,13 @@ pub const ITEM_PAGE_LATER: f32 = 41.0;
 
 /// Frames from A on the Guide button to the cursor ring's loop beginning again (it shows after the page: `field-menu-pages` 3360 with
 /// the ring 100 frames into its loop, 3410 at 29 (the opacity 100/255): 3260, A on 3160). STAND-IN: one capture (the Container's and tools' rings after their pages did not move with it).
-const GUIDE_RING_AT: f32 = 98.5;
+/// Frames after the first loop boundary following A on a page of items (Container, Gathering Tools, Guide) to the cursor ring's loop beginning again
+/// (`field-menu-pages`: A on 2000, 2580 and 3160; the loop's boundaries after them 2027, 2600 and 3171, its next first frames 2116, 2687 and 3258: 89, 87 and 87;
+/// the character pick's B does not move the loop). STAND-IN: the number is fitted to those three, no reason found; the first page after the menu opened is
+/// 2 frames later (`FIRST_PAGE_RING_LATE`, as if the opening loop began 2 frames after the menu's first).
+const PAGE_RING_LATE: f32 = 87.0;
+const FIRST_PAGE_RING_LATE: f32 = 2.0;
+
 
 /// Frames from B on the Container page to the menu's coming back, and to the page's going: at once (`field-menu-pages` 2150: B, the page still
 /// whole but for its cursor; 2160: only the menu, at 0.027 of its fade, so its first frame was 2151). STAND-IN: one frame.
@@ -616,13 +624,13 @@ pub const PAGE_GONE: f32 = 36.0;
 /// blur and the extra button pictures all run from 2102), and from the pick's first frame to the card glow's loops (2103).
 pub const PICK_AT: f32 = 42.0;
 const PICK_LOOPS_LATER: f32 = 1.0;
-/// Frames from B in the character pick to the menu's coming back to its own: the cursor's ring loops again from there (`field-menu-pages`: B on
-/// 3020, the ring's opacity 4/255 on 3050 and 42/255 on 3060, its loop's 24 frames of rise).
-const PICK_OUT_FRAMES: f32 = 30.0;
 /// The glow's `on` after B in the pick: its loop runs from 18 frames later (`field-menu-pages`: 252/255 on 3040, 53/255 on 3100, B on 3020).
-const PICK_GLOW_LATER: f32 = 1.1;
+const PICK_GLOW_LATER: f32 = 1.0;
 /// Frames from the pick's first frame to its help bar's first frame (the fade from 2106).
 const PICK_BAR_LATER: f32 = 4.0;
+/// Frames from B in the pick to the bar's line turning into the menu's, its plate then widening over `PLATE_FRAMES` (`field-menu-pages`: B on 2440, the pick's
+/// bar whole on 2440 and the plate 0.875 of the way to the menu's on 2450: 4.4 frames before 2450 at the load screen's rate). STAND-IN: one sample, frames of 10 apart.
+const PICK_BAR_BACK: f32 = 4.4;
 /// The buttons darken over 20 frames (`anm_select_blackout` run at three times its speed), the photo blurs in over 30
 /// (`blur_in`, speed 2) and the extra button pictures fade in over 20.
 const BLACKOUT_FRAMES: f32 = 20.0;
@@ -646,7 +654,7 @@ impl Nav {
     pub fn open(opened: f32) -> Nav {
         let mut on = [None; BUTTONS.len()];
         on[0] = Some(opened + CURSOR_AT);
-        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0, ring_from: opened, ring_again: None }
+        Nav { opened, shown: opened, warm: false, closed: None, cursor: 0, on, off: [None; BUTTONS.len()], chosen: None, in_settings: false, pick: None, left: None, blur_out: None, ring_skew: 0.0, ring_from: opened, ring_again: None, pick_out: None }
     }
 
     /// The cursor moves `way` buttons (wrapping) at frame `at`.
@@ -673,9 +681,20 @@ impl Nav {
         self.on[self.cursor] = Some(self.shown + CURSOR_AT);
     }
 
+    /// The cursor ring's loop begins again `late` frames after the first loop boundary at or after `at` (the loop's old cycles run on until then:
+    /// the ring is seen at their tail after a page, `field-menu-pages` 2190 to 2220).
+    fn ring_restart(&mut self, at: f32, late: f32) {
+        if let Some(again) = self.ring_again.take_if(|a| *a <= at) {
+            self.ring_from = again;
+        }
+        let phase = (at - self.ring_from + self.ring_skew).rem_euclid(RING_LOOP_FRAMES);
+        self.ring_again = Some(at + (RING_LOOP_FRAMES - phase) % RING_LOOP_FRAMES + late);
+    }
+
     /// A on the cursor's button at frame `at`.
     pub fn choose(&mut self, at: f32) {
         self.chosen = Some(at);
+        self.pick_out = None;
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
@@ -688,9 +707,7 @@ impl Nav {
                 TOOLS => ItemPage::Tools,
                 _ => ItemPage::Guide,
             };
-            if self.cursor == GUIDE_BUTTON {
-                self.ring_again = Some(at + GUIDE_RING_AT);
-            }
+            self.ring_restart(at, PAGE_RING_LATE + if self.ring_from == self.opened && self.ring_again.is_none() { FIRST_PAGE_RING_LATE } else { 0.0 });
             self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None, sub_first: [None; 2], moved: None, swap: None });
         }
     }
@@ -834,7 +851,7 @@ impl Nav {
             Some(p) if at >= p.first && p.confirmed.is_none() => {
                 self.pick = None;
                 self.chosen = None;
-                self.ring_from = at + PICK_OUT_FRAMES;
+                self.pick_out = Some(at);
                 // (the cursor's glow loops again from just after B)
                 self.on = [None; BUTTONS.len()];
                 self.off = [None; BUTTONS.len()];
@@ -1324,6 +1341,8 @@ impl View {
         let closed = closing && nav.closed.is_some();
         // Frames into the character pick (from its first frame).
         let picked = nav.pick.as_ref().filter(|p| frame >= p.first).map(|p| (p, frame - p.first));
+        // Frames since the B that left the pick (the buttons' dimming and the blurred overlay run back over `BLACKOUT_FRAMES`).
+        let unpicked = nav.pick_out.filter(|&b| frame >= b && nav.pick.is_none()).map(|b| frame - b);
         let bg = if closed { 1.0 - out / BG_FADE } else if nav.warm { 1.0 } else { age / BG_FADE }.clamp(0.0, 1.0);
         pen.out.push(Quad { turn: false, spin: None, rect: [0.0, 0.0, screen.0 as f32 * 2.0, screen.1 as f32 * 2.0], uv: [0.0, 0.0, 2.0, 2.0], color: white(byte(bg * 255.0)), texture: BACKGROUND });
 
@@ -1437,13 +1456,15 @@ impl View {
         };
         let (a, dx) = if closing { slide_state(CLOSE_LIGHT_AT / CLOSE_STEP) } else { slide_state(0.0) };
         pen.natural(MENU1, light, 0, [light_at[0] + dx, light_at[1]], white(byte(a * 255.0)));
+        // The frames of dimming the buttons have had: the pick's own age going in, `BLACKOUT_FRAMES` less the frames since B coming out.
+        let dim = picked.map(|(_, p)| p).or(unpicked.map(|u| (BLACKOUT_FRAMES - u).max(0.0)));
         for (i, at) in self.buttons.iter().enumerate() {
             let (a, dx) = slide_state(i as f32);
             let at = [at[0] + dx, at[1]];
             let alpha = byte(a * 255.0);
             // The pick darkens the buttons (`anm_select_blackout`) and draws each over again through the blur.
-            let (tint, blur) = match picked {
-                Some((_, p)) => {
+            let (tint, blur) = match dim {
+                Some(p) => {
                     let v = self.pick.blackout.at((p / BLACKOUT_FRAMES).min(1.0) * self.pick.blackout.duration());
                     ([byte(v[0]), byte(v[1]), byte(v[2]), alpha], Some(incubic(p, BLACKOUT_FRAMES)))
                 }
@@ -1454,7 +1475,7 @@ impl View {
             // the capture's 142/255 on 2265 is 1 - 4/9)
             let glow_slide = if closed { byte((1.0 - (out - CLOSE_GLOW_AT) / CLOSE_GLOW_FRAMES).clamp(0.0, 1.0) * 255.0) } else if closing { byte((1.0 - out / OFF_FRAMES).clamp(0.0, 1.0) * 255.0) } else { alpha };
             if picked.is_none() {
-                self.glow(&mut pen, nav, i, at, glow_slide, frame);
+                self.glow(&mut pen, nav, i, at, glow_slide, frame, [tint[0], tint[1], tint[2]]);
             }
             let image = BUTTONS[i];
             pen.natural(MENU0, &self.names, image, [at[0] + 2.0, at[1] + 103.0], tint);
@@ -1473,7 +1494,8 @@ impl View {
         let slid = |frames: f32, speed: f32| match (closing, picked) {
             (true, _) => (1.0 - out * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames,
             (_, Some((_, a))) => (1.0 - a * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames,
-            _ => age,
+            // (back from the pick they come in as the menu's own do, over `frames`)
+            _ => unpicked.map_or(age, |u| u.min(age)),
         };
         let right = |frames: f32, speed: f32| along(&self.slide_right, slid(frames, speed), frames)[0];
         let (lv_at, lv) = &self.level_plate;
@@ -1500,6 +1522,16 @@ impl View {
                 Bar { alpha: a / HELP_FADE, grow: (a / PLATE_FRAMES).clamp(0.0, 1.0), words: true, extra: 0.0, entries: Entries::Pick }
             }
             Some(key) => Bar::out(frame - key),
+            // B in the pick: its bar stands for `PICK_BAR_BACK` frames, then its line is the menu's and the plate widens to that line's over `PLATE_FRAMES`.
+            None if unpicked.is_some_and(|u| u < PICK_BAR_BACK + PLATE_FRAMES) => {
+                let u = unpicked.unwrap_or(0.0);
+                if u < PICK_BAR_BACK {
+                    Bar { alpha: 1.0, grow: 1.0, words: true, extra: 0.0, entries: Entries::Pick }
+                } else {
+                    let gap = self.plate_full(&self.help_line(&PICK_ENTRIES), pen.k) - self.plate_full(&self.help_line(&HELP_ENTRIES), pen.k);
+                    Bar { alpha: 1.0, grow: 1.0, words: true, extra: gap * (1.0 - (u - PICK_BAR_BACK) / PLATE_FRAMES), entries: Entries::Menu }
+                }
+            }
             None => {
                 // (back from Settings it comes up one frame earlier, with its plate a fifth of a frame late, as the screen's own)
                 // (and from a page with its plate 0.2 frames early: `field-menu-equip` 2560, opacity 3/15 and the plate 0.50 of the way; STAND-IN, one sample)
@@ -1561,7 +1593,7 @@ impl View {
 
     /// A button's glow: the cursor's glow and ring while the cursor is on it and as they fade
     /// after it left.
-    fn glow(&self, pen: &mut Pen, nav: &Nav, i: usize, at: [f32; 2], slide: f32, frame: f32) {
+    fn glow(&self, pen: &mut Pen, nav: &Nav, i: usize, at: [f32; 2], slide: f32, frame: f32, tint: [f32; 3]) {
         let (alpha, loop_age) = match (nav.on[i], nav.off[i]) {
             (Some(on), None) => {
                 let age = frame - on;
@@ -1604,17 +1636,17 @@ impl View {
                 pen.scaled(MENU1, p, at, [p[2] / PER_LAYOUT, p[3] / PER_LAYOUT], pivot, scale, color);
             }
         };
-        part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, 1.0, 1.0, byte(alpha * slide * 255.0)]);
-        part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [1.0, 1.0, 1.0, byte(on_alpha * slide * 255.0)]);
+        part(pen, self.cursor.pictures[0], at, self.pivot, scale, [0.0, tint[1], tint[2], byte(alpha * slide * 255.0)]);
+        part(pen, self.cursor_on.pictures[0], at, [0.0; 2], 1.0, [tint[0], tint[1], tint[2], byte(on_alpha * slide * 255.0)]);
         // The ring runs from the menu's first frame, whichever button has the glow.
         let since = frame - nav.ring_again.filter(|&again| frame >= again).unwrap_or(nav.ring_from);
         // (STAND-IN: the loop's first frame is already a frame in, then the clock stalls one: `field-menu-pages` 3050 at 1 frame, 3060 at 10)
-        let t = ((if (0.0..1.0).contains(&since) { 1.0 } else { since } + nav.ring_skew) % RING_LOOP_FRAMES) / 60.0;
-        let ring_alpha = if since < 0.0 { 0.0 } else { self.ring_loop[0].at(t)[3] / 255.0 * on_alpha };
+        let t = ((if (0.0..1.0).contains(&since) { 1.0 } else { since } + nav.ring_skew).rem_euclid(RING_LOOP_FRAMES)) / 60.0;
+        let ring_alpha = if since < 0.0 && nav.pick_out.is_none() { 0.0 } else { self.ring_loop[0].at(t)[3] / 255.0 * on_alpha };
         let ring_scale = self.ring_loop[1].at(t)[0] * self.ring_scale;
         let p = self.ring.pictures[0];
         let middle = [p[2] / PER_LAYOUT / 2.0, p[3] / PER_LAYOUT / 2.0];
-        part(pen, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], middle, ring_scale, [1.0, 1.0, 1.0, byte(ring_alpha * slide * 255.0)]);
+        part(pen, p, [at[0] + self.ring_at[0], at[1] + self.ring_at[1]], middle, ring_scale, [tint[0], tint[1], tint[2], byte(ring_alpha * slide * 255.0)]);
     }
 
     /// The bar's line: each entry's button glyph and word, one space between.
@@ -1876,11 +1908,12 @@ mod tests {
     }
 
     #[test]
-    fn b_in_the_character_pick_restarts_the_cursors_loops_from_the_menus_return() {
+    fn b_in_the_character_pick_restarts_the_cursors_glow_and_leaves_the_rings_loop_running() {
         let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2001.0, Key::Down), (2002.0, Key::Down), (2100.0, Key::Confirm), (2200.0, Key::Back)];
         let nav = replay(&keys, 2300.0, &ORDER).unwrap();
         assert!(nav.pick.is_none());
-        assert_eq!(nav.ring_from, 2200.0 + PICK_OUT_FRAMES);
+        assert_eq!(nav.ring_from, nav.opened);
+        assert_eq!(nav.pick_out, Some(2200.0));
         assert_eq!(nav.on[nav.cursor], Some(2200.0 + PICK_GLOW_LATER));
     }
 
