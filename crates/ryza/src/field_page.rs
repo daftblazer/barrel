@@ -166,6 +166,8 @@ pub struct SubLook<'a> {
     /// Frames since A on the top, and, going back, since B on the page.
     pub since: f32,
     pub back: Option<f32>,
+    /// Frames since the first A that opened this page: its cursor's blink runs from there, whether the page is up or not.
+    pub clock: f32,
     /// The Gather Rate in per cent, and the page's cursor (a card, an effect).
     pub rate: u32,
     pub cursor: usize,
@@ -180,6 +182,10 @@ pub enum SubPage<'a> {
 /// Frames from A on the Guide's top to the sub-page's first frame: the top fades out first (`field-menu-guide` 2330: A, 2340 the top at a third of
 /// its opacity, 2350 the page at a third coming in).
 pub const SUB_AT: f32 = GUIDE_FADE;
+
+/// The sub-pages' cursor blink runs 120 frames in 120.75 of the capture's (`field-menu-guide`: the Effects list's lowest points 2675.2, 2917.8 and 3160.4 are two periods
+/// of 121.3 apart; the Items' peak 2467.3 is 121.3 after its start): the game's animation clock is a little slow. STAND-IN: the ratio as measured.
+const BLINK_RATE: f32 = 0.9938;
 
 /// The colour an item's picture takes while the library shows it only as a silhouette (`field-menu-guide` 2440).
 const SILHOUETTE: [f32; 4] = [139.0 / 255.0, 113.0 / 255.0, 88.0 / 255.0, 1.0];
@@ -734,7 +740,7 @@ impl Page {
     /// The Item page (`uil_library_04_item_top.xml`): the title, the four category tabs, the Gather Rate, the cards (ten places, the cursor's lit) and the page number.
     fn guide_items(&self, w: &mut Walker, root: &Xf, sub: &SubLook, cards: &[crate::library::Card], alpha: f32) {
         let age = sub.since - SUB_AT;
-        let t = (age - 1.0).rem_euclid(120.0);
+        let t = ((sub.clock - SUB_AT - 1.0) * BLINK_RATE).rem_euclid(120.0);
         let blink = if t < 60.0 { 1.0 - t / 60.0 } else { (t - 60.0) / 60.0 };
         let string = |n: u32| self.strings.get(&n).cloned();
         let tab = ["tab_clone", "tab_clone_1", "tab_clone_2", "tab_clone_3"];
@@ -770,7 +776,7 @@ impl Page {
     /// effects in two columns with the cursor's lit, the cursor's effect (name, stars, description) and the empty "Resulting Item" frame.
     fn guide_effects(&self, w: &mut Walker, root: &Xf, sub: &SubLook, effects: &[crate::library::Effect], alpha: f32) {
         let age = sub.since - SUB_AT;
-        let t = (age - 1.0).rem_euclid(120.0);
+        let t = ((sub.clock - SUB_AT - 1.0) * BLINK_RATE).rem_euclid(120.0);
         let blink = if t < 60.0 { 1.0 - t / 60.0 } else { (t - 60.0) / 60.0 };
         let string = |n: u32| self.strings.get(&n).cloned();
         let here = effects.get(sub.cursor);
@@ -805,6 +811,8 @@ impl Page {
                 ["node_top", "node_right", "node_effesp", "node_eff"] => Over { show: true, ..Default::default() },
                 // (no resulting items are listed: the places stand empty)
                 ["node_top", "node_right", "node_effesp", "node_eff", "image_drops_bg", "node_items"] => Over { hide: true, ..Default::default() },
+                // (the blanks' copies beside the first are not drawn at their places: the game squashes them to nothing, three zero-width pieces a row, which Barrel leaves out)
+                ["node_top", "node_right", "node_effesp", "node_eff", "image_drops_bg", "blank", n] if n.starts_with("blank_1") || n.starts_with("blank_2") => Over { hide: true, ..Default::default() },
                 _ => Over::default(),
             }
         };
@@ -1222,13 +1230,6 @@ impl Walker<'_> {
             match e.name.as_str() {
                 "image" => self.image(e, me, &o),
                 "text" => self.text(e, me, &o),
-                "scroll_bar" => {
-                    // The bar's slider (`uil_sbt_default.xml`: `_slider` at (9, 20) in the bar, 10 wide) where the game's code gives it one.
-                    if let Some([y, h]) = o.thumb {
-                        let slider = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mix02_flame01_sb".into()), ("size_wh".into(), format!("10.333, {h}, 0"))], children: Vec::new() };
-                        self.image(&slider, me.node([9.0, y], 0.0, [1.0; 2]), &Over::default());
-                    }
-                }
                 _ => {}
             }
             // A stencil's mask is the picture itself (in the trace, not on the screen); what a `masked` node draws is clipped by it.
@@ -1262,6 +1263,13 @@ impl Walker<'_> {
                 self.walk(c, me, path, over, &cmds);
             }
             self.parent = outer;
+            if e.name == "scroll_bar" {
+                // The bar's slider (`uil_sbt_default.xml`: `_slider` at (9, 20) in the bar, 10 wide) where the game's code gives it one, after the bar's own pictures.
+                if let Some([y, h]) = o.thumb {
+                    let slider = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mix02_flame01_sb".into()), ("size_wh".into(), format!("10.333, {h}, 0"))], children: Vec::new() };
+                    self.image(&slider, me.node([9.0, y], 0.0, [1.0; 2]), &Over::default());
+                }
+            }
             if let (Some(mask), Some("masked")) = (self.mask, e.attr("stencil_mask")) {
                 self.clips.push(Clip { mask, quads: masked_from..self.out.len() });
             }
@@ -1305,7 +1313,11 @@ impl Walker<'_> {
             Some([l, t, r, b]) => {
                 let u = 1.0 / p.per_layout;
                 // (margins that cover the picture's width, as `gen_a21_status01_list_mini`'s do, leave it whole across)
-                let cols = if l + r >= p.uvwh[2] { vec![(0.0, size[0], 0.0, p.uvwh[2])] } else { segments(size[0], l, p.uvwh[2] - l - r, r, u) };
+                let mut cols = if l + r >= p.uvwh[2] { vec![(0.0, size[0], 0.0, p.uvwh[2])] } else { segments(size[0], l, p.uvwh[2] - l - r, r, u) };
+                // (a picture narrower than its margins keeps its middle as a piece of no width between them: `field-menu-guide` 2700, the Effects page's blanks)
+                if l > 0.0 && r > 0.0 && l + r < p.uvwh[2] && cols.len() == 2 {
+                    cols.insert(1, (cols[0].1, 0.0, l, 0.0));
+                }
                 let rows = segments(size[1], t, p.uvwh[3] - t - b, b, u);
                 for row in &rows {
                     for col in &cols {

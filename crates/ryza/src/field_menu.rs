@@ -264,7 +264,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -470,8 +470,9 @@ pub struct Pick {
     pub items: Option<ItemPage>,
     /// The item page's cursor: a cell of its grid (Container) or a place of its row (Gathering Tools).
     pub cell: usize,
-    /// The Guide's sub-page opened from its top (Items or Effects/Traits).
+    /// The Guide's sub-page opened from its top (Items or Effects/Traits), and the frame each button's page was first opened on.
     pub sub: Option<GuideSub>,
+    pub sub_first: [Option<f32>; 2],
 }
 
 /// A sub-page of the Guide's top: its button's place (0 Items, 1 Effects/Traits), the frame of the A that opened it and of the B that leaves it.
@@ -480,6 +481,8 @@ pub struct GuideSub {
     pub button: usize,
     pub since: f32,
     pub back: Option<f32>,
+    /// The frame of the first A that opened this button's page: its cursor's blink keeps running from there while the page is away.
+    pub first: f32,
 }
 
 /// Frames from B on a Guide sub-page to the top's being whole again: the page fades out over 15 frames and the top in over 15 after them
@@ -660,7 +663,7 @@ impl Nav {
         self.in_settings = self.cursor == SETTINGS;
         if matches!(self.cursor, EQUIP | STATUS) {
             // (the leader's card is picked first)
-            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None });
+            self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0, sub: None, sub_first: [None; 2] });
         }
         if matches!(self.cursor, CONTAINER | TOOLS | GUIDE_BUTTON) {
             // (no pick: the page is the button's; its first frame comes `ITEM_PAGE_LATER` frames after A, like a card's A on the Status page)
@@ -672,7 +675,7 @@ impl Nav {
             if self.cursor == GUIDE_BUTTON {
                 self.ring_again = Some(at + GUIDE_RING_AT);
             }
-            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None });
+            self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0, sub: None, sub_first: [None; 2] });
         }
     }
 
@@ -698,7 +701,8 @@ impl Nav {
     pub fn pick_confirm(&mut self, at: f32) {
         if self.page(at).is_some_and(|p| p.items == Some(ItemPage::Guide)) && self.sub(at).is_none() {
             if let Some(p) = self.pick.as_mut().filter(|p| p.cell < 2) {
-                p.sub = Some(GuideSub { button: p.cell, since: at, back: None });
+                let first = *p.sub_first[p.cell].get_or_insert(at);
+                p.sub = Some(GuideSub { button: p.cell, since: at, back: None, first });
             }
             return;
         }
@@ -957,6 +961,10 @@ enum Entries {
     Tools,
     /// The Guide page's: back and confirm.
     GuideTop,
+    /// The Guide's Item page's: select, search, back and confirm.
+    GuideItems,
+    /// The Guide's Effect/Trait page's: select and back.
+    GuideEffects,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
@@ -983,6 +991,17 @@ const SHELF_PLATE_EXTRA: f32 = 0.67 / 1.5;
 
 /// The Guide page's entries (`field-menu-pages` 3250): B "Back" and A "Confirm".
 const GUIDE_TOP_ENTRIES: [(char, u32); 2] = [('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The Guide's Item page's entries (`field-menu-guide` 2440): the cross "Select", the view button "Search" (`STR_LIBRARY_DEFINE_089`), B "Back", A "Confirm".
+const GUIDE_ITEMS_ENTRIES: [(char, u32); 4] = [('\u{4e2}', 4_194_366), ('\u{4ec}', 4_063_233 + 89), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The Effect/Trait page's entries (`field-menu-guide` 2650): the Item page's cross and B "Back".
+const GUIDE_EFFECTS_ENTRIES: [(char, u32); 2] = [('\u{4e2}', 4_194_366), ('\u{4d8}', 4_194_368)];
+
+/// The Guide's sub-pages' bars (`field-menu-guide`): the page's bar fades in over 15 frames from `GUIDE_SUB_BAR_AT` frames after A, and out from 5 frames after B;
+/// the top's bar goes from 5 frames after A (its words first) and comes back 32 frames after B. STAND-IN: the plates' widths and the plates' change between the bars are not fitted.
+const GUIDE_SUB_BAR_AT: f32 = 33.0;
+const GUIDE_ITEMS_PLATE_EXTRA: f32 = 0.0;
 
 /// The Guide page's bar fades in 15 frames from 18 frames after the page's own age began (the first frame is 1; `field-menu-pages` 3220: 1/15 of its
 /// opacity, 3230: 11/15) and out from 2 frames after B (3320: 8/15), its plate whole. STAND-IN: the bar's other parts are one sample each.
@@ -1196,6 +1215,24 @@ impl View {
         let extra = SHELF_PLATE_EXTRA - TOOLS_BAR_GROW * ((TOOLS_BAR_FADE - a) / (TOOLS_BAR_FADE * 2.0 / 3.0)).clamp(0.0, 1.5);
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         self.help_bar(&mut pen, Bar { alpha: (a / TOOLS_BAR_FADE).clamp(0.0, 1.0), grow: 1.0, words: true, extra, entries: Entries::Tools });
+        pen.finish().0
+    }
+
+    /// The Guide's help bar while a sub-page is up: `since` frames after A on the top (`button` 0 Items, 1 Effects/Traits), and, going back, `back` frames after B.
+    pub fn guide_sub_help(&self, screen: (u32, u32), button: usize, since: f32, back: Option<f32>) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        let (top, page) = match back {
+            Some(b) => ((b - 32.0) / HELP_FADE, 1.0 - (b - 5.0) / HELP_FADE),
+            None => (1.0 - (since - 5.0) / HELP_FADE, (since - GUIDE_SUB_BAR_AT) / HELP_FADE),
+        };
+        if top > 0.0 {
+            self.help_bar(&mut pen, Bar { alpha: top, grow: 1.0, words: back.is_some(), extra: GUIDE_PLATE_EXTRA, entries: Entries::GuideTop });
+        }
+        if page > 0.0 {
+            let entries = if button == 0 { Entries::GuideItems } else { Entries::GuideEffects };
+            self.help_bar(&mut pen, Bar { alpha: page, grow: 1.0, words: true, extra: if button == 0 { GUIDE_ITEMS_PLATE_EXTRA } else { STATUS_PLATE_EXTRA }, entries });
+        }
         pen.finish().0
     }
 
@@ -1550,6 +1587,8 @@ impl View {
             Entries::Shelf => &SHELF_ENTRIES,
             Entries::Tools => &TOOLS_ENTRIES,
             Entries::GuideTop => &GUIDE_TOP_ENTRIES,
+            Entries::GuideItems => &GUIDE_ITEMS_ENTRIES,
+            Entries::GuideEffects => &GUIDE_EFFECTS_ENTRIES,
         };
         let line = self.help_line(entries);
         let full = self.plate_full(&line, pen.k);
@@ -1754,7 +1793,7 @@ mod tests {
         let keys = [(1900.0, Key::Open), (2000.0, Key::Down), (2040.0, Key::Down), (2080.0, Key::Down), (2120.0, Key::Down), (2180.0, Key::Confirm), (2330.0, Key::Confirm), (2480.0, Key::Back), (2560.0, right), (2600.0, Key::Confirm), (2750.0, Key::Back)];
         let sub = |tick: f32| replay(&keys, tick, &ORDER).unwrap().sub(tick).copied();
         assert_eq!(sub(2300.0), None);
-        assert_eq!(sub(2400.0), Some(GuideSub { button: 0, since: 2330.0, back: None }));
+        assert_eq!(sub(2400.0), Some(GuideSub { button: 0, since: 2330.0, back: None, first: 2330.0 }));
         // (the page fades out over 15 frames and the top in over 15 after them: the top is whole again 30 frames after B)
         assert_eq!(sub(2505.0).map(|s| s.back), Some(Some(2480.0)));
         assert_eq!(sub(2510.0), None);
@@ -1790,7 +1829,7 @@ mod tests {
     fn the_guide_bar_fades_in_late_and_out_from_the_third_frame() {
         let (bar_in, bar_out) = (GUIDE_BAR_AT, GUIDE_BAR_OUT_AT);
         assert_eq!((bar_in, bar_out), (18.0, 3.0));
-        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None }.slides());
+        assert!(Pick { first: 0.0, card: 0, since: 0.0, confirmed: Some(0.0), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(ItemPage::Guide), cell: 0, sub: None, sub_first: [None; 2] }.slides());
     }
 
     #[test]

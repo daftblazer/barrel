@@ -3092,7 +3092,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 (None, Some((p, out))) => (Some(p), Some(out)),
                 _ => (None, None),
             };
-            let menu_help = if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide)) {
+            let menu_help = if let (Some(s), true) = (nav.sub(menu_tick), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide))) {
+                view.guide_sub_help((width, height), s.button, menu_tick - s.since, s.back.map(|b| menu_tick - b))
+            } else if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide)) {
                 // (the Guide's bar comes in after its parts have faded)
                 view.guide_help((width, height), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
             } else if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Tools)) {
@@ -3112,6 +3114,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     page: if s.button == 0 { barrel_ryza::field_page::SubPage::Items(&cards) } else { barrel_ryza::field_page::SubPage::Effects(&effects) },
                     since: menu_tick - s.since,
                     back: s.back.map(|b| menu_tick - b),
+                    clock: menu_tick - s.first,
                     rate: if s.button == 0 { library.item_rate(&know_items) } else { library.effect_rate(&know_effects) },
                     cursor: 0,
                 });
