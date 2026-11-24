@@ -2085,11 +2085,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     if let Some(c) = &config {
         options_state.load(c);
     }
-    // The values when the screen opened (A on No goes back to them), how the screen is being left,
-    // and the directions the list took (offscreen: those not pressed while the dialog was up).
-    let mut options_initial = options_state.clone();
-    let mut leave = barrel_ryza::leave::Leave::default();
-    let mut discard = false;
+    // The Options screen (the values, the dialog, the blink: `options_run::Screen`, as the field menu's run has it).
+    let mut scr = barrel_ryza::options_run::Screen::new(options_state, 0);
     let mut apply_settings = false;
     // After a live display change: when the frames were counted from, and how many since.
     let mut display_probe: Option<(std::time::Instant, u32)> = None;
@@ -2104,7 +2101,6 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut scripted_saved = false;
     let mut scripted_tab_change: Option<i32> = None;
     let mut scripted_blink: Option<i32> = None;
-    let mut blinks = barrel_ryza::leave::Blinks::new(0);
     let mut was_in_settings = false;
     let mut scripted_holds: Vec<barrel_ryza::title_menu::Hold> = Vec::new();
     // The cursor's row when the holds were last cleared (a tab change clears them).
@@ -2633,20 +2629,20 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             if let (true, Some(c)) = (scripted, settings_at(&title_input)) {
                 // Offscreen: the scripted keys (tabs, changes, B, A, the directions) run again from
                 // the screen's first frame to this one (`barrel_ryza::leave::replay`).
-                let r = barrel_ryza::leave::replay(&options_initial, &title_input, c + barrel_ryza::options::COVER_FULL, frame);
-                options_state = r.state;
-                leave = r.leave;
+                let r = barrel_ryza::leave::replay(&scr.initial, &title_input, c + barrel_ryza::options::COVER_FULL, frame);
+                scr.state = r.state;
+                scr.leave = r.leave;
                 scripted_holds = r.holds;
                 scripted_tab_change = r.tab_change;
                 scripted_blink = r.blink;
-                title_input.returned = leave.left_at();
-                title_input.returned_lead = leave.lead();
+                title_input.returned = scr.leave.left_at();
+                title_input.returned_lead = scr.leave.lead();
                 title_input.returned_spin = menu.return_spin(&title_input, c);
                 // The replayed A on Yes writes the changes where a player's would (once), and the
                 // settings they come to are applied.
-                if !scripted_saved && leave.saved_at().is_some_and(|at| frame >= at) {
+                if !scripted_saved && scr.leave.saved_at().is_some_and(|at| frame >= at) {
                     scripted_saved = true;
-                    save_options(&options_state);
+                    save_options(&scr.state);
                     apply_settings = true;
                 }
             }
@@ -2700,100 +2696,62 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     }
                 }
                 if in_settings && !was_in_settings {
-                    options_state.changed = false;
-                    options_initial = options_state.clone();
-                    blinks = barrel_ryza::leave::Blinks::new(settings_at(&title_input).unwrap_or(frame) + barrel_ryza::options::COVER_FULL);
-                    leave = barrel_ryza::leave::Leave::default();
-                    discard = false;
+                    scr.enter(settings_at(&title_input).unwrap_or(frame) + barrel_ryza::options::COVER_FULL);
                 }
                 was_in_settings = in_settings;
-                let cue = |s: &mut Option<barrel_ryza::sound::Sound>, name: &'static str, id: u32| {
-                    if let Some(s) = s.as_mut() {
-                        s.request(name, barrel_ryza::sound::Cue::effect(i64::from(frame), id));
-                    }
-                };
-                let mut turn_tab: Option<(i32, i32, i32)> = None;
+                // The screen takes the frame's keys and settles (the list's cursor is the hold record's, below).
+                use barrel_ryza::options_run::{Effects, Key as ScreenKey};
+                let mut fx = Effects::default();
                 if in_settings {
-                    use barrel_ryza::leave::{Key, Outcome};
-                    if leave.asking() {
-                        // The dialog's box: up and down move its cursor, A answers, B closes it.
-                        if pressed(Act::Up) || pressed(Act::Down) {
-                            leave.press(Key::Toggle, options_state.changed, frame);
-                            cue(&mut sound, "cursor", barrel_ryza::sound::CURSOR);
-                        }
-                        if pressed(Act::Back) {
-                            leave.press(Key::Back, options_state.changed, frame);
-                            cue(&mut sound, "cancel", barrel_ryza::sound::CANCEL);
-                        } else if pressed(Act::Confirm) {
-                            cue(&mut sound, "choose", barrel_ryza::sound::CLICK);
-                            match leave.press(Key::Confirm, options_state.changed, frame) {
-                                Outcome::Save => {
-                                    save_options(&options_state);
-                                    apply_settings = true;
-                                    options_state.changed = false;
-                                    options_initial = options_state.clone();
-                                }
-                                Outcome::Discard => discard = leave.leaving(),
-                                Outcome::Nothing => {}
-                            }
-                        }
-                    } else if !leave.busy(frame) {
-                        // Left and right change the row's value, Q and E (LB and RB) the tab; Escape
-                        // (B) leaves, asking first when something changed.
-                        for (act, way) in [(Act::Left, -1), (Act::Right, 1)] {
-                            if pressed(act) {
-                                options_state.change(way);
-                            }
-                        }
-                        for (act, way) in [(Act::TabPrev, -1), (Act::TabNext, 1)] {
-                            if pressed(act) || title_input.tabs.contains(&(frame, way)) {
-                                // With something changed the dialog asks first; the tab turns once it is answered.
-                                if leave.tab(way, options_state.changed, frame) == barrel_ryza::leave::Tab::Now {
-                                    turn_tab = Some((frame, way, leave.stood(frame)));
-                                    leave.new_tab();
-                                } else {
-                                    cue(&mut sound, "cancel", barrel_ryza::sound::CANCEL);
-                                }
-                            }
-                        }
-                        if pressed(Act::Back) {
-                            eprintln!("settings: leaving (game frame {})", sound_base + i64::from(frame));
-                            leave.press(Key::Back, options_state.changed, frame);
-                            cue(&mut sound, "cancel", barrel_ryza::sound::CANCEL);
-                        }
+                    let mut keys: Vec<ScreenKey> = [
+                        (Act::Up, ScreenKey::Up),
+                        (Act::Down, ScreenKey::Down),
+                        (Act::Left, ScreenKey::Left),
+                        (Act::Right, ScreenKey::Right),
+                        (Act::Confirm, ScreenKey::Confirm),
+                        (Act::Back, ScreenKey::Back),
+                        (Act::TabPrev, ScreenKey::TabPrev),
+                        (Act::TabNext, ScreenKey::TabNext),
+                    ]
+                    .into_iter()
+                    .filter(|&(act, _)| pressed(act))
+                    .map(|(_, key)| key)
+                    .collect();
+                    keys.extend(title_input.tabs.iter().filter(|t| t.0 == frame).map(|t| if t.1 < 0 { ScreenKey::TabPrev } else { ScreenKey::TabNext }));
+                    if keys.contains(&ScreenKey::Back) && scr.takes_keys(frame) {
+                        eprintln!("settings: leaving (game frame {})", sound_base + i64::from(frame));
                     }
+                    scr.press(frame, &keys, &mut fx);
                 }
-                if let Some(due) = leave.take_due(frame) {
-                    if due.discard {
-                        options_state.discard_changes(&options_initial);
-                    }
-                    turn_tab = Some((due.at, due.way, due.stood));
+                scr.settle(frame, &mut fx);
+                if fx.saved {
+                    save_options(&scr.state);
+                    apply_settings = true;
                 }
-                if let Some((at, way, stood)) = turn_tab {
-                    let was = options_state.tab;
-                    options_state.tab_by(way);
-                    blinks.turn(was, options_state.tab, at, stood);
+                if let Some(at) = fx.turned {
                     tab_changed_at = Some(at);
-                    cue(&mut sound, "page", barrel_ryza::sound::PAGE);
                     title_input.list_holds.clear();
-                    options_base = options_state.cursor[options_state.tab];
+                    options_base = scr.state.cursor[scr.state.tab];
+                }
+                if let Some(sound) = sound.as_mut() {
+                    for cue in fx.cues {
+                        let (name, id) = cue.sound();
+                        sound.request(name, barrel_ryza::sound::Cue::effect(i64::from(frame), id));
+                    }
                 }
                 // The screen is left once its leaving is over: the changes the player did not keep are dropped and the title's menu is back.
-                if let Some(l) = leave.look(frame).left {
+                if let Some(l) = scr.left(frame) {
                     eprintln!("settings: left (game frame {})", sound_base + i64::from(frame));
-                    if discard {
-                        options_state = options_initial.clone();
-                        discard = false;
-                    }
+                    scr.finish_leaving();
                     shown_row = None;
                     title_input.list_holds.clear();
                     title_input.returned_spin = title_input.choose.map_or(0, |c| menu.return_spin(&title_input, c));
                     title_input.choose = None;
                     title_input.returned = Some(l);
-                    title_input.returned_lead = leave.lead();
+                    title_input.returned_lead = scr.leave.lead();
                     options_base = 0;
                     was_in_settings = false;
-                    leave = barrel_ryza::leave::Leave::default();
+                    scr.leave = barrel_ryza::leave::Leave::default();
                 }
                 for (act, way) in [(Act::Down, 1), (Act::Up, -1)] {
                     let held = menu_input.held(act);
@@ -2801,7 +2759,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     for h in holds.iter_mut().filter(|h| h.way == way && h.until.is_none() && !held) {
                         h.until = Some(frame);
                     }
-                    if pressed(act) && !(in_settings && leave.busy(frame)) {
+                    if pressed(act) && !(in_settings && scr.leave.busy(frame)) {
                         // (a tap shorter than a frame is a one-frame hold)
                         holds.push(barrel_ryza::title_menu::Hold { from: frame, until: (!held).then_some(frame + 1), way });
                     }
@@ -2903,8 +2861,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 barrel_ryza::options::Stage::Cover(alpha) => quads.push(flow::cover(alpha, (width, height), cover_texture)),
                 barrel_ryza::options::Stage::Screen { age } => {
                     if let Some((layer, view, strings)) = options_screen.as_mut() {
-                        let tab = options_state.tab;
-                        let n = options_state.entries(tab).len().max(1);
+                        let tab = scr.state.tab;
+                        let n = scr.state.entries(tab).len().max(1);
                         // The cursor's blink starts again a frame before a tab change (ryza-recomp settings-tabs:
                         // 0.067 of its opacity 55 frames after each RB; from the change itself 0.086).
                         let tab_change = if pump.is_some() { tab_changed_at } else { scripted_tab_change };
@@ -2914,21 +2872,19 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                             held.list_holds = scripted_holds.clone();
                         }
                         held.list_holds.retain(|h| tab_change.is_none_or(|f| h.from >= f));
-                        options_state.cursor[tab] = barrel_ryza::options::cursor_on(&held, options_base, n, frame);
-                        options_state.follow();
-                        if shown_row != Some((tab, options_state.cursor[tab])) {
-                            shown_row = Some((tab, options_state.cursor[tab]));
-                            eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, options_state.cursor[tab], sound_base + i64::from(frame));
+                        scr.state.cursor[tab] = barrel_ryza::options::cursor_on(&held, options_base, n, frame);
+                        scr.state.follow();
+                        if shown_row != Some((tab, scr.state.cursor[tab])) {
+                            shown_row = Some((tab, scr.state.cursor[tab]));
+                            eprintln!("settings: tab {} row {} (of {n}, game frame {})", tab as i32 - barrel_ryza::options::FIRST_TAB as i32, scr.state.cursor[tab], sound_base + i64::from(frame));
                         }
                         // (the dialog holds the cursor's blink still while it is up)
-                        let still_age = age - leave.stood(frame);
-                        let turned = if pump.is_some() { blinks.age(frame, leave.stood(frame)) } else { scripted_blink };
-                        let blink_age = turned.unwrap_or(still_age);
+                        let blink_age = if pump.is_some() { scr.blink_age(frame, age) } else { scripted_blink.unwrap_or(age - scr.leave.stood(frame)) };
                         let blink = if pump.is_some() { (blink_age * barrel_ryza::options::blink_speed(tab)) as f32 } else { barrel_ryza::options::blink_clock(blink_age, barrel_ryza::options::blink_speed(tab)) };
                         let clips;
                         let glow;
-                        let look = leave.look(frame);
-                        let mut screen = options_state.screen(strings);
+                        let look = scr.leave.look(frame);
+                        let mut screen = scr.state.screen(strings);
                         screen.leave = look.clone();
                         (quads, clips, glow) = view.quads(&screen, barrel_ryza::options_view::Moment { age, blink, from_menu: false }, (width, height));
                         // The black over the screen as it is saved, and the notice over that (in the load screen's layer, which holds its pictures).
@@ -2975,28 +2931,25 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         match (menu_now.as_ref().filter(|n| n.in_settings).and_then(|n| n.chosen), settings_run.as_mut()) {
             (Some(c), None) => {
                 eprintln!("settings: opened from the menu (game frame {})", c.floor());
-                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false, seen: (c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT) as f32 - 0.001 });
+                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(scr.state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false, seen: (c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT) as f32 - 0.001 });
             }
             // A on Settings again while the last screen's remnants are still going out: a new screen.
             (Some(c), Some(sr)) if sr.over_since().is_some() => {
                 if let Some(done) = settings_run.take() {
-                    options_state = done.run.finish();
-                    options_initial = options_state.clone();
+                    scr.set(done.run.finish());
                 }
-                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(options_state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false, seen: (c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT) as f32 - 0.001 });
+                settings_run = Some(SettingsRun { run: barrel_ryza::options_run::Run::open(scr.state.clone()), first: c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT, told: false, seen: (c.floor() as i32 + barrel_ryza::field_menu::SETTINGS_AT) as f32 - 0.001 });
             }
             (None, Some(sr)) if sr.over_since().is_some_and(|over| menu_tick >= over as f32 + SETTINGS_AFTER) => {
                 // Back on the menu: the values the screen left stand.
                 if let Some(done) = settings_run.take() {
-                    options_state = done.run.finish();
-                    options_initial = options_state.clone();
+                    scr.set(done.run.finish());
                 }
             }
             _ => {}
         }
         let mut told_now = false;
         if let Some(sr) = settings_run.as_mut() {
-            use barrel_ryza::options_run::Cue as C;
             let now = menu_tick.floor() as i32;
             while sr.run.frame() < now - sr.first + 1 {
                 let at = sr.first + sr.run.frame();
@@ -3007,23 +2960,18 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 let keys: Vec<_> = due.into_iter().filter_map(|&(_, k)| screen_key(k)).collect();
                 let fx = sr.run.step(&keys);
                 if !keys.is_empty() {
-                    eprintln!("settings: {keys:?} on the menu's screen (game frame {at}), row {}, changed {}", sr.run.state.cursor[sr.run.state.tab], sr.run.changed());
+                    eprintln!("settings: {keys:?} on the menu's screen (game frame {at}), row {}, changed {}", sr.run.screen.state.cursor[sr.run.screen.state.tab], sr.run.changed());
                 }
                 if let Some(sound) = sound.as_mut() {
                     let when = sound_base + i64::from(at - a.hud_at as i32);
                     for cue in fx.cues {
-                        let (name, id) = match cue {
-                            C::Cursor => ("cursor", barrel_ryza::sound::CURSOR),
-                            C::Cancel => ("cancel", barrel_ryza::sound::CANCEL),
-                            C::Choose => ("choose", barrel_ryza::sound::CLICK),
-                            C::Page => ("page", barrel_ryza::sound::PAGE),
-                        };
+                        let (name, id) = cue.sound();
                         sound.request(name, barrel_ryza::sound::Cue::effect(when, id));
                     }
                 }
                 if fx.saved {
                     eprintln!("settings: saved from the menu's screen (game frame {})", at);
-                    save_options(&sr.run.state);
+                    save_options(&sr.run.screen.state);
                     apply_settings = true;
                 }
                 if let (false, Some(l)) = (sr.told, sr.run.left_at()) {
@@ -3184,14 +3132,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             // What the screen leaves after its last frame (its caption and help bar going out).
             if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.over_since().is_some()), options_screen.as_mut()) {
                 let age = menu_tick - sr.over_since().unwrap_or(0) as f32;
-                let quads = view.remnants(&sr.run.state.screen(strings), age, (width, height));
+                let quads = view.remnants(&sr.run.screen.state.screen(strings), age, (width, height));
                 layer.set_blended(&gpu, &quads, &[], 0..0)?;
                 showing_options = !quads.is_empty();
             }
             // The Settings screen over it, from its first frame.
             if let (Some(sr), Some((layer, view, strings))) = (settings_run.as_ref().filter(|s| s.run.frame() >= 1 && !s.run.is_over()), options_screen.as_mut()) {
                 let look = sr.run.look();
-                let mut screen = sr.run.state.screen(strings);
+                let mut screen = sr.run.screen.state.screen(strings);
                 screen.leave = look.clone();
                 let (mut quads, clips, glow) = view.quads(&screen, sr.run.moment(), (width, height));
                 if look.cover > 0.0 {

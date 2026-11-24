@@ -13,6 +13,7 @@
 //! from the screen's first frame to the one asked for, so a picture is a function of its frame.
 
 use crate::options::State;
+use crate::options_run::{Effects, Key as ScreenKey, Screen};
 use crate::title_menu::{Hold, Input};
 
 /// Frames the dialog's slide (`anm_common_slide_in_bottom`) takes, and the common fade.
@@ -448,67 +449,41 @@ pub fn replay(initial: &State, input: &Input, from: i32, frame: i32) -> Replay {
     events.extend(input.answers.iter().map(|&f| (f, 4, Event::Confirm)));
     events.retain(|e| e.0 >= from && e.0 <= frame);
     events.sort_by_key(|e| (e.0, e.1));
-    let mut initial = initial.clone();
-    let mut state = initial.clone();
-    state.tab = crate::options::FIRST_TAB;
-    let mut leave = Leave::default();
+    let mut screen = Screen::new(initial.clone(), from);
+    screen.state.tab = crate::options::FIRST_TAB;
     let mut holds: Vec<Hold> = Vec::new();
     let mut tab_change: Option<i32> = None;
-    // A tab change an answer let through turns where its dialog ends (the state is the screen's, not the first one's).
-    let mut blinks = Blinks::new(from);
-    let turn = |leave: &mut Leave, state: &mut State, initial: &State, tab_change: &mut Option<i32>, blinks: &mut Blinks, f: i32| {
-        if let Some(due) = leave.take_due(f) {
-            if due.discard {
-                state.discard_changes(initial);
-            }
-            let was = state.tab;
-            state.tab_by(due.way);
-            blinks.turn(was, state.tab, due.at, due.stood);
-            *tab_change = Some(due.at);
-        }
-    };
+    let mut fx = Effects::default();
     for (f, _, event) in events {
-        turn(&mut leave, &mut state, &initial, &mut tab_change, &mut blinks, f);
+        screen.settle(f, &mut fx);
         match event {
             Event::Hold(i) => {
-                if leave.busy(f) {
-                    leave.press(Key::Toggle, state.changed, f);
+                // A direction while the dialog is up goes to its box.
+                if screen.leave.busy(f) {
+                    screen.press(f, &[ScreenKey::Up], &mut fx);
                 } else {
                     holds.push(input.list_holds[i]);
                 }
             }
-            Event::Tab(way) => match leave.tab(way, state.changed, f) {
-                crate::leave::Tab::Now => {
-                    let was = state.tab;
-                    state.tab_by(way);
-                    blinks.turn(was, state.tab, f, leave.stood(f));
-                    leave.new_tab();
-                    tab_change = Some(f);
+            Event::Tab(way) => screen.press(f, &[if way < 0 { ScreenKey::TabPrev } else { ScreenKey::TabNext }], &mut fx),
+            Event::Change(way) => {
+                if screen.takes_keys(f) {
+                    let state = &mut screen.state;
+                    let n = state.entries(state.tab).len().max(1);
+                    let held: Vec<Hold> = holds.iter().filter(|h| tab_change.is_none_or(|t| h.from >= t)).copied().collect();
+                    state.cursor[state.tab] = crate::options::cursor_on(&Input { list_holds: held, ..Input::default() }, 0, n, f);
                 }
-                _ => {}
-            },
-            Event::Change(way) if !leave.busy(f) => {
-                let n = state.entries(state.tab).len().max(1);
-                let held: Vec<Hold> = holds.iter().filter(|h| tab_change.is_none_or(|t| h.from >= t)).copied().collect();
-                state.cursor[state.tab] = crate::options::cursor_on(&Input { list_holds: held, ..Input::default() }, 0, n, f);
-                state.change(way);
+                screen.press(f, &[if way < 0 { ScreenKey::Left } else { ScreenKey::Right }], &mut fx);
             }
-            Event::Back => {
-                leave.press(Key::Back, state.changed, f);
-            }
-            Event::Confirm => {
-                if leave.press(Key::Confirm, state.changed, f) == Outcome::Save {
-                    initial = state.clone();
-                    initial.changed = false;
-                    state.changed = false;
-                }
-            }
-            _ => {}
+            Event::Back => screen.press(f, &[ScreenKey::Back], &mut fx),
+            Event::Confirm => screen.press(f, &[ScreenKey::Confirm], &mut fx),
         }
+        tab_change = fx.turned.take().or(tab_change);
     }
-    turn(&mut leave, &mut state, &initial, &mut tab_change, &mut blinks, frame);
-    let blink = blinks.age(frame, leave.stood(frame));
-    Replay { state, leave, holds, tab_change, blink }
+    screen.settle(frame, &mut fx);
+    tab_change = fx.turned.take().or(tab_change);
+    let blink = screen.blinks.age(frame, screen.leave.stood(frame));
+    Replay { state: screen.state, leave: screen.leave, holds, tab_change, blink }
 }
 
 #[cfg(test)]

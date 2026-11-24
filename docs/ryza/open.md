@@ -279,8 +279,8 @@ the capture), with the title's own `State`, `Leave` and `Blinks`: up and down (a
 leave dialog, A on Yes saving and applying live (the same `save_options` and `apply_settings`). The
 menu's keys are the one log (`menu_keys`); the run takes the ones from its first frame on and tells
 the menu when it is left (`Key::Return`, at its last frame; the menu's cards and buttons come in 2
-frames later). Offscreen `--menu-keys` also takes `left,right,lb,rb`. The title still runs its own
-copy of this key code (`play::run_once`, on the title's frame clock): the two are not yet one.
+frames later). Offscreen `--menu-keys` also takes `left,right,lb,rb`. The title drives the same
+`options_run::Screen` (see "Title and menu Settings: one implementation").
 
 Settings from the menu, drawn as the game's (2026-11-23, rows `field-menu-2225` to `-2445`, `-2460` to `-2550` at 0):
 - The menu goes out 41 frames after A (`SETTINGS_OUT_AT`, 2 frames before the screen's first): the buttons, plates
@@ -334,10 +334,6 @@ Help bar transients (2026-11-23, rows `field-menu-1910` to `-1920`, `-1940` to `
 - 2150 to 2160 and 2510 show one mismatch each (a glow byte, 0.031 against 0.039; not rows).
 
 Left (each a listed cause):
-- The title's Options key code is still its own copy in `play::run_once` (not done in this pass: the title's offscreen
-  frames replay scripted keys through `leave::replay` and keep their cursor holds in the title's own input record, which
-  `options_run::Run` does not model; the 100 `checks-settings` rows hang on it, so it needs a pass of its own); only the
-  menu uses `options_run::Run`.
 - The other five buttons: A runs the select pulse and does nothing else (Container, Equip, Gathering
   Tools, Status, Guide are not built; the game's "not available" cue is not read). Left, right,
   X, Y, LB, RB and the other photos (ids by story) are not tried in the game.
@@ -360,7 +356,6 @@ the order worth doing:
 - Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
   and Effect/Trait pages are drawn and open and close as in the capture (part 11: the Effects page and the ways in and out are at 0 on most frames, the Items page 36 mismatches from the cards' tilt); Monsters and Help are
   closed in the capture's save (A does nothing) or not captured. Answer keys field-menu-pages (every 10 frames 1990-3540), field-menu-guide, field-menu-guide2.
-- The title's Settings still runs its own copy of the Options code (`play::run_once`): part 14 says why it is a pass of its own.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
 - Fixed 2026-11-23: anti-aliasing changed live in a window made the field worse (user: smeared, oversaturated; MSAA
@@ -2241,9 +2236,23 @@ Counts before -> after: 3320: 206 -> 0; 3330: 347 -> 0; 3340 to 3450: 274 -> 0; 
 Left, with causes:
 - `field-menu-guide2` 3300 and 3310 (2 and 4): the Guide card's ring while the menu closes on B from the Guide top (game 200 px wide at 0.36 on 3300, Barrel 144 px at 0.13): the ring's loop clock
   after the page round trip, see the ring entries of part 13.
-- The title's Settings still runs its own copy of the Options code. Not done in part 14: the copy is not just key code. The title's cursor is the list's hold record (`title_input.list_holds`,
-  `options::cursor_on`, `options_base`) and its offscreen frames replay scripted keys through `leave::replay` (an event list: holds, tabs, changes, B, A) on the title's clock, with the
-  screen's blink, return spin and cover (`COVER_FULL`) from the title's menu; `options_run::Run` steps its own cursor (`State::step`) on a clock of its own and models none of these. One
-  implementation needs `Run` to take the title's clock and the hold-driven cursor (and the title's drawing to read its state), and the 100 `checks-settings` rows would have to stay at 0 through it:
-  a pass of its own.
 - Gathering Tools 2630 (91) and Container coming in 2050 to 2070 (7, 6, 6): not looked at in part 14 (no new cause found in the data; part 13's STAND-INs, `TOOLS_SLIDE_LATE` and the others, are unchanged).
+
+### Title and menu Settings: one implementation
+
+(2026-11-24; `crates/ryza/src/options_run.rs`, `leave.rs`, `play/mod.rs`.) Shape: `options_run::Screen` is the Options screen itself
+(`State`, the values it opened with, `Leave`, `Blinks`, the discard flag) and the one place its rules live: `press(frame, keys, fx)`
+(the dialog's box and answers, left/right changes, the tab keys with the ask, B), `settle(frame, fx)` (the tab change an answered dialog
+lets through), `left`/`finish_leaving`, `blink_age`, `enter`. It takes any clock (the caller's frame) and returns `Effects` (sounds, saved,
+the frame a tab turned). Each door keeps only what really differs:
+- the field menu's `Run`: its own clock (frame 1 at the screen's first frame), a key list per frame, and the list's cursor stepped by keys
+  (`State::step`, held repeats clamp at the ends);
+- the title (`play::run_once`): the title's clock; its keys from the keyboard/pad (or the scripted tabs); the list's cursor is not stepped
+  but read from the hold record (`title_input.list_holds`, `options::cursor_on`, `options_base`) at draw time, so the title never sends
+  cursor keys to the screen; the cover/spin/return fade stay the title's;
+- offscreen, `leave::replay` runs the scripted key events up to a frame on a fresh `Screen` through the same `press`/`settle` (it keeps its
+  own hold list, which the cursor needs).
+Why this shape (a core both call, not `Run` for both): the title's cursor and clock are derived from records the capture's checks fit
+(100 `checks-settings` rows), so forcing them into `Run`'s stepped cursor would change what is drawn; the rules that were copied (dialog,
+tabs, leaving, blink age, sounds) are what moved. Test: `the_title_replay_and_the_menu_run_take_a_key_script_to_the_same_screen`.
+Not shared on purpose: the cursor's source (holds vs steps) and the clock.
