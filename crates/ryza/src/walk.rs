@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn against_a_wall_she_and_the_camera_follow_her_slide() {
+    fn against_a_wall_she_slides_facing_the_stick_and_the_camera_follows_the_slide() {
         let wall = barrel_engine::walk::Wall { a: [-5000.0, 100.0], b: [5000.0, 100.0], low: -100.0, high: 300.0, outline: None };
         let walls = Walls::from_walls(vec![wall], 1000.0);
         let (mut p, mut c) = (player(), cam());
@@ -356,9 +356,22 @@ mod tests {
         for _ in 0..60 {
             step(&mut p, &mut c, &diagonal, DT, None, Some(&walls));
         }
-        // Along the wall toward the camera's right (-x), her facing turned that way.
+        // Along the wall toward the camera's right (-x); she faces the stick's direction (45 degrees
+        // right of the camera's, which the follow keeps turning toward her slide), not her slide.
         assert!(p.at.x < -100.0 && p.at.z < 100.0, "{:?}", p.at);
-        assert!(p.turn < -0.5 && c.yaw < -1.0, "{} {}", p.turn, c.yaw);
+        assert!(c.yaw < -1.0, "{}", c.yaw);
+        assert!((p.turn - (c.yaw - 45.0).to_radians()).abs() < 0.05, "{} {}", p.turn, c.yaw);
+    }
+
+    #[test]
+    fn the_camera_follows_a_slow_slide_less_than_a_run() {
+        // The same direction across the view at 600 and at 120 units a second.
+        let mut run = cam();
+        run.follow([10.0, 0.0], 0.0, DT);
+        let mut slide = cam();
+        slide.follow([2.0, 0.0], 0.0, DT);
+        assert!((run.yaw - 1.0125).abs() < 1e-3, "{}", run.yaw);
+        assert!((slide.yaw / run.yaw - 120.0 / FOLLOW_FULL_SPEED).abs() < 1e-3, "{}", slide.yaw);
     }
 
     #[test]

@@ -150,6 +150,28 @@ pub fn near(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// `walk-ground INSTALL FIELD STATE FROM TO`: the game's feet along a state file against the ground Barrel
+/// builds: the highest surface at or under her feet (plus 2) and the highest of all.
+pub fn ground(args: &[&str]) -> Result<()> {
+    let [root, field, state, from, to] = args else { return Err("walk-ground INSTALL FIELD STATE FROM TO".into()) };
+    let (from, to): (u32, u32) = (from.parse()?, to.parse()?);
+    let install = barrel_ryza::install::Install::open(Path::new(root))?;
+    let files = install.field(field)?;
+    let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
+    let t = barrel_ryza::walk::load_terrain(&install, field, &files.area, &main, &objects, Vec3::ZERO)?;
+    let g = t.ground.ok_or("no ground")?;
+    for line in std::fs::read_to_string(state)?.lines() {
+        let v: Vec<f32> = line.replace('|', " ").split_whitespace().filter_map(|w| w.parse().ok()).collect();
+        if v.len() < 5 || (v[0] as u32) < from || (v[0] as u32) > to {
+            continue;
+        }
+        let (x, y, z) = (v[1], v[2], v[3]);
+        let round = |h: f32| (h * 100.0).round() / 100.0;
+        println!("{} y {:.2} under {:?} highest {:?}", v[0], y, g.height(x, z, y, 2.0).map(round), g.height(x, z, 1e6, 0.0).map(round));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

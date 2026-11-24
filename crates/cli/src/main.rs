@@ -167,6 +167,7 @@ fn main() -> ExitCode {
         ["ryza-commands", root, event, draws] => ryza_commands(Path::new(root), event, draws),
         ["walk", args @ ..] => ryza_walk::run(args),
         ["walk-near", args @ ..] => ryza_walk::near(args),
+        ["walk-ground", args @ ..] => ryza_walk::ground(args),
         ["ryza-field", root] => ryza_field(Path::new(root), None),
         ["ryza-field", root, field] => ryza_field(Path::new(root), Some(field)),
         ["ktf-scan", dir] => ktf_scan(Path::new(dir)),
