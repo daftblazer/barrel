@@ -519,6 +519,12 @@ impl Pick {
         }
     }
 
+    /// Frames from the page's A to the menu's going out under it: at once, but under the Guide it stands until the page's own parts have
+    /// faded in (`field-menu-pages` 3210: the light whole, 3220 at 0.988: it began on 3218 or 3219; the bar's fade began there too).
+    pub fn menu_out_later(&self) -> f32 {
+        if self.items == Some(ItemPage::Guide) { GUIDE_MENU_OUT_AT } else { 0.0 }
+    }
+
     /// Frames from B on the page to the blurred picture's going out: the menu's coming back, but the Guide's stays until its last part has gone.
     pub fn backdrop_hold(&self) -> f32 {
         if self.items == Some(ItemPage::Guide) { GUIDE_BACKDROP_OUT } else { self.page_out() }
@@ -934,6 +940,9 @@ const GUIDE_TOP_ENTRIES: [(char, u32); 2] = [('\u{4d8}', 4_194_368), ('\u{4da}',
 /// opacity, 3230: 11/15) and out from 2 frames after B (3320: 8/15), its plate whole. STAND-IN: the bar's other parts are one sample each.
 const GUIDE_BAR_AT: f32 = 18.0;
 const GUIDE_BAR_OUT_AT: f32 = 2.0;
+const GUIDE_MENU_OUT_AT: f32 = 18.0;
+/// The level plate and the money go this many frames before the buttons (3220: 0.988, 3230: 0.0745 of the plate's opacity: 3 and 13 frames in).
+const GUIDE_CORNER_EARLY: f32 = 2.0;
 /// Its plate is this much wider than its two entries need (layout pixels: 25.67 of 1080 lines, `field-menu-pages` 3250). STAND-IN, as `STATUS_PLATE_EXTRA`.
 const GUIDE_PLATE_EXTRA: f32 = 25.667 / 1.5;
 
@@ -1202,12 +1211,14 @@ impl View {
         // A page (Equipment, Status) over the menu: only the background, the photo and the corner picture stay under it.
         // (a page going out stays under the menu's coming back only after `PAGE_OUT`)
         let leaving = nav.page_leaving(frame).filter(|(p, out)| *out < p.page_out()).map(|(p, _)| p);
-        if let Some(page) = nav.page(frame).or(leaving) {
+        // (under the Guide the menu stands as it was until `menu_out_later` frames after A)
+        let up = nav.page(frame).filter(|p| frame >= p.confirmed.unwrap_or(frame) + p.menu_out_later());
+        if let Some(page) = up.or(leaving) {
             // The menu goes out under the page's coming in (`field-menu-status` 2330 to 2340, A on 2320): the layout's `get_out` as on B,
             // each button (the light after the last of seven places) one `CLOSE_STEP` behind the one before. Only what the blurred picture
             // of the menu leaves in view is in the trace: the light and the first card, whose rectangles reach the screen's edge.
-            let out = frame - page.confirmed.unwrap_or(frame);
-            if page.slides() && (0.0..LEAVE_FRAMES).contains(&out) && leaving.is_none() {
+            let out = frame - page.confirmed.unwrap_or(frame) - page.menu_out_later();
+            if page.slides() && out < LEAVE_FRAMES && leaving.is_none() {
                 let slide_state = |n: f32| {
                     let u = (1.0 - (out - n * CLOSE_STEP) / SLIDE).clamp(0.0, 1.0) * self.slide[0].duration();
                     (self.slide[0].at(u)[3] / 255.0, self.slide[1].at(u)[0])
@@ -1226,6 +1237,10 @@ impl View {
                         pen.natural(MENU1, &self.icons, BUTTONS[i], [at[0] + 13.0, at[1] + 14.0], alpha);
                     }
                 }
+            }
+            if page.menu_out_later() > 0.0 && leaving.is_none() {
+                // (under the Guide the level plate and the money go out too, to the right: `field-menu-pages` 3220: the plate at 0.988)
+                self.corner_out(&mut pen, shown, out + GUIDE_CORNER_EARLY);
             }
             let (put_at, put) = &self.put;
             pen.natural(MENU1, put, 0, *put_at, white(1.0));
@@ -1355,6 +1370,23 @@ impl View {
         };
         self.help_bar(&mut pen, bar);
         pen.finish()
+    }
+
+    /// The level plate and the money going out to the right `out` frames after the menu began to go (as when the menu closes).
+    fn corner_out(&self, pen: &mut Pen, shown: &Shown, out: f32) {
+        let white = |a: f32| [1.0, 1.0, 1.0, a];
+        let outcubic = |a: f32, frames: f32| 1.0 - (1.0 - (a / frames).clamp(0.0, 1.0)).powi(3);
+        let slid = |frames: f32, speed: f32| (1.0 - out * speed / SLIDE_PUT).clamp(0.0, 1.0) * frames;
+        let right = |frames: f32, speed: f32| along(&self.slide_right, slid(frames, speed), frames)[0];
+        let (lv_at, lv) = &self.level_plate;
+        let a = byte(outcubic(slid(SLIDE_MONEY, CLOSE_MONEY_SPEED), SLIDE_MONEY) * 255.0);
+        pen.natural(MENU1, lv, 0, [lv_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), lv_at[1]], white(a));
+        let (bg_at, bg_size, bg_scale, bg_style) = &self.money_bg;
+        pen.pic(MIX, bg_style.pictures[0], [bg_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), bg_at[1]], [bg_size[0] * bg_scale, bg_size[1] * bg_scale], white(byte(a * 120.0)));
+        let (icon_at, icon_scale, icon_style) = &self.money_icon;
+        let p = icon_style.pictures[0];
+        pen.pic(ICON, p, [icon_at[0] + right(SLIDE_MONEY, CLOSE_MONEY_SPEED), icon_at[1]], [p[2] / PER_LAYOUT * icon_scale, p[3] / PER_LAYOUT * icon_scale], white(a));
+        pen.text(&self.money_text, [right(SLIDE_MONEY, CLOSE_MONEY_SPEED), 0.0], &shown.money.to_string(), a);
     }
 
     /// The glow behind a picked card (the layout's `selected_bg_back`): the glow itself, its ring growing and fading in a loop
