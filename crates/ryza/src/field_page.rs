@@ -145,6 +145,27 @@ pub struct ToolsLook<'a> {
     pub leaving: Option<f32>,
 }
 
+/// `STR_LIBRARY_DEFINE_nnn` is the string numbered `LIBRARY_BASE + nnn` (`str_library_define.xml`: the Guide's buttons are 24, 36, 40 and 46).
+const LIBRARY_BASE: u32 = 4_063_233;
+const LIBRARY_STRINGS: u32 = 64;
+
+/// What the Guide page shows.
+pub struct GuideLook {
+    /// The button under the cursor (Items, Effects/Traits, Monsters, Help).
+    pub cursor: usize,
+    /// Frames since the page's first frame (its first draws at 1), and, going out, since B.
+    pub age: f32,
+    pub leaving: Option<f32>,
+}
+
+/// The Guide's fades take 15 frames (`anm_common_fade_in`); the page's own fade and the top's (a second one) run together coming in, and going
+/// out the top goes first and the background after it (`field-menu-pages` 3210: 136 and 72 of 255, 3320: the top at a third, the background whole,
+/// 3330: the background at two thirds).
+const GUIDE_FADE: f32 = 15.0;
+/// The Guide's button labels' size in layout pixels: the layout names none; fitted to the glyphs' height of `field-menu-pages` 3250 (32 pixels of 1080
+/// lines for a capital, 1.335 times the size). STAND-IN: the game's default for a text with no size is not read.
+const GUIDE_TEXT_SIZE: f32 = 24.0;
+
 /// The Gathering Tools page's title plate leaves this many frames before its other parts (STAND-IN: one sample).
 const TOOLS_TITLE_EARLY: f32 = 1.0;
 
@@ -251,13 +272,16 @@ pub struct Page {
     tabs: Element,
     /// The Gathering Tools page's layout (`uil_a21_menu_explore_equip.xml`).
     explore: Element,
+    /// The Guide's background and top page (`library/uil_library_00_bg.xml`, `uil_library_01_top.xml`).
+    library_bg: Element,
+    library_top: Element,
     /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
     text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
 }
 
 /// The style files the layouts' styles are in.
-const STYLE_FILES: [&str; 15] = [
+const STYLE_FILES: [&str; 16] = [
     "ui_en\\gen_styles\\uis_gen_a21_status.xml",
     "ui_en\\gen_styles\\uis_gen_a21_item_info.xml",
     "ui_en\\gen_styles\\uis_gen_a21_caption.xml",
@@ -273,6 +297,7 @@ const STYLE_FILES: [&str; 15] = [
     "ui_cmn\\etc\\uis_a21_bg.xml",
     "ui_en\\gen_styles\\uis_gen_a21_mix.xml",
     "ui_cmn\\etc\\uis_a21_item_s.xml",
+    "ui_en\\gen_styles\\uis_gen_a21_library.xml",
 ];
 
 fn texture_path(texture: &str, english: bool) -> String {
@@ -294,6 +319,8 @@ impl Page {
         let cell = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_cabinet_cell.xml")?).map_err(|e| format!("cabinet cell: {e}"))?;
         let tabs = table::parse(&read("ui_en\\a21_cabinet\\uil_a21_item_tab.xml")?).map_err(|e| format!("cabinet tabs: {e}"))?;
         let explore = layout("uil_a21_menu_explore_equip.xml")?;
+        let library = |name: &str| -> Result<Element, String> { table::parse(&read(&format!("ui_en\\library\\{name}"))?).map_err(|e| format!("{name}: {e}")) };
+        let (library_bg, library_top) = (library("uil_library_00_bg.xml")?, library("uil_library_01_top.xml")?);
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -321,7 +348,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -380,9 +407,10 @@ impl Page {
                     || (POTENTIAL_BASE..POTENTIAL_BASE + 400).contains(n)
                     || SHELF_STRINGS.contains(n)
                     || (TAB_NAMES..TAB_NAMES + 8).contains(n)
+                    || (LIBRARY_BASE..LIBRARY_BASE + LIBRARY_STRINGS).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, text_styles, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -616,6 +644,43 @@ impl Page {
         (w.out, w.additive, w.clips)
     }
 
+    /// The Guide page: the paper and its picture cards (`uil_library_00_bg.xml` and the top's own picture), the title, the four buttons with the
+    /// cursor's highlight and, going out, the fades in the reverse order.
+    pub fn guide_quads(&self, look: &GuideLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        let fade = |frames: f32| (frames / GUIDE_FADE).clamp(0.0, 1.0);
+        let (back, top) = match look.leaving {
+            Some(out) => (1.0 - fade(out - GUIDE_FADE), 1.0 - fade(out)),
+            None => (fade(look.age - 1.0), fade(look.age - 1.0).powi(2)),
+        };
+        // The highlight's glow over the cursor's button blinks (`anm_common_blink`: whole to none and back in 120 frames) at 125/255.
+        let t = (look.age - 1.0).rem_euclid(120.0);
+        let blink = if t < 60.0 { 1.0 - t / 60.0 } else { (t - 60.0) / 60.0 };
+        let over = |path: &[&str]| -> Over {
+            match path {
+                ["top"] => Over { show: true, ..Default::default() },
+                ["top", "node_menus", _, "name"] => Over { size: Some(GUIDE_TEXT_SIZE), ..Default::default() },
+                ["top", "node_menus", item, "hilight", rest @ ..] => {
+                    let mine = look.cursor == ["menu_item", "menu_item_1", "menu_item_2", "menu_item_3"].iter().position(|n| n == item).unwrap_or(usize::MAX);
+                    match rest {
+                        [] if mine => Over::default(),
+                        [_] if mine => Over { paint: Some([1.0, 1.0, 1.0, (125.0 * blink).floor() / 255.0]), ..Default::default() },
+                        _ => Over { hide: true, ..Default::default() },
+                    }
+                }
+                _ => Over::default(),
+            }
+        };
+        for (doc, alpha) in [(&self.library_bg, back), (&self.library_top, top)] {
+            if let Some(node) = find(doc, "top") {
+                w.slid(Slide { alpha, dx: 0.0, dy: 0.0 }, |w| w.walk(node, root.node([0.0; 2], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+            }
+        }
+        (w.out, w.additive, w.clips)
+    }
+
     /// The Container page: the tab row, the grid of the items, the count of free places, the card of the item under the cursor and the title
     /// plate (`uil_a21_cabinet.xml`'s `default`, which slides in from the left over 40 frames, and the card from the right).
     pub fn shelf_quads(&self, look: &ShelfLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
@@ -827,8 +892,11 @@ impl Page {
     }
 
     fn string(&self, id: &str) -> Option<&str> {
-        let n: u32 = id.strip_prefix("STR_UI_")?.parse().ok()?;
-        self.strings.get(&(STR_UI_BASE + n)).map(String::as_str)
+        let number = match id.strip_prefix("STR_UI_") {
+            Some(n) => STR_UI_BASE + n.parse::<u32>().ok()?,
+            None => LIBRARY_BASE + id.strip_prefix("STR_LIBRARY_DEFINE_")?.parse::<u32>().ok()?,
+        };
+        self.strings.get(&number).map(String::as_str)
     }
 }
 

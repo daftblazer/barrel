@@ -3059,7 +3059,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
-            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick).or_else(|| nav.page_leaving(menu_tick).filter(|(p, out)| *out < p.page_out()).map(|(p, _)| p)), backdrop.as_mut()) {
+            } else if let (Some(pick), Some(layer)) = (nav.page(menu_tick).or_else(|| nav.page_leaving(menu_tick).filter(|(p, out)| *out < p.backdrop_hold()).map(|(p, _)| p)), backdrop.as_mut()) {
                 // The page's blurred picture of the menu and its vignettes come in from the page's first frame.
                 let first = pick.confirmed.unwrap_or(0.0) + pick.page_at();
                 let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(menu_tick - first, None), (width, height));
@@ -3068,7 +3068,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 }
                 showing_backdrop = !quads.is_empty();
                 layer.set(&gpu, &quads)?;
-            } else if let (Some(back), Some(layer)) = (nav.blur_out, backdrop.as_mut()) {
+            } else if let (Some(back), Some(layer)) = (nav.blur_out.map(|back| nav.left.as_ref().and_then(|p| p.leaving.map(|l| l + p.backdrop_hold())).unwrap_or(back)), backdrop.as_mut()) {
                 // The menu coming back from a page: the page's blurred picture and vignettes go out from its first frame.
                 let mut quads = barrel_ryza::field_menu::backdrop(barrel_ryza::field_menu::backdrop_fade(0.0, Some(menu_tick - back)), (width, height));
                 if pump.is_some() && !renderer.can_blur_screen() && !quads.is_empty() {
@@ -3084,13 +3084,23 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 (None, Some((p, out))) => (Some(p), Some(out)),
                 _ => (None, None),
             };
-            let menu_help = if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Tools)) {
+            let menu_help = if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide)) {
+                // (the Guide's bar comes in after its parts have faded)
+                view.guide_help((width, height), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
+            } else if page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Tools)) {
                 // (the Gathering Tools page's bar comes in late)
                 view.tools_help((width, height), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
             } else {
                 view.page_help((width, height), page_now.is_some_and(|p| p.status), page_now.is_some_and(|p| p.slot_since.is_none()), page_now.is_some_and(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), page_now.and_then(|p| p.confirmed).map_or(0.0, |c| menu_tick - c), leaving)
             };
-            if let (Some((layer, view)), Some(pick), Some(tables), Some(items)) = (page.as_mut(), page_now.filter(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), party_tables.as_ref(), item_info.as_ref()) {
+            if let (Some((layer, view)), Some(pick)) = (page.as_mut(), page_now.filter(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Guide))) {
+                // The Guide's top: the paper with its cards, the title and the four buttons.
+                let look = barrel_ryza::field_page::GuideLook { cursor: pick.cell, age: menu_tick - pick.confirmed.unwrap_or(0.0), leaving };
+                let (mut quads, additive, clips) = view.guide_quads(&look, (width, height));
+                quads.extend(menu_help.iter().cloned().map(|q| text::Quad { texture: if q.texture == barrel_ryza::field_menu::GUIDE { view.help_texture() } else { q.texture }, ..q }));
+                layer.set_blended_by(&gpu, &quads, &clips, &|i| additive.contains(&i))?;
+                showing_page = true;
+            } else if let (Some((layer, view)), Some(pick), Some(tables), Some(items)) = (page.as_mut(), page_now.filter(|p| p.items == Some(barrel_ryza::field_menu::ItemPage::Container)), party_tables.as_ref(), item_info.as_ref()) {
                 // The Container page: its grid, the cursor's item as a card.
                 let ids: Vec<u8> = menu_shown.party.iter().map(|m| m.id).collect();
                 let item = container.0.get(pick.cell).map(|u| items.card(u, &ids, tables.image(u.item)));

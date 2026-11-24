@@ -264,7 +264,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -474,11 +474,13 @@ pub struct Pick {
 pub const CONTAINER_COLUMNS: usize = 8;
 const TOOLS_COLUMNS: usize = 5;
 
-/// The pages of items, which open from their button with no character pick.
+/// The pages of items and the Guide, which open from their button with no character pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemPage {
     Container,
     Tools,
+    /// The Guide's top (the button's four entries; the book's own pages are not built).
+    Guide,
 }
 
 /// Frames from A on the Container or Gathering Tools button to the page's own A (the menu stands as it was while the button's
@@ -494,6 +496,13 @@ pub const ITEM_PAGE_OUT: f32 = 1.0;
 const TOOLS_PAGE_GONE: f32 = 30.0;
 const TOOLS_PAGE_OUT: f32 = -1.0;
 
+/// The Guide page's top fades out over 15 frames from B and the background after it, over 15 more; the menu comes back as the background
+/// begins (`field-menu-pages` 3310: B; 3330 the money plate and the cards' mask at 5 frames of their fades, 3340 and 3350 at 15 and 25: back on 3325).
+const GUIDE_PAGE_OUT: f32 = 15.0;
+const GUIDE_PAGE_GONE: f32 = 30.0;
+/// The blurred picture of the menu goes out from the page's last part's going (`field-menu-pages` 3340 whole, 3350 gone: STAND-IN, two samples).
+pub const GUIDE_BACKDROP_OUT: f32 = 30.0;
+
 /// Frames the menu takes to go out under a page (`SLIDE` for each of its parts and the stagger of the buttons after the first).
 const LEAVE_FRAMES: f32 = 30.0;
 
@@ -504,9 +513,15 @@ impl Pick {
         match self.items {
             Some(ItemPage::Container) => ITEM_PAGE_OUT,
             Some(ItemPage::Tools) => TOOLS_PAGE_OUT,
+            Some(ItemPage::Guide) => GUIDE_PAGE_OUT,
             None if self.status => STATUS_PAGE_OUT,
             None => PAGE_OUT,
         }
+    }
+
+    /// Frames from B on the page to the blurred picture's going out: the menu's coming back, but the Guide's stays until its last part has gone.
+    pub fn backdrop_hold(&self) -> f32 {
+        if self.items == Some(ItemPage::Guide) { GUIDE_BACKDROP_OUT } else { self.page_out() }
     }
 
     /// Frames from B on the page to its last part's going: the Status page's slides run out (`PAGE_GONE`); the Equipment page's are not
@@ -515,6 +530,7 @@ impl Pick {
         match self.items {
             Some(ItemPage::Container) => TOOLS_PAGE_GONE,
             Some(ItemPage::Tools) => TOOLS_PAGE_GONE,
+            Some(ItemPage::Guide) => GUIDE_PAGE_GONE,
             None if self.status => PAGE_GONE,
             None => PAGE_OUT,
         }
@@ -575,6 +591,9 @@ const CONTAINER: usize = 0;
 const EQUIP: usize = 1;
 const TOOLS: usize = 2;
 const STATUS: usize = 3;
+const GUIDE_BUTTON: usize = 4;
+/// The Guide page's buttons: Items, Effects/Traits, Monsters, Help.
+const GUIDE_BUTTONS: usize = 4;
 
 impl Nav {
     /// The menu opening at frame `opened` (its first frame), the cursor on the first button
@@ -617,9 +636,13 @@ impl Nav {
             // (the leader's card is picked first)
             self.pick = Some(Pick { first: at + PICK_AT, card: 0, since: at + PICK_AT, confirmed: None, leaving: None, slot: 0, slot_since: None, status: self.cursor == STATUS, row: 0, items: None, cell: 0 });
         }
-        if matches!(self.cursor, CONTAINER | TOOLS) {
+        if matches!(self.cursor, CONTAINER | TOOLS | GUIDE_BUTTON) {
             // (no pick: the page is the button's; its first frame comes `ITEM_PAGE_LATER` frames after A, like a card's A on the Status page)
-            let items = if self.cursor == CONTAINER { ItemPage::Container } else { ItemPage::Tools };
+            let items = match self.cursor {
+                CONTAINER => ItemPage::Container,
+                TOOLS => ItemPage::Tools,
+                _ => ItemPage::Guide,
+            };
             self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0 });
         }
     }
@@ -668,6 +691,10 @@ impl Nav {
             let columns = if p.items == Some(ItemPage::Container) { CONTAINER_COLUMNS } else { TOOLS_COLUMNS };
             let rows = if p.items == Some(ItemPage::Container) { dy } else { 0 };
             p.cell = (p.cell as i32 + dx + rows * columns as i32).max(0) as usize;
+            if p.items == Some(ItemPage::Guide) {
+                // (the Guide's four buttons stand in a row; STAND-IN: the ends stop it, not captured)
+                p.cell = p.cell.min(GUIDE_BUTTONS - 1);
+            }
             return;
         }
         if let Some(p) = self.pick.as_mut() {
@@ -874,6 +901,8 @@ enum Entries {
     Shelf,
     /// The Gathering Tools page's: select, the table of contents and back.
     Tools,
+    /// The Guide page's: back and confirm.
+    GuideTop,
 }
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
@@ -897,6 +926,16 @@ const SHELF_ENTRIES: [(char, u32); 5] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TAB
 /// The Container page's plate is this much wider than its five entries need (layout pixels: 0.67 of 1080 lines, `field-menu-pages` 2110).
 /// STAND-IN, as `STATUS_PLATE_EXTRA`.
 const SHELF_PLATE_EXTRA: f32 = 0.67 / 1.5;
+
+/// The Guide page's entries (`field-menu-pages` 3250): B "Back" and A "Confirm".
+const GUIDE_TOP_ENTRIES: [(char, u32); 2] = [('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The Guide page's bar fades in 15 frames from 18 frames after the page's own age began (the first frame is 1; `field-menu-pages` 3220: 1/15 of its
+/// opacity, 3230: 11/15) and out from 2 frames after B (3320: 8/15), its plate whole. STAND-IN: the bar's other parts are one sample each.
+const GUIDE_BAR_AT: f32 = 18.0;
+const GUIDE_BAR_OUT_AT: f32 = 2.0;
+/// Its plate is this much wider than its two entries need (layout pixels: 25.67 of 1080 lines, `field-menu-pages` 3250). STAND-IN, as `STATUS_PLATE_EXTRA`.
+const GUIDE_PLATE_EXTRA: f32 = 25.667 / 1.5;
 
 /// The Gathering Tools page's entries (`field-menu-pages` 2670).
 const TOOLS_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4d8}', 4_194_368)];
@@ -1101,6 +1140,18 @@ impl View {
         let extra = SHELF_PLATE_EXTRA - TOOLS_BAR_GROW * ((TOOLS_BAR_FADE - a) / (TOOLS_BAR_FADE * 2.0 / 3.0)).clamp(0.0, 1.5);
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         self.help_bar(&mut pen, Bar { alpha: (a / TOOLS_BAR_FADE).clamp(0.0, 1.0), grow: 1.0, words: true, extra, entries: Entries::Tools });
+        pen.finish().0
+    }
+
+    /// The Guide page's help bar `age` frames into its page (the first frame is 1), and, going out, `leaving` frames after B.
+    pub fn guide_help(&self, screen: (u32, u32), age: f32, leaving: Option<f32>) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let alpha = match leaving {
+            Some(out) => 1.0 - (out - GUIDE_BAR_OUT_AT) / HELP_FADE,
+            None => (age - GUIDE_BAR_AT) / HELP_FADE,
+        };
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        self.help_bar(&mut pen, Bar { alpha, grow: 1.0, words: true, extra: GUIDE_PLATE_EXTRA, entries: Entries::GuideTop });
         pen.finish().0
     }
 
@@ -1419,6 +1470,7 @@ impl View {
             Entries::PageGuide => &PAGE_GUIDE_ENTRIES,
             Entries::Shelf => &SHELF_ENTRIES,
             Entries::Tools => &TOOLS_ENTRIES,
+            Entries::GuideTop => &GUIDE_TOP_ENTRIES,
         };
         let line = self.help_line(entries);
         let full = self.plate_full(&line, pen.k);
