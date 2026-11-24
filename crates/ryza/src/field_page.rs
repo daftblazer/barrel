@@ -1206,7 +1206,9 @@ impl Walker<'_> {
                 None => {}
             }
             if slide.alpha < 1.0 {
-                q.color[3] = (q.color[3] * slide.alpha * 255.0).round() / 255.0;
+                // (the animation's opacity is a byte of its own; the product with the quad's is not rounded again: a part
+                // at 1/255 going out is under a byte and the capture's trace drops it)
+                q.color[3] = (q.color[3] * (slide.alpha * 255.0).round() + 1e-3).floor() / 255.0;
             }
         }
     }

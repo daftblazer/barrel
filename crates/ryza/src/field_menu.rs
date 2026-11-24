@@ -1251,7 +1251,7 @@ impl View {
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         // (going out it follows the menu's bar: the words first, then the plate fades)
         let gone = leaving.map(Bar::out);
-        self.help_bar(&mut pen, Bar { alpha: gone.map_or(if shelf { ((age - SHELF_BAR_AT) / TOOLS_BAR_FADE).clamp(0.0, 1.0) } else { 1.0 }, |b| b.alpha), grow: if shelf { gone.map_or(1.0, |b| b.grow) } else { 1.0 }, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if shelf { Entries::Shelf } else if guide { Entries::PageGuide } else { Entries::Page } });
+        self.help_bar(&mut pen, Bar { alpha: gone.map_or(if shelf { ((age - SHELF_BAR_AT) / TOOLS_BAR_FADE).clamp(0.0, 1.0) } else { 1.0 }, |b| b.alpha), grow: if shelf || !status { gone.map_or(1.0, |b| b.grow) } else { 1.0 }, words: gone.is_none_or(|b| b.words), extra, entries: if status { Entries::StatusPage } else if shelf { Entries::Shelf } else if guide { Entries::PageGuide } else { Entries::Page } });
         pen.finish().0
     }
 

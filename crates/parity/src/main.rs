@@ -703,7 +703,8 @@ impl Setup {
     /// Barrel's quads as compared: the ones a later opaque quad covers whole drop out as the game's
     /// do (a screen that draws a list twice, the second over the first, draws both in the game).
     fn barrel(&self, b: Vec<Q>) -> Vec<Q> {
-        text_runs(hidden(b).0.into_iter().filter(|q| !self.skipped(q)).collect(), self.glyphs.as_ref())
+        // (a quad at no opacity draws nothing, as the game's trace drops it)
+        text_runs(hidden(b).0.into_iter().filter(|q| !self.skipped(q) && q.color[3] > 0.0).collect(), self.glyphs.as_ref())
     }
 }
 
