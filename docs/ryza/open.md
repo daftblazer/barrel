@@ -1618,44 +1618,87 @@ past the signpost (32148, 6003, 31151) toward the light poles. Close to the game
          1919: not explained, why the heightmap's differs from the floors'). Barrel's feet are
          now within 0.13 of hers from 2967 to 2977 (0.1 to 5 off before), the whole 2780 to 3079
          segment 1.9 in y (3.4 before).
-       - **The landing stall** (2979 to 2989, then free at 2990: all of the 88 units). At 2978 she
-         leaves that triangle and her feet drop 4.0 (the fall of 2.2 and the hover's 1.94) to
-         5982.50, 0.08 above the floor. Then her steps along the wall are 0.545, 0.479, 0.424,
-         0.392, 0.353, 0.312, 0.292, 0.251, 0.241, 0.212, 0.190, each 0.90 of the one before (a
-         decay of 0.9 a frame, as if the stick were ignored and what was left of her speed
-         coasted), 27.83 from the wall at the first (0.17 inside it) and creeping out 0.02 a
-         frame, the camera following as little; at 2990 she moves 7.076 along the stick again.
-         Eleven frames, from a drop of 4.0 in one frame (the stairs' descent is 3.4 a frame and
-         has no stall). During the hover she slides along the wall as a plain projection with no
-         28.00 / 28.14 alternation (28.12 throughout). Not built: Barrel's walk leaves the
-         triangle a frame later (0.5 units: its x is 0.5 behind) and drops 1.8 and 2.2 in two
-         frames, so a trigger on one drop of 4.0 would not fire; what the game triggers it on
-         (the drop, the loss of the hover, leaving a floor for a lower one) is one sample.
-       Walk-30 now (`walkdiff`): to frame 2966 the fence slide is within 5.9 units, 0.33 degrees
-       (the whole walk to 2966: 11.04 and 0.34, the 2230 to 2540 segments'); 3100 to 3299
-       4.1 units, 2.04 degrees; 3300 to 3700 0.18, 1.69 degrees; 2780 to 3079 still 88 units
-       (the landing stall). Left, largest first:
-       - The camera's yaw, 2.0 degrees by 3164 (3100 to 3299) and constant 1.7 after it: the steps
-         along the wall are 0.8 to 1.2 percent shorter than the game's (7.07 against 7.15 at
-         3103; 3 percent at 3100, the corner's first step). The game's long steps are not the
-         plain projection of its lean on the wall: against 10 times the cosine of the angle
-         taken with the camera's yaw as the frame began, they run -2.0% (uphill along the
-         first fence), 0.0% (the flat stretch, 2990 to 3020), +1.0% (downhill along the stairs'
-         side, 3100 to 3113) and +0.2% (uphill there), as if the camera's yaw she moves
-         against were up to 0.6 degrees ahead of or behind the one read, in a way that
-         follows the slope and the camera's step that frame (0.2 on short frames, 0.6 to 0.9
-         on long). Not explained.
-    3. The stairs' heights (7 up at the top step, 3.4 along; with the xz error 3.4, within the
-       11), the camera starting at 393.25 and 400 from her first step, the pitch's transient
-       (0.6 degrees). The stairs' y error (7.25, 8.79 with the ball's hover): the game's feet at
-       1915 to 1933 are 1.55 above the heightmap and 6.0 to 6.4 below the placed ramp mesh's
-       floor (`shape 1467`, 20 triangles: a floor 6.2 above her, parallel to hers to 0.1), which
-       Barrel climbs (it is 0.6 above her feet at 1915 and 2.5 more at 1916; a floor step of 3 and
-       of 5 gave the same walk, the first rise being within both, and a smaller one is not
-       told apart by this walk: her stairs-free rises are 0.55 a frame on the slope and the
-       ball's 1.19 at 2967). Not solved: that mesh's placement is 6.2 too high or it is no
-       floor of hers, a kind of offset the unread last three floats of the collision records
-       may hold. `STEP_UP` of 60 stays (a stand-in).
+       - **The landing stall** (2979 to 2989, then free at 2990). At 2978 she leaves that triangle
+         and her feet drop 4.0 (the fall of 2.2 and the hover's 1.94) to 5982.50, 0.08 above the
+         floor. Then her steps along the wall are 0.545, 0.479, 0.424, 0.392, 0.353, 0.312, 0.292,
+         0.251, 0.241, 0.212, 0.190, each 0.90 of the one before (0.6 times 0.9 to the power of
+         the frame: as if the stick were ignored and what was left of her speed coasted), 27.83
+         from the wall at the first (0.17 inside it) and creeping out 0.02 a frame, the camera
+         following as little and her facing keeping the stick; at 2990 she moves 7.076 along the
+         stick again. Eleven frames, from a drop of 4.0 in one frame (the stairs' descent is 3.4 a
+         frame, 3.51 at its steepest, and has no stall). **Built (part 4, `Player::landing`)**:
+         she lands when her feet drop more than `FALL_DROP` (3.75, the midpoint between the
+         stairs' 3.51 and the fall's 4.08, a stand-in) in a frame, or when she steps off a floor
+         whose ball lift is over `CLIFF_LIFT` (1.8, a tilt of 20 degrees: between the cliff
+         floor's 20.8 and the stairs' side's 18.8, a stand-in) onto lower ground; the stick is
+         then ignored for `LANDING_FRAMES` (11) and she coasts `COAST_SHARE` (0.088, fitted:
+         0.6 over the 6.82 step before it) of the step before, 0.9 of the last each frame
+         (`COAST_DECAY`), through the walls as usual. The second form is what makes it hold when
+         Barrel is a unit behind the game on the cliff's edge (it leaves the triangle a frame
+         later and drops only 2.0 then); the first is what the game's one-frame drop looks like.
+         One sample; whether the game's 4.0 is a per-frame fall limit (the feet end 0.08 above
+         the heightmap, short of it) and the coast a landing's recovery is not told.
+       Solved in part 4 (2026-11-24), all in `barrel_ryza::walk` and `player` (each constant named
+       with its frames in its comment):
+       - **A heavy ball slips down a slope** (`Player::slip`, `SLIP_FALL` 0.17, fitted): down the
+         stairs' slope of 0.34 her steps are 10.05 long, 10.01 at 0.05 (not 10.00): as if her weight
+         fell 0.17 a frame and the floor pushed her out along its normal, down the slope. The
+         xz error of the whole walk to frame 2229 went from 3.4 to 0.6 and of 2560 to 2779 from
+         7.7 to 1.5. The first fence's uphill slide gains nothing from it (the climb cap
+         absorbed it before), and the slip is the part of the old "+0.7 percent downhill".
+       - **The left stick pushed left or down is longer** (`MOVE_NEGATIVE` 1.0078): left, down
+         or the corner of left and up she moves 10.08 a frame, right or up 10.00 (frames 2236 to
+         2262 and 2580 to 2584; 32767 / 32512 is 1.00784, a guess), in the stick's direction,
+         not skewed. This was most of the "up to 0.6 degrees" yaw and the "-2 to +1 percent" of
+         the steps in part 3 (they were the stairs' side at 3100 and the long steps).
+       - **The camera's follow turns a little less across 45 degrees, and her lean leads it**
+         (`FOLLOW_MID` 0.77, `FOLLOW_LEAD` 0.44): the lean at 45 degrees to the camera turns it
+         0.7121 a frame (1.0125 sin 45 degrees would be 0.716), and her facing, the stick's
+         direction, is 0.22 degrees ahead of the camera as the frame began there (exactly it at
+         90 degrees and with the right stick turning the camera). Built as: the lean is taken
+         0.44 sin(a) cos(a) degrees ahead of the camera (a the lean's angle to it), and the
+         follow solves `turn = rate sin(across - 0.77 turn)`. The camera's yaw and her xz are
+         within 0.03 degrees and 0.8 units through the diagonal run (2230 to 2419); why it is
+         there (a rubber-band camera with a lag, a half-frame order) is not found.
+       - **A capped frame ends 0.145 off the wall** (`WALL_AWAY`): the short frames' steps
+         lean away from the wall by 0.145 and the long frames back (28.14 and 28.00): built, so
+         the short step is (1.87, 0.22) against the game's (1.89, 0.21) and (0.86, 2.06) against
+         (0.85, 2.05) on the stairs' side; it gave the camera's follow the right directions.
+       - **The climb cap's first frames** (`SLIDE_WARM`, 6): the first climbing frames after
+         the touch (2920 and 2921) are not cut, the first short one is 2922: the cap works from
+         the seventh frame of a slide counting the touch and the stand.
+       - **A bug of part 3**: the touch tests compared an `f32` difference at 30,000 with 0.001,
+         below what that resolves (0.002), and a touch at 2916 was found 6 units early; the
+         tolerance is `TOUCH` 0.01.
+       Walk-30 now (`walkdiff`, largest of each segment): to frame 2229 within 0.9 units and
+       0.03 degrees (y 8.7 on the stairs only); 2230 to 2419 0.8 and 0.03; 2420 to 2779 1.5 and
+       0.09; 2780 to 3079 5.9 units, 2.1 in y and 0.52 degrees (the landing; the largest is the
+       eleven coasting frames, 5.4 off at 2982 to 2988: Barrel is 1.25 units behind the game when
+       it reaches the cliff's edge (the earlier segments' 1.5 summed), so it leaves the floor
+       a frame after the game, lands a frame late and is a step (6.8) ahead through the stall
+       and 1 behind after it); 3080 to 3099 0.10; 3100 to 3299 0.78
+       units and 1.55 degrees; 3300 to 3700 0.18 and 1.47 degrees. Left, largest first:
+       - The camera's yaw on the stairs' side, 1.5 degrees by 3164 (all of what the last two
+         segments hold): the follow turns 1 to 4 percent more than the model on the long steps
+         there (steps of 8.6 to 9.2, the camera 0.93 to 1.06 a frame where the model gives
+         0.88 to 0.93), the short ones right (0.2). The speed rule (`FOLLOW_FULL_SPEED` 504) fits
+         the first fence (2924 to 2978: 1.003 of the model; 2990 to 3020: 1.002) but not
+         a slide at 8.6 units and more at 115 to 125 degrees across the view (1.04 to 1.11 and
+         rising with the step): not a function of the speed alone, a lagged camera pivot is a
+         guess. The walk's lean toward the stairs' side holds 0.78 units: only the yaw is off.
+    3. The stairs' heights (the placed ramp's y 8.7, with the xz error 0.9). Part 4 measured
+       more of it: her feet are 0.05 over the heightmap on the flat (slope 0.06, the ball's
+       0.05), 0.53 at frames 1914 to 1918 and 1.56 from 1919 to 1932 on the steep part
+       (slope 0.34, the ball's 1.57), so the heightmap's hover does follow the ball's rule, 2
+       frames late at the top; at frame 1933 the heightmap falls away under the stairs (to 7.8
+       to 8.5 below her feet from 1934 to 1967) and she is on the placed ramp (`shape 1467`),
+       0.2 below its plane, having been 6.4 below it for frames 1916 to 1932 while it ran
+       parallel above her. So the same mesh is her floor from 1934 and no floor at 1915 to
+       1932, when it is 0.7 to 6.4 above her feet (Barrel climbs it at 1915, +8 until 1933,
+       and stands 1.9 over it after, the ball's 1.57 on a floor she is 0.2 under in the game).
+       A floor step height (5 instead of 60) did not change it (the ramp is 0.7 above her at
+       1915). Not solved: when a floor above her counts (the heightmap under it falling away?
+       a rule of the walkable mesh, `g1pf`?) and the floors' lift on a floor she is under.
 - **Collision shapes outside their models** (small). With the placement list's per-file
   rotation and offset the stairs, floors, tunnel rocks and light poles lie on their models
   (down the garden stairs' middle the floors are within 8 of the terrain; before, the stair

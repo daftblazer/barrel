@@ -167,7 +167,8 @@ pub fn ground(args: &[&str]) -> Result<()> {
         }
         let (x, y, z) = (v[1], v[2], v[3]);
         let round = |h: f32| (h * 100.0).round() / 100.0;
-        println!("{} y {:.2} under {:?} highest {:?}", v[0], y, g.height(x, z, y, 2.0).map(round), g.height(x, z, 1e6, 0.0).map(round));
+        let hm = g.terrain(x, z);
+        println!("{} y {:.2} heightmap {:?} over {:?} under {:?} highest {:?}", v[0], y, hm.map(round), hm.map(|h| round(y - h)), g.height(x, z, y, 2.0).map(round), g.height(x, z, 1e6, 0.0).map(round));
     }
     Ok(())
 }

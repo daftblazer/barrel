@@ -241,7 +241,7 @@ impl Ground {
 
     /// The heightmap's height at (x, z): bilinear between its vertices, or on its cells'
     /// triangles (`faces`); none outside it.
-    fn terrain(&self, x: f32, z: f32) -> Option<f32> {
+    pub fn terrain(&self, x: f32, z: f32) -> Option<f32> {
         let map = self.heightmap.as_ref()?;
         if self.faces { map.at_faces(x, z) } else { map.at(x, z) }
     }

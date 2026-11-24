@@ -28,7 +28,6 @@ pub const TURN_RATE: f32 = 12.0;
 pub const RADIUS: f32 = 30.0;
 pub const HEIGHT: f32 = 170.0;
 pub const STEP_UP: f32 = 60.0;
-pub const STEP_GROUND: f32 = 5.0;
 // Measured: walk-30 frames 2922-3164 (sliding up a slope along a wall, every other frame she climbs
 // exactly 0.14 whatever the edge). FITTED: 0.1435, so that the first fence's short step is the
 // game's 1.896 on Barrel's floors; the game's own constant is not found (docs/ryza/open.md).
@@ -149,7 +148,7 @@ impl Player {
     /// fall of `SLIP_FALL` a frame is stopped by the floor, which pushes it out along its normal.
     fn slip(&self, g: &Ground) -> [f32; 2] {
         const H: f32 = 2.0;
-        let at = |x: f32, z: f32| g.height_on_ball(x, z, self.at.y, STEP_GROUND, self.radius);
+        let at = |x: f32, z: f32| g.height_on_ball(x, z, self.at.y, STEP_UP, self.radius);
         let (x, z) = (self.at.x, self.at.z);
         let (Some(x0), Some(x1), Some(z0), Some(z1)) = (at(x - H, z), at(x + H, z), at(x, z - H), at(x, z + H)) else { return [0.0; 2] };
         let grad = [(x1 - x0) / (2.0 * H), (z1 - z0) / (2.0 * H)];
@@ -253,7 +252,7 @@ impl Player {
             Some(g) => {
                 if self.climbed && sliding >= SLIDE_WARM {
                     // Cut the move where the ground has risen CLIMB_CAP.
-                    let reach = |t: f32| g.height_on_ball(before.x + (to[0] - before.x) * t, before.z + (to[1] - before.z) * t, before.y, STEP_GROUND, self.radius);
+                    let reach = |t: f32| g.height_on_ball(before.x + (to[0] - before.x) * t, before.z + (to[1] - before.z) * t, before.y, STEP_UP, self.radius);
                     if reach(1.0).is_some_and(|y| y - before.y > CLIMB_CAP) {
                         let (mut lo, mut hi) = (0.0f32, 1.0f32);
                         for _ in 0..24 {
@@ -269,7 +268,7 @@ impl Player {
                         }
                     }
                 }
-                if let Some(stand) = g.stand_on_ball(to[0], to[1], self.at.y, STEP_GROUND, self.radius) {
+                if let Some(stand) = g.stand_on_ball(to[0], to[1], self.at.y, STEP_UP, self.radius) {
                     let y = stand.height;
                     self.climbed = slid && y - before.y > CLIMB_CAP + CLIMB_SLACK;
                     self.at = Vec3::new(to[0], y, to[1]);
