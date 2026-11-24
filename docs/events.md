@@ -1880,5 +1880,16 @@ runner's are `0x140479820` and `0x14047c660`):
   only on the second it is asked in. The title (`tt01_010`) loops: a wait of 10 to 20 s, one of
   three actions drawn, back to the start (`Player::chance`, `Player::until`; the play lays an
   hour of it out).
+- `w1 {n}` holds its starter (docs/ryza/open.md, "Event commands against the game's own log",
+  "The opening (P5b)"): the action's own `p`/fade waits run on the event's queue, in line with
+  the starter's commands, the rest of its commands on their subjects' queues (`Player::inline_actions`,
+  Ryza only). The opening's and the title's character loads are such an action (`q5` adds with
+  `p1 10` between: 64 and 40 frames).
+- Ryza's manual-camera and motion words that differ from Escha's numbers or operand counts:
+  `t12` `{0 0 0 x y z, 0 0 0 x y z}` is `ECT_CAMERA_EYEAT_POS_SET` (target first, then eye),
+  `t26` `{hundredths of a degree}` the field of view (set at once), `s38` `{character, from, to,
+  flag}` the part of the motion that plays (hundredths of a 60 Hz frame), `s39` `{character,
+  percent}` its speed, `s40` `{character, motion, division, flag, blend}` read as a looping motion
+  (a guess).
 - `u49 {1, preset, hundredths}` (`ECT_EVENT_CONTRAST_SET_MIX`, Escha's `u22`) fades the screen
   and the event waits for it (`event::fade_hold`, fitted: docs/ryza/open.md).

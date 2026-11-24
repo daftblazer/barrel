@@ -819,11 +819,19 @@ drawn from the clock, a jump by it), the random wait, and an event waiting on it
 With the game's two draws given (`18.1,2`) the title's event pairs 66 of 69 commands and the
 opening's first 132 of 135, each group at one offset. Left:
 
-- **Loading is not timed.** The game's event runs its first commands, then loads its
-  characters behind `p1 10` polls (title: 874 to 917; opening: 1601 to 1667, its clock from
-  1699), and only then places them. Barrel places them at once, so its early commands sit 40
-  (title) and 64 to 95 (opening) frames from the game's, a constant after that
-  (`actors::EVENT_START` is fitted to it).
+- **Loading is the script's own waits (2026-11-24).** The game's `w1 N` holds the action that
+  started it until N has run its own waits (`p1`, a fade's hold): the event runs N's commands
+  on its own queue, in line, while the commands for characters, camera and fields go to their
+  subjects' queues and hold nothing. The title's and the opening's loads are action 4, eleven
+  (opening) or seven (title) `p1 10` waits between `q5` adds; the starter goes on 64 (opening)
+  or 40 (title) frames later. `Player::inline_actions` does this for Ryza (other games keep
+  their actions alongside); the first wait of such an action and the starter's return are each
+  a frame short in the game (5, 6 ... 6, 5 frames for the eleven waits; STAND-IN, fitted to
+  both loads, `event.rs` `INLINE_SHORT`). With it the title's event pairs at one offset (874)
+  in every group and the opening's at 1600, and `actors::EVENT_START` is no longer fitted: the
+  event's clock is the title's plus two frames (the game draws a frame after its step, and the
+  first command is at 874, a frame before the title's first). The rows `title-commands` and
+  `opening-commands` count the groups at those offsets.
 - **How long a fade holds the event** is fitted to three fades (`event::fade_hold`: 3, 32 and
   94 frames for 0, 0.5 and 1.5 s; the picture's own fade is 30 and 90). The game's test is
   behind `0x14050fdb0` (to `0x140509f30`), not read. Rules tried that give 93 for 1.5 s: the
@@ -889,6 +897,60 @@ could match (the game's value there came with the old timing, not from a curve B
 Left: the runtime's timer and thread-pool threads still fire in real time (none seen to matter
 yet), and a thread that computes for a minute without a wait makes the frames stop waiting
 (a line in the log names it).
+
+## The opening (P5b)
+
+`opening-key` (ryza-recomp `scenarios/opening-key.sh`: A at the prompt at 1235, A on New Game at
+1535, then A every 120 frames; every 10th frame captured from 1535 to 5995, the command queues
+logged) is the answer key. New Game on the title now plays the opening, `event_mm00_010`, live
+(`--opening [--opening-at FRAME]` offscreen, the title's handoff in a window or with
+`--into-field`; the rows start at the frame they compare, `--title ... --title-keys 660:choose`
+for the title going out, `--opening --opening-at F` after). Rows: `opening-*` in the local
+checks (2D diff 0 at each).
+
+What is at 0 (checked: `barrel-parity diff` of every captured frame 1605 to 5995, 440 frames,
+one Barrel run of 4,400 frames; the 2D layer only):
+
+- **The title going out** (`barrel_ryza::new_game`): the button on 1535; the logo, cursor, items
+  and version string fade out together over 15 frames (opacity 1 - k/15: a third at 1545) while the
+  copyright line stays; a black fill rises a frame after the button for 60 frames (19/60 at 1555);
+  the title is torn down on 1600 (65 after the button), when the event's first command runs.
+  The chosen item's own fade and the cursor's turn run a frame further than on Load Game
+  (STAND-IN, `title_menu.rs` `new_game_late`, fitted to the one frame 1545: item at 11/255 and
+  the cursor's corners to the game's).
+- **The load** is the event's own: see "Event commands against the game's own log". The fill
+  stays black to 1667, then fades out over 30 frames (`u49 1 3 50`) to 1697.
+- **The telops** (`u65`/`u66`) in one layer over the scene with the fill over them: every captured
+  frame with a telop (1845-2945 and 3745-4145, in, hold and out) is 0 with no refit; `fade_hold`
+  was not needed to change (the fades hold the event as the key's commands pair them).
+- **The camera** (view-projection against the key's `mW2P`, `diff3d`) is within 0.01 at 2005,
+  2505 to 3405, 4305 and 5005 once the manual camera's words are read: Ryza's `t12`
+  (`ECT_CAMERA_EYEAT_POS_SET`: target first, then eye), `t7`/`t8` (the target's point and move)
+  and `t26` (`ECT_CAMERA_FOV_MOVE`, `{hundredths of a degree}`, taken as set at once:
+  `Stage::manual_fov`). Later shots (3805 on) are not all there.
+- **The commands** (`barrel-tool ryza-commands`, `tools/cmddiff.py --from 1600`): all of p, q, t, u
+  and w pair at 1600 exactly; s pairs at 1600 but for the two `s40`/`s43` of the key's 2711
+  (the motion waits take no time in `ryza-commands`).
+
+3D (`diff3d`, as time allows): the field (s06_t_rasen) and the camera match; Ryza, Lent, Tao
+and one more person are staged (`opening_slots`: the stage run through once, every slot's model
+loaded up front, a person off the stage drawn at scale 0). Ryza's `s8` motion 2281 with `s38`
+(`ECT_CHARA_MOTION_SET_DIV` here `{character, from, to}` in hundredths of a 60 Hz frame:
+130 to 181) and `s39` (speed 20) is read (`Playing::range`, `position`): her bones at 2405 are
+within 0.2 of the key's. Left:
+
+- Ryza's head follows a look-at (`s90`, `ECT_CHARA_LOOK_MOVE_SET`, at 2469): bone 14 is 42
+  units off at 2505; the motion that follows (`s40` loop of 2282 at 2589, waited out by `s36`)
+  is a whole pose off (1.8 rad at 2605): the reading of `s40`'s operands as an auto-loop
+  `{character, motion, division, flag, blend}` is a guess.
+- The other people (the key has 36 to 89 skinned draws from 4355) and their props, the effects
+  (the particles at 4305-4525, 5375-5485 and 5965 on are 190 quads Barrel does not draw), the
+  shell on the sand, name cards (telops 1 to 14), the sound (the title's music stops as the
+  event begins, a STAND-IN: the opening's music and voices are not played) are not done.
+- In a window New Game takes the same path as `--into-field` offscreen (checked offscreen only).
+- Next capture wanted: the same run with `RYZA_TRACE_FILES`-style sound hooks decoded (the key's
+  `hooks.log` has the requests but the sound tables are packed), and a short run holding A at
+  the title's New Game with saves present (the menu then starts on Load Game).
 
 ## Loops that take 50 or 51 frames
 

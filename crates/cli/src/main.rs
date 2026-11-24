@@ -4021,6 +4021,11 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
             Step::QuakeStop { action } => println!("{action:3} --- camera quake stops"),
             Step::CameraRoll { action, from, to, seconds, curve } => println!("{action:3} --- camera rolls {from}° -> {to}° over {seconds} s (curve {curve})"),
             Step::CameraDistance { action, length, seconds, curve } => println!("{action:3} --- eye slides to {length} from the target over {seconds} s (curve {curve})"),
+            Step::CameraFov { action, degrees } => println!("{action:3} --- field of view {degrees} degrees"),
+            Step::MotionRange { action, character, from, to } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
+                println!("{action:3} {who} plays only {from} to {to} s of its motion");
+            }
             Step::MapVisible { action, version, shown } => println!("{action:3} --- field objects of version {version} {}", if shown { "shown" } else { "hidden" }),
             Step::Remove { action, character } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);

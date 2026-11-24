@@ -25,7 +25,8 @@ mod tests {
     fn the_events_clock() {
         assert_eq!(START, 1600);
         assert_eq!(stage_seconds(START), 1.0 / 60.0);
-        // a frame's step before its first telop's fade-in (1819 is two seconds in)
-        assert_eq!(stage_seconds(1819), 120.0 / 60.0 + 1.0 / 60.0);
+        // the first telop's command is on 1819 (a fade of 67 frames to the load's end, 2 s of wait): 219 frames
+        // in, drawn with the step after it
+        assert!((stage_seconds(1819) - 220.0 / 60.0).abs() < 1e-6);
     }
 }
