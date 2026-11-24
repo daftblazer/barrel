@@ -28,6 +28,9 @@ pub const TURN_RATE: f32 = 12.0;
 pub const RADIUS: f32 = 30.0;
 pub const HEIGHT: f32 = 170.0;
 pub const STEP_UP: f32 = 60.0;
+// Measured: walk-30 frames 2922-3164 (every other frame she climbs exactly 0.14).
+/// The most she climbs in a frame after one that climbed more.
+pub const CLIMB_CAP: f32 = 0.1435;
 
 // STAND-IN: The mixing time between motions is chosen; the real thing is the game's own blend times.
 /// How long the last motion takes to mix out, seconds.
@@ -78,11 +81,16 @@ pub struct Player {
     /// Her size against the walls (radius, height).
     pub radius: f32,
     pub height: f32,
+    /// Her last move climbed more than `CLIMB_CAP`: the next one may climb only that much.
+    climbed: bool,
+    /// She was held by a wall last frame / is to stand this frame.
+    touching: bool,
+    stall: bool,
 }
 
 impl Player {
     pub fn new(at: Vec3, turn: f32, lengths: &[(u32, f32)]) -> Player {
-        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT }
+        Player { at, turn, gait: Gait::Stand, motion: motion::STAND, clock: 0.0, from: None, since: 0.0, lengths: lengths.to_vec(), moving: Gait::Stand, radius: RADIUS, height: HEIGHT, climbed: false, touching: false, stall: false }
     }
 
     fn length(&self, m: u32) -> f32 {
@@ -134,17 +142,49 @@ impl Player {
         self.moving = self.gait;
         // Along the lean, at once, at its speed.
         let delta = [lean[0] * FULL_SPEED * dt, lean[1] * FULL_SPEED * dt];
-        let to = match walls {
+        let free = [self.at.x + delta[0], self.at.z + delta[1]];
+        let mut to = match walls {
             // A wall whose top is within a step of her feet (a floor's edge, a kerb) she steps
             // over: the walls see her from a step up.
             Some(w) => w.step([self.at.x, self.at.z], delta, self.at.y + STEP_UP, self.height - STEP_UP, self.radius),
-            None => [self.at.x + delta[0], self.at.z + delta[1]],
+            None => free,
         };
         let before = self.at;
+        let slid = (to[0] - free[0]).abs() + (to[1] - free[1]).abs() > 1e-3;
+        if let (Some(w), true, false) = (walls, slid, self.touching) {
+            // Measured: walk-30 frames 2915-2918: she runs up to the wall and stops where she
+            // meets it, loses the rest of the move, and stands the next frame too.
+            let (mut lo, mut hi) = (0.0f32, 1.0f32);
+            for _ in 0..16 {
+                let mid = 0.5 * (lo + hi);
+                let part = [delta[0] * mid, delta[1] * mid];
+                let end = w.step([self.at.x, self.at.z], part, self.at.y + STEP_UP, self.height - STEP_UP, self.radius);
+                if (end[0] - self.at.x - part[0]).abs() + (end[1] - self.at.z - part[1]).abs() > 1e-3 { hi = mid } else { lo = mid }
+            }
+            to = [self.at.x + delta[0] * lo, self.at.z + delta[1] * lo];
+            self.stall = true;
+        } else if self.stall {
+            to = [self.at.x, self.at.z];
+            self.stall = false;
+        }
+        self.touching = slid;
         match ground {
             // Off the ground, or up a ledge higher than a step: she stays.
             Some(g) => {
+                if self.climbed {
+                    // Cut the move where the ground has risen CLIMB_CAP.
+                    let reach = |t: f32| g.height(before.x + (to[0] - before.x) * t, before.z + (to[1] - before.z) * t, before.y, STEP_UP);
+                    if reach(1.0).is_some_and(|y| y - before.y > CLIMB_CAP) {
+                        let (mut lo, mut hi) = (0.0f32, 1.0f32);
+                        for _ in 0..24 {
+                            let mid = 0.5 * (lo + hi);
+                            if reach(mid).is_some_and(|y| y - before.y > CLIMB_CAP) { hi = mid } else { lo = mid }
+                        }
+                        to = [before.x + (to[0] - before.x) * lo, before.z + (to[1] - before.z) * lo];
+                    }
+                }
                 if let Some(y) = g.height(to[0], to[1], self.at.y, STEP_UP) {
+                    self.climbed = slid && y - before.y > CLIMB_CAP;
                     self.at = Vec3::new(to[0], y, to[1]);
                 }
             }
