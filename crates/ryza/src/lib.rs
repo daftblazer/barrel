@@ -48,6 +48,7 @@ pub mod font;
 pub mod title;
 pub mod title_menu;
 pub mod new_game;
+pub mod opening;
 pub mod boot;
 pub mod music;
 pub mod sound;

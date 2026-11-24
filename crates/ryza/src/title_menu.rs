@@ -422,6 +422,8 @@ impl Menu {
         let live = if back.is_some() { frame } else { input.choose.map_or(frame, |c| frame.min(c)) };
         let moves = if since >= 1 { self.moves(input, n, first, frame - since + 1, live) } else { Vec::new() };
         let on = moves.last().map_or(first, |m| m.1);
+        // STAND-IN: On New Game the chosen item's fade and the cursor's turn run a frame further than on Load Game or Settings (capture frame 1545 of the opening key: the item at 11/255, the cursor's corners to the game's); the real thing is each item's own leave animation.
+        let new_game_late = i32::from(input.choose.is_some_and(|c| frame >= c && self.chosen(input, c) == Some("new_game")));
         let mut out = Vec::new();
         if since >= 1 {
             // The cursor's line: the middle of the item it is on, travelling from where it was.
@@ -439,7 +441,7 @@ impl Menu {
             // pictures' own turning.
             let swing = self.in_turn.at(t * self.in_turn_speed)[1].rem_euclid(360.0).to_radians();
             // STAND-IN: From the button on an item the cursor's turn runs one frame ahead (the capture's icons sit 1.5 degrees on from the loop's from that frame on); the real thing is the cursor's own leave.
-            let ahead = i32::from(back.is_none() && input.choose.is_some_and(|c| frame >= c));
+            let ahead = i32::from(back.is_none() && input.choose.is_some_and(|c| frame >= c)) + new_game_late;
             let spin_age = back.map_or(cursor_age + ahead, |r| input.returned_spin + (frame - r) + input.returned_lead);
             let spin = self.rotate.at(loop_shown(spin_age, self.rotate.duration()))[2];
             let (aw, ah) = self.atlas[1];
@@ -489,7 +491,7 @@ impl Menu {
                 false => self.slide_color.at(t)[3] / 255.0,
             };
             let alpha = match input.choose.filter(|&c| selected && frame >= c && back.is_none()) {
-                Some(c) => alpha * CHOSEN_START * (1.0 - (frame - c) as f32 / CHOSEN_FADE as f32).max(0.0),
+                Some(c) => alpha * CHOSEN_START * (1.0 - (frame - c + new_game_late) as f32 / CHOSEN_FADE as f32).max(0.0),
                 None => alpha,
             };
             // the game's opacity is a byte: under one step of it nothing is drawn

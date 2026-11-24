@@ -144,6 +144,11 @@ struct Args {
     /// `--into-field`: offscreen too, the title's load goes on into the field from the chosen
     /// save (a window always does), the frame count and the sound's frames running on.
     into_field: bool,
+    /// `--opening`: the game's opening event (`event_mm00_010`) played live from New Game's
+    /// end, `--opening-at F` the capture frame the first frame shows (default
+    /// `barrel_ryza::opening::START`, the event's first frame).
+    opening: bool,
+    opening_at: i32,
     /// `--settings-as-game`: the Settings screen lists only the game's own rows and choices (for the captures).
     settings_as_game: bool,
     /// What the player does on the title when no one is at the keys: `--title-press F` the
@@ -183,7 +188,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -217,6 +222,8 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--walk-from" => a.walk_from = Some(value()?.parse()?),
             "--title" => a.title = true,
             "--into-field" => a.into_field = true,
+            "--opening" => a.opening = true,
+            "--opening-at" => a.opening_at = value()?.parse()?,
             "--settings-as-game" => a.settings_as_game = true,
             "--title-at" => a.title_at = value()?.parse()?,
             "--title-press" => a.title_input.press = Some(value()?.parse()?),
@@ -354,6 +361,47 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
     let mut layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &[t])?;
     layer.set(gpu, &[text::Quad { turn: false, spin: None, rect, uv, color: [1.0, 1.0, 1.0, alpha], texture: 0 }])?;
     Ok(layer)
+}
+
+/// The opening's 2D layer (a telop, then the event's fade) with, for each telop number the event
+/// shows, its strip's rectangle, texture coordinates and atlas in the layer (a name card is not
+/// drawn yet). The atlases are the hd ones above 1080 lines, as `telop_layer` has them.
+#[allow(clippy::type_complexity)]
+fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, cards: &std::collections::BTreeSet<u32>, screen: (u32, u32)) -> Result<(text::Layer, std::collections::HashMap<u32, ([f32; 4], [f32; 4], usize)>)> {
+    use barrel_ryza::telop;
+    let hd = screen.1 > 1080;
+    let layout = install.read("\\saves\\ui_en\\a21_telop\\uil_a21_telop01.xml")?;
+    let strips = telop::strips(&install.read("\\saves\\ui_en\\etc\\uis_a21_telop.xml")?)?;
+    let (mut paths, mut bytes): (Vec<String>, Vec<Vec<u8>>) = (Vec::new(), Vec::new());
+    let mut wanted = Vec::new();
+    for &n in cards {
+        // STAND-IN: Name-card telops are not drawn; the real thing is drawing them.
+        let Some(telop::Node::Caption(k)) = telop::Node::of(n) else { continue };
+        let node = format!("telop{k:02}");
+        let (at, image) = telop::place(&layout, &node)?.ok_or(format!("no {node} in the telop layout"))?;
+        let strip = strips.get(image as usize).ok_or(format!("telop {n}: no strip {image}"))?;
+        let file = strip.texture.trim_start_matches("ui/");
+        let path = if hd { format!("\\data\\x64\\res_en\\ui\\neo\\neo_{file}") } else { format!("\\data\\x64\\res_en\\ui\\{file}") };
+        let k = match paths.iter().position(|p| *p == path) {
+            Some(k) => k,
+            None => {
+                bytes.push(install.read(&path)?);
+                paths.push(path);
+                paths.len() - 1
+            }
+        };
+        wanted.push((n, k, at, strip));
+    }
+    let files: Vec<G1t> = bytes.iter().zip(&paths).map(|(b, p)| G1t::parse(b).map_err(|e| format!("{p}: {e}"))).collect::<std::result::Result<_, _>>()?;
+    let mut shown = Vec::new();
+    for (n, k, at, strip) in wanted {
+        let t = files[k].textures.first().ok_or("a telop atlas without a texture")?;
+        shown.push((n, k, telop::quad(strip, at, screen, (t.width, t.height), if hd { 1.0 } else { 0.5 })));
+    }
+    let textures: Vec<&barrel_formats::g1t::Texture> = files.iter().filter_map(|f| f.textures.first()).collect();
+    // (the fade's plain quad reads no texture, but a layer needs one)
+    let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &textures)?;
+    Ok((layer, shown.into_iter().map(|(n, k, (rect, uv))| (n, (rect, uv, k))).collect()))
 }
 
 /// The title screen's layer (empty until each frame's quads are set) with its layout.
@@ -1050,11 +1098,19 @@ fn save_options(state: &barrel_ryza::options::State) {
     }
 }
 
+/// Where the title's run goes on to.
+enum Next {
+    /// The field the save the load screen chose names.
+    Save(std::path::PathBuf),
+    /// The opening event, New Game's.
+    Opening,
+}
+
 /// A save the title's load screen chose: the run goes on into the field from it, in the same
 /// window.
 struct Handoff {
     root: std::path::PathBuf,
-    save: std::path::PathBuf,
+    next: Next,
     /// The window's side, kept for the field (a window run only).
     app: Option<App>,
     /// Offscreen: the picture's path and size, and the frames left of `--frames`.
@@ -1089,7 +1145,12 @@ pub fn run(raw: Vec<String>, chosen: Option<locate::Resolved>) -> Result<()> {
     while let Some(h) = next {
         // Her place and the story's progress are the save's (`--save`), the field the one it names.
         let out = if h.app.is_some() { "-".to_string() } else { h.out };
-        let mut args = vec![h.root.to_string_lossy().into_owned(), "-".into(), out, "--save".into(), h.save.to_string_lossy().into_owned(), "--size".into(), format!("{}x{}", h.size.0, h.size.1)];
+        let mut args = vec![h.root.to_string_lossy().into_owned(), "-".into(), out];
+        match &h.next {
+            Next::Save(save) => args.extend(["--save".into(), save.to_string_lossy().into_owned()]),
+            Next::Opening => args.push("--opening".into()),
+        }
+        args.extend(["--size".into(), format!("{}x{}", h.size.0, h.size.1)]);
         if h.app.is_some() {
             args.push("--window".into());
         }
@@ -1208,6 +1269,16 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             eprintln!("{save}: {} at {:?}, turn {:.1}°", a.field, place.at, place.turn);
         }
     }
+    // `--opening`: the field the opening's first field change names (its picture is the event's live stage).
+    if a.opening && a.field == "-" {
+        let path = barrel_ryza::event::path(barrel_ryza::opening::EVENT).ok_or("opening event")?;
+        let event = barrel_formats::ebd::Ebd::parse(&install.read(&path)?).map_err(|e| format!("{path}: {e}"))?;
+        let map = barrel_ryza::event::schedule(&event)?.iter().find_map(|t| match t.step { barrel_engine::event::Step::FieldChange { map, .. } => Some(map), _ => None }).ok_or("the opening changes no field")?;
+        let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
+        a.field = barrel_ryza::maps::field_maps(&pe).get(map as usize).cloned().ok_or(format!("field map {map}: not named"))?;
+        eprintln!("opening: field map {map}: {}", a.field);
+    }
     // `--event NAME --at T`: the event's stage T seconds in; with FIELD `-`, its field (the
     // field map it last changed to, by the executable's `FIELDMAP_*` names).
     let event_stage = match &a.event {
@@ -1275,9 +1346,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let plant_preset = presets.grass;
     // The title's backdrop: its event's stage run to the first frame's moment, and the characters
     // it stages (`actors`: Ryza, Lent and Tao), loaded before the textures that borrow them.
-    let title_event = match a.title {
-        true => Some(barrel_formats::ebd::Ebd::parse(&install.read(&barrel_ryza::event::path(actors::TITLE_EVENT).ok_or("title event")?)?)?),
-        false => None,
+    let live_event = if a.title { Some(actors::TITLE_EVENT) } else { a.opening.then_some(barrel_ryza::opening::EVENT) };
+    let title_event = match live_event {
+        Some(name) => Some(barrel_formats::ebd::Ebd::parse(&install.read(&barrel_ryza::event::path(name).ok_or("event name")?)?)?),
+        None => None,
     };
     // The event loops: a random wait, then one of three actions drawn each time. BARREL_EVENT_DRAWS
     // (numbers with commas between) gives the first draws in the order the event asks, for
@@ -1294,24 +1366,30 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let (title_steps, title_taken) = title_steps.map_or((None, Vec::new()), |(s, t)| (Some(s), t));
     let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
     let title_heads = actors::head_turns(&title_taken);
+    // The telops the opening shows (`u65`'s numbers), for the 2D layer built below.
+    let opening_cards: std::collections::BTreeSet<u32> = match (&title_steps, a.opening) {
+        (Some(steps), true) => steps.iter().filter_map(|t| match t.step { barrel_engine::event::Step::Telop { card, .. } => Some(card), _ => None }).collect(),
+        _ => Default::default(),
+    };
     let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
     let added = title_event.as_ref().map(barrel_ryza::event::added).transpose()?.unwrap_or_default();
     let mut cast_files: Vec<actors::Files> = Vec::new();
     if let (Some(motions), Some(play)) = (title_motions, title_play.as_mut()) {
         // after the boot the title's own time starts where the boot ends
         let boot_ahead = if a.boot { a.boot_at - title_start } else { 0.0 };
-        actors::advance(play, a.title_at + boot_ahead - actors::EVENT_START);
+        actors::advance(play, if a.opening { barrel_ryza::opening::stage_seconds(a.opening_at) } else { a.title_at + boot_ahead - actors::EVENT_START });
         // Before the event has placed anyone (the boot's logos, the title's first frames) the
         // stage is run on to where it has, so its people are loaded and in the scene by the
         // time the title shows; the clock then catches the stage up (it never runs back).
         for _ in 0..PLACING_TICKS {
-            if !play.stage.characters.is_empty() {
+            if a.opening || !play.stage.characters.is_empty() {
                 break;
             }
             play.tick();
         }
         // the people the stage has placed, then the props only the event's `q5` adds
-        let slots: std::collections::BTreeSet<u32> = play.stage.characters.keys().chain(added.keys()).copied().collect();
+        // (the opening's people are not drawn yet)
+        let slots: std::collections::BTreeSet<u32> = play.stage.characters.keys().chain(added.keys()).copied().filter(|_| !a.opening).collect();
         for slot in slots {
             cast_files.extend(actors::Files::read(&install, slot, motions.get(&slot).unwrap_or(&Default::default()), added.get(&slot))?);
         }
@@ -1830,7 +1908,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let follow = (rig.is_some() && (pump.is_some() || a.look_at.is_none())).then(|| {
         install.read(&barrel_ryza::camera::FreeCamera::path(&a.field)).ok().and_then(|b| barrel_ryza::camera::FreeCamera::parse(&b).map_err(|e| eprintln!("{e}")).ok()).unwrap_or(barrel_ryza::camera::FreeCamera::DEFAULT)
     });
-    let fov = a.fov.unwrap_or(if a.title { barrel_ryza::title::CAMERA.fov } else { follow.map_or(30.0, |c| c.fov) }).to_radians();
+    let mut fov = a.fov.unwrap_or(if a.title { barrel_ryza::title::CAMERA.fov } else { follow.map_or(30.0, |c| c.fov) }).to_radians();
     // How high above her feet the camera looks (`LOOK_HEIGHT`).
     let mut look_height = barrel_ryza::walk::LOOK_HEIGHT;
     let (mut yaw, mut pitch) = match (follow, &rig) {
@@ -2013,6 +2091,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         Some((n, alpha)) => Some(telop_layer(&install, &gpu, &renderer, n, alpha, (width, height))?),
         None => None,
     };
+    // The opening's telops and fade (`--opening`): one layer of the strips' atlases.
+    let mut opening_layer = match a.opening {
+        true => Some(opening_telops(&install, &gpu, &renderer, &opening_cards, (width, height))?),
+        false => None,
+    };
     // The title screen (`--title`): its glyphs from the executable, its layout from the archives.
     let mut title_layer = match a.title {
         true => Some(title_layer(&install, &gpu, &renderer, a.boot)?),
@@ -2118,6 +2201,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut settings_run: Option<SettingsRun> = None;
     let mut settings_repeat: [Option<f32>; 2] = [None; 2];
     let mut handoff: Option<std::path::PathBuf> = None;
+    // New Game's button has led to the opening: the run goes on into it.
+    let mut opening_next = false;
     let mut showing_load = false;
     // The Settings screen's "Saving..." notice is drawn over it (in the load screen's layer).
     let mut showing_notice = false;
@@ -2175,7 +2260,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
         }
         // The load screen's save is chosen and loaded: the field follows, in the same window.
-        if handoff.is_some() && (pump.is_some() || a.into_field) {
+        if (handoff.is_some() || opening_next) && (pump.is_some() || a.into_field) {
             break;
         }
         // The field's sound: its cues (the music) come due on the frame count the title began.
@@ -2353,10 +2438,36 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
         }
         // The title's characters on the event's stage at this frame's moment.
-        if let Some(play) = title_play.as_mut().filter(|_| !cast.is_empty()) {
+        if let Some(play) = title_play.as_mut().filter(|_| a.opening || !cast.is_empty()) {
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
             let boot_ahead = if a.boot { a.boot_at - title_start } else { 0.0 };
-            actors::advance(play, a.title_at + boot_ahead + clock - actors::EVENT_START);
+            actors::advance(play, if a.opening { barrel_ryza::opening::stage_seconds(a.opening_at) + clock } else { a.title_at + boot_ahead + clock - actors::EVENT_START });
+            if a.opening {
+                // The event's camera (its eye and target as this view's centre, turn, pitch and distance; render space mirrors x).
+                let snap = play.stage.snapshot();
+                if let (Some(eye), Some(target)) = (snap.eye, snap.target) {
+                    let d = Vec3::new(-(eye[0] - target[0]), eye[1] - target[1], eye[2] - target[2]);
+                    dist = d.length().max(1.0);
+                    center = Vec3::from(target) * Vec3::new(-1.0, 1.0, 1.0);
+                    pitch = (d.y / dist).asin().to_degrees();
+                    yaw = d.x.atan2(d.z).to_degrees();
+                    fov = snap.fov.map_or(fov, f32::to_radians);
+                }
+                // Its telop and fade, in their own layer.
+                if let Some((layer, telops)) = opening_layer.as_mut() {
+                    let mut quads = Vec::new();
+                    if let Some((n, alpha)) = barrel_ryza::event::telop(&play.stage)
+                        && let Some(&(rect, uv, texture)) = telops.get(&n)
+                    {
+                        quads.push(text::Quad { turn: false, spin: None, rect, uv, color: [1.0, 1.0, 1.0, alpha], texture });
+                    }
+                    let cover = actors::cover(&play.stage);
+                    if cover > 0.0 {
+                        quads.push(barrel_ryza::load::cover(cover, (width, height), 0));
+                    }
+                    layer.set(&gpu, &quads)?;
+                }
+            }
             for actor in &cast {
                 if let Some(body) = play.stage.characters.get(&actor.slot) {
                     actor.pose(body, play.stage.time, &mut instances, &mut palette);
@@ -2688,7 +2799,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         title_input.press = Some(frame);
                     }
                 } else if pressed(Act::Confirm) {
-                    if title_input.choose.is_none() && (loads(&title_input, frame) || menu.chosen(&title_input, frame) == Some("setting")) {
+                    if title_input.choose.is_none() && (loads(&title_input, frame) || matches!(menu.chosen(&title_input, frame), Some("setting" | "new_game"))) {
                         title_input.choose = Some(frame);
                         title_input.returned = None;
                     } else if listing && !in_settings && title_input.confirm.is_none() {
@@ -2782,7 +2893,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 if let Some(f) = menu.pressed(&title_input).filter(|&f| f <= frame) {
                     sound.request("press", Cue::effect(i64::from(f), PRESS_START));
                 }
-                if let Some(c) = title_input.choose.filter(|&c| c <= frame && (loads(&title_input, c) || menu.chosen(&title_input, c) == Some("setting"))) {
+                if let Some(c) = title_input.choose.filter(|&c| c <= frame && (loads(&title_input, c) || matches!(menu.chosen(&title_input, c), Some("setting" | "new_game")))) {
                     sound.request("choose", Cue::effect(i64::from(c), CLICK));
                 }
                 let flowing = flow_input(&title_input, &loads);
@@ -2899,6 +3010,17 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         own_layer = true;
                         showing_options = true;
                     }
+                }
+            }
+            // New Game: the black rises over the title, then the opening begins (`barrel_ryza::new_game`).
+            if let Some(c) = title_input.choose.filter(|&c| c < frame && menu.chosen(&title_input, c) == Some("new_game")) {
+                let alpha = barrel_ryza::new_game::cover(frame, c);
+                if alpha > 0.0 {
+                    quads.push(flow::cover(alpha, (width, height), cover_texture));
+                }
+                if barrel_ryza::new_game::opening_begun(frame, c) {
+                    opening_next = true;
+                    handoff_at = i64::from(frame) + 1;
                 }
             }
             showing_load = own_layer && !showing_options;
@@ -3193,7 +3315,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 .chain(options_screen.as_ref().filter(|_| showing_options).map(|(l, _, _)| l))
                 .chain(load_screen.as_ref().filter(|_| showing_options && showing_notice).map(|(n, _, _)| n))
                 .collect(),
-            _ => telop_layer.iter().chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
+            _ => telop_layer.iter().chain(opening_layer.as_ref().map(|(l, _)| l)).chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
         // The view-projection drawn with: shifted by this frame's sub-pixel jitter when TAA or a
         // temporal upscaler is on, in a window (as Escha; `settings::jitter`, a clip-space
@@ -3416,7 +3538,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let carry = Carry { sound: sound.take(), frame: handoff_at, music_at };
     // Into the field the window, device and swapchain go on (the scene's own resources are gone,
     // the device is idle); otherwise they end with the run.
-    let app = match (handoff.is_some(), pump.take(), presenter.take()) {
+    let app = match (handoff.is_some() || opening_next, pump.take(), presenter.take()) {
         (true, Some(pump), Some(presenter)) => Some(App { pump, gpu, presenter }),
         (_, _, presenter) => {
             if let Some(p) = presenter {
@@ -3429,7 +3551,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             None
         }
     };
-    Ok(handoff.map(|save| Handoff { root: std::path::PathBuf::from(&a.install), save, app, out: a.out.clone(), size: a.size, frames_left, carry }))
+    let next = handoff.map(Next::Save).or(opening_next.then_some(Next::Opening));
+    Ok(next.map(|next| Handoff { root: std::path::PathBuf::from(&a.install), next, app, out: a.out.clone(), size: a.size, frames_left, carry }))
 }
 
 /// A debug aid for comparing a frame with the game's: the sky's clock (seconds; the clouds'
