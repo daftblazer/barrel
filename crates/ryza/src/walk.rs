@@ -22,7 +22,8 @@ pub const MOVE_DEAD_ZONE: f32 = 0.2257;
 // Measured: walk-30 frames 2236-2262 and 2580-2584 (the left stick pushed fully left or down she
 // moves 10.08 units a frame, 1.008 of the 10.00 of a full push right or up; at the corner of
 // left and up too) in the same direction, not skewed. 32767 / 32512 is 1.00784. STAND-IN: only the
-// two axes and the one corner are sampled; how the factor grows with the throw (here in
+// two axes and the one corner are sampled (likely the stick read as a signed byte, -32767 >> 8 = -128,
+// over 127 = 1.00787: to test against a corner of right and down); how the factor grows with the throw (here in
 // proportion to the larger negative push) and a corner of right and down are not.
 /// How much longer a full negative throw of the left stick (left, down) makes her lean than a
 /// positive one, and so the longest lean.
