@@ -356,8 +356,9 @@ the order worth doing:
   260), the cursor blink one frame behind from 2430 (1 mismatch each to 2490: a stall of the game's clock, part 9). Sections "part 6", "part 7", "part 9" below.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
-- Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages (A on
-  Items, Effects/Traits, Monsters, Help) are not: no capture past the top. Answer key field-menu-pages (every 10 frames 1990-3540).
+- Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages: the Item
+  and Effect/Trait pages are drawn and open and close as in the capture (part 11: 53 to 72 mismatches a frame, none at 0 yet; causes there); Monsters and Help are
+  closed in the capture's save (A does nothing) or not captured. Answer keys field-menu-pages (every 10 frames 1990-3540), field-menu-guide, field-menu-guide2.
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
@@ -2100,3 +2101,42 @@ Left, with causes:
   unchanged when tried for all the item pages), so their cause is another.
 - The pick's going out itself (3020 and 3030: about 80 and 50 mismatches: the buttons lighten and the photo unblurs; only the loops after it are built).
 - The Guide's sub-pages (A on Items and the rest), the keys on its top: no capture.
+### Field menu, part 11: the Guide's Item and Effect/Trait pages
+
+Built (`crates/ryza/src/{field_menu,field_page,library,save,item_info}.rs`, `play/mod.rs`; answer keys `field-menu-guide` 2330 to 3450 and `field-menu-guide2`):
+- The way in and out (`Pick::sub`, `GuideSub`): A on the top's first or second button opens Items or Effects/Traits; the top fades out over 15 frames from A (2340:
+  a third) and the page in over 15 from A + 15 (`SUB_AT`; 2350: a third; the bar of the top fades out from A + 5 in the capture, not built). B on the page: it fades out over
+  15 frames (2490: a third), the top in over 15 from B + 15 (2500: a third), whole at B + 30 (`GUIDE_SUB_BACK`) and the top's cursor is back on the **first button** (2780,
+  3050, 3350: the top's cursor after the Effects page is Items, which is why RIGHT 2830 and 3100 are not dropped: they move it to Effects and A opens it again; the
+  brief's "dropped keys" came from reading the cursor after them). A on Monsters or Help does nothing in the capture (`field-menu-guide2` 2410: the third button's highlight
+  goes on blinking, 2430 is its zero frame) and nothing opens in Barrel. The blink of the cursor's highlight restarts at each move of the cursor (2560, `guide2` 2330, 2370).
+- `Page::guide_items` (`uil_library_04_item_top.xml`, root pos (0, 1)): the title plate, the four category tabs (the first lit), the Gather Rate, ten blank cards and the cards of
+  the known items with their cursor highlight (`img_hl`'s blink: 120/255 times the blink triangle from the page's first frame, 2350: 37 = 112 x a third), their level and "???".
+  `Page::guide_effects` (`uil_library_08_eff_esp.xml`): the tabs (Effects lit), the two-column list of the known effects (row-major: 688, 693, 1153, ...), the cursor's line (the
+  highlight and its additive blink 125/255), the details (name, `kouka` "Effects", the stars: `clone_star_1` to `_4` are empty nodes the game fills with copies of the first,
+  `stars_copy_the_first`; the description from `str_library_eff_detail.xml` + the effect's number), the scroll bar's slider (STAND-IN `EFFECT_THUMB`, list not scrolled) and the empty "Resulting Item"
+  frame (`node_eff` shown, its items hidden). The walker reads `rot="0, 180, 0"` as a mirror (the second tab's end).
+- What is listed: `save::knowledge` (`knowledge/item`, `knowledge/eff`: a big-endian byte count, then an i32 an entry; the first word is no entry) and `library::Library`
+  (`libraryitem.xml` permits, `libraryeffdetail.xml` powers). In the capture's save eight items (316, 317, 406, 416, 421, 456, 482, 486) and eight effects (688, 693, 1153, 1156,
+  1160, 1175, 1276, 1279) are at 10; the Item page's first tab shows 316 and 317 (Lv. 25 and 19, pictures 276 and 277), the Effects page all eight in that order. The Gather Rate
+  is the known share of the permitted entries, rounded: 8 of 462 items = 2 %, 8 of 698 effects = 1 % (checked on 2350 and 2650).
+
+STAND-INs named in the code: which items a tab holds (`library::tab_of`: only the first tab is captured, the others are guesses from the item kinds), what reveals an item
+(`REVEALED_AT` 11: the capture's items at level 10 are shown as silhouettes under "???", the colour 139/113/88; the rule that shows a name is not captured, so Barrel shows every
+item as a silhouette), the slider (`EFFECT_THUMB`), the page number "1 / 1" (one page), the keys on the sub-pages (none move the cursor yet).
+
+Left, with causes (each frame still at 53 to 72 mismatches, none at 0, so no rows are added; counts `field-menu-guide`: 2350 and 2360: 53, 2400 to 2480: 57, 2490: 53, 2620: 61,
+2650 and 2700: 69, 2750: 72, 2760: 61; before the pages were not drawn at all: 2440 had 305 game quads and none of the page):
+- The Item page's cards are tilted by the game's code (not by the layout): the first card about +40 degrees, the second -59 degrees and mirrored (2440: the base pieces' corners);
+  the pivot is not one of the layout's nodes (solved from the first card: about (301, 390) of 1080 lines, where none of the nodes is), so the base and highlight pieces
+  (about 28 quads) draw upright. The tilts look random per card; not reproduced.
+- The page's help bar: the Item page's has four plates (2380: `common#3` x 4, 66 texts in all) and the Effect page's two (2650), both fading in about 33 frames after A (2370: 7/15)
+  and out from B + 5; the top's bar fades out from A + 5 and back from B + 32. Only the top's bar is built (it stays drawn over the sub-page for now).
+- The Effects page's "Resulting Item" frame: the game draws the blanks' nine-slice children (`blank_1`, ...) squashed to zero width at the first blank's right edge (about 18
+  quads); Barrel draws them at their own places (the children seem to be placed by the parent's scale: not worked out). The scroll bar's window pieces differ in the
+  last digit of the rect (249.00002 against 249.0) and show as one pair of mismatches each.
+- The top's blink after a return from a page: first return 2510 is 17 frames in (started 13 after B), the second (2780) is 67 in and the third (3330) 56 in: not one rule; the top's
+  cursor ring after the pages (2780 to 3380) was not compared. 3290/3300 and the end (B 3370 to the menu, 3450 the field) were not compared either.
+- Equipment slides (2380 to 2400), 2510/2520 and the pick going out (field-menu-pages 3020/3030): not worked (no time).
+- The Traits tab, Monsters and Help pages, searching, sorting: no capture.
+
