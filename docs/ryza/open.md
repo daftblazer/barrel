@@ -347,7 +347,7 @@ Left (each a listed cause):
 
 ### Field menu: what is left (2026-11-23)
 
-Built and at 0 (91 field-menu-* rows in checks.txt, 27 more in the local rows file of part 9): opening and closing from the field, the
+Built and at 0 (91 field-menu-* rows in checks.txt, 27 more in the local rows file of part 9, 29 in that of part 10): opening and closing from the field, the
 cursor, the help bar and its transients, Settings from the menu there and back (with the blurred menu under it), the character pick on
 Equip and Status, B back from a page, the Equipment page with its item card (2290; 2330-2370, 2410, 2420), the Status page (part 8), the
 item card, the Container and Gathering Tools pages (part 9). The party's numbers come from the game's table (`party_stats.rs`). Left, in
@@ -356,7 +356,8 @@ the order worth doing:
   260), the cursor blink one frame behind from 2430 (1 mismatch each to 2490: a stall of the game's clock, part 9). Sections "part 6", "part 7", "part 9" below.
 - Status page: built (part 8): 2330 to 2680 and 2720 to 2740 at 0; the cursor ring after the page (2690 to 2710: 1, 2 and 4) is left.
 - Container and Gathering Tools: built (part 9; the frames that come in, the ring after them and the other tabs are left there).
-- Guide: A pulses only. Answer key field-menu-pages (A/B on each, every 10 frames 1990-3540; Status pick and Guide from 2830).
+- Guide: its top is built (part 10: the cards' paper, the title, the four buttons, in and out, 3160 to 3460 at 0 but for a few ring frames). Its sub-pages (A on
+  Items, Effects/Traits, Monsters, Help) are not: no capture past the top. Answer key field-menu-pages (every 10 frames 1990-3540).
 - The title's Settings still runs its own copy of the Options code (`play::run_once`), see the Left list above.
 - No window run of the pages yet. (The photo going white once the cards came in, in a window and offscreen, was the cards'
   mask drawn onto the screen: the game draws it into a target of its own; now in the trace only.)
@@ -2069,3 +2070,33 @@ Left, with causes:
 - Tabs other than the first, the scroll bar of a full grid, the favourites, sub-menu and sort, tools beyond the five places, the cursor's
   keys beyond a cell step: no capture.
 - No window run of the pages (offscreen only).
+
+### Field menu, part 10: the Guide page, and the ring after the character pick
+
+Built (`crates/ryza/src/{field_menu,field_page}.rs`, `play/mod.rs`; rows in the local `field-menu-rows-pages6.txt`, 29 at 0 of `field-menu-pages` 3040 to 3460):
+- The Guide's top (A on the fifth button; `ItemPage::Guide`, no character pick, the page's first frame 42 frames after A as the Container's): `Page::guide_quads`
+  walks `library/uil_library_00_bg.xml` (the paper with the picture cards: one texture, `a21_bg10`) and `uil_library_01_top.xml` (the tape and title: `a21_bg11`
+  with `txt_title`, then the four buttons with the cursor's highlight and its additive blink); the labels are `STR_LIBRARY_DEFINE_nnn` (`LIBRARY_BASE` + nnn, 24, 36, 40
+  and 46). The cards, tape and paper are baked into the two backgrounds: nothing of it is a 3D draw. In: both fade over 15 frames, the top as the square of the
+  background's (the page's own fade times its own, 136 and 72 of 255 on 3210). Out: the top fades over 15 frames from B, the background over 15 more
+  (3320: the top at a third, 3330: the background at two thirds).
+- The menu stands as it was (button pulse and all) until 16 frames after the page's first, then goes out under it as under the other pages, with the level plate
+  and money going to the right (`View::corner_out`, Guide only); the help bar (Back, Confirm) fades in from 18 frames after the page's first. B: the menu is back 15 frames
+  later, the page's last part and the blurred picture go after 30 (`Pick::backdrop_hold`, new: the other pages' blurred picture goes when the menu is back).
+- After B in the character pick (the Status pick of 2870, B on 3020) the cursor's glow and ring loop again from the menu's return (`PICK_OUT_FRAMES` 30, the glow
+  `PICK_GLOW_LATER` 1.1 after B, the ring not drawn before): this was the Status and Guide frames' 2 to 4 mismatches of 3040 to 3160. The ring has its own loop
+  again after the Guide (`GUIDE_RING_AT`, 98.5 after A). The loop's first frame is already a frame in (STAND-IN, `field-menu-pages` 3050 at 1 frame, 3060 at 10).
+
+STAND-INs named in the code: the label size (24 layout pixels; the layout names none, fitted to the glyphs), the bar's plate width (`GUIDE_PLATE_EXTRA`, 25.67 pixels
+of 1080 lines), the bar's fade-in and fade-out starts (`GUIDE_BAR_AT` 18, `GUIDE_BAR_OUT_AT` 3), the menu's going out and the blurred picture's staying (`GUIDE_MENU_OUT_AT` 16,
+`GUIDE_BACKDROP_OUT` 30), the ring's restart (`GUIDE_RING_AT`, from two samples), the keys on the page (left and right move the highlight, not captured).
+
+Left, with causes:
+- 3210 (1 mismatch: the full menu is still drawn and the trace diff leaves one of its quads unmatched; ours draws it), 3360 (6: the menu bar's plate is 13 pixels short two frames
+  into its fade, the same "plate after a page" rule as `BACK_PLATE_LATE`, and the ring a frame off), 3380 to 3400 (1 each) and 3420 (2): the cursor ring's phase (one frame: the game's
+  clock stall again, parts 6 and 9).
+- Items 2 of the packet (the Equipment page's slides 2380 to 2400, going out 2510 and 2520, the blink 2430 to 2500, the ring after the Status page 2690 to 2710, the Container's and
+  Tools' leftovers): not worked; the ring restart found here (after the pick's B, after the Guide) did not move the Container's and Tools' ring frames (2190, 2200, 2610, 2620:
+  unchanged when tried for all the item pages), so their cause is another.
+- The pick's going out itself (3020 and 3030: about 80 and 50 mismatches: the buttons lighten and the photo unblurs; only the loops after it are built).
+- The Guide's sub-pages (A on Items and the rest), the keys on its top: no capture.
