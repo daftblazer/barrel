@@ -16,18 +16,19 @@ use crate::install::Install;
 use crate::player::Player;
 
 // Measured: walk-30 frame 2040-2130 (a lean of 12000/32767 moves her 108.9 units a second of 600),
-// frames 2640-2700 (6000/32767: not at all); a straight line through both.
+// frames 2640-2700 (6000/32767: not at all); a straight line through both, with the stick read as
+// below (12000 is 46 of 127: 0.3622, 108.9 of 600 is 0.1815; 28/127 is 0.2205).
 /// The left stick's dead zone, of its full throw; beyond it the lean rises linearly to 1.
-pub const MOVE_DEAD_ZONE: f32 = 0.2257;
+pub const MOVE_DEAD_ZONE: f32 = 0.2208;
 // Measured: walk-30 frames 2236-2262 and 2580-2584 (the left stick pushed fully left or down she
 // moves 10.08 units a frame, 1.008 of the 10.00 of a full push right or up; at the corner of
-// left and up too) in the same direction, not skewed. 32767 / 32512 is 1.00784. STAND-IN: only the
-// two axes and the one corner are sampled (likely the stick read as a signed byte, -32767 >> 8 = -128,
-// over 127 = 1.00787: to test against a corner of right and down); how the factor grows with the throw (here in
-// proportion to the larger negative push) and a corner of right and down are not.
-/// How much longer a full negative throw of the left stick (left, down) makes her lean than a
-/// positive one, and so the longest lean.
-pub const MOVE_NEGATIVE: f32 = 1.0078;
+// left and up too: 10.080, 10.082, 10.079) in the stick's direction. The stick's axes are read as
+// signed bytes (the high byte of the 16-bit value, over 127): full right or up 32767 is 127/127,
+// full left or down -32767 is -128/127 = 1.00787. A lean longer than that does not go on: the cap
+// below. Only the corner of left and up is sampled; the corner of right and up is taken to be
+// capped the same (STAND-IN: not walked).
+/// The longest the left stick's lean gets, the full negative throw's byte over the full positive's.
+pub const MOVE_LONGEST: f32 = 128.0 / 127.0;
 // Measured: walk-30 frames 2340-2400 (right stick x full turns the camera 1.5 degrees a frame) and
 // frames 2420-2540 (-20000/32767 turns it 0.8 a frame), a straight line through both.
 /// The right stick's dead zone, of its full throw.
@@ -210,12 +211,29 @@ impl Camera {
     }
 }
 
+/// A stick axis as the game reads it: the pad's 16-bit value (a throw of 1 is 32767) by its high
+/// byte, over 127, so a full push left or down reads -128/127.
+pub fn byte_axis(v: f32) -> f32 {
+    f32::from((v * 32767.0).round().clamp(-32768.0, 32767.0) as i16 >> 8) / 127.0
+}
+
+/// The left stick's throw (x, y) with the dead zone taken out, its length 0 to `MOVE_LONGEST`: the
+/// length from the axes as bytes, the direction the stick's own (a corner of left and up is
+/// unskewed, walk-30 frames 2236-2419; read as bytes it would lean 0.2 degrees toward the left).
+fn move_throw(left: [f32; 2]) -> [f32; 2] {
+    let raw = left[0].hypot(left[1]);
+    let len = byte_axis(left[0]).hypot(byte_axis(left[1]));
+    if len <= MOVE_DEAD_ZONE || raw == 0.0 {
+        return [0.0; 2];
+    }
+    let k = ((len - MOVE_DEAD_ZONE) / (1.0 - MOVE_DEAD_ZONE)).min(MOVE_LONGEST) / raw;
+    [left[0] * k, left[1] * k]
+}
+
 /// The lean on the ground (game x, z; its length 0 to 1) of the left stick against a camera of
 /// yaw `yaw` degrees.
 pub fn lean(left: [f32; 2], yaw: f32) -> [f32; 2] {
-    let [x, y] = dead_zone(left, MOVE_DEAD_ZONE);
-    let push = (-left[0]).max(-left[1]).clamp(0.0, 1.0);
-    let (x, y) = (x * (1.0 + (MOVE_NEGATIVE - 1.0) * push), y * (1.0 + (MOVE_NEGATIVE - 1.0) * push));
+    let [x, y] = move_throw(left);
     let (s, c) = yaw.to_radians().sin_cos();
     [s * y - c * x, c * y + s * x]
 }
@@ -310,16 +328,19 @@ mod tests {
 
     #[test]
     fn the_dead_zone_is_taken_out() {
-        assert_eq!(dead_zone([6000.0 / 32767.0, 0.0], MOVE_DEAD_ZONE), [0.0; 2]);
-        let m = dead_zone([12000.0 / 32767.0, 0.0], MOVE_DEAD_ZONE)[0];
+        assert_eq!(move_throw([6000.0 / 32767.0, 0.0]), [0.0; 2]);
+        let m = move_throw([12000.0 / 32767.0, 0.0])[0];
         assert!((m * 600.0 - 108.9).abs() < 0.5, "{m}");
         let m = dead_zone([-20000.0 / 32767.0, 0.0], LOOK_DEAD_ZONE)[0];
         assert!((m * 90.0 / 60.0 + 0.8).abs() < 0.01, "{m}");
-        // A square's corner is a full lean; pushed left or down a hair more (walk-30 frames 2236-2262).
-        let [x, y] = dead_zone([1.0, 1.0], MOVE_DEAD_ZONE);
-        assert!(((x * x + y * y).sqrt() - 1.0).abs() < 1e-5);
-        let [x, y] = lean([-1.0, 1.0], 0.0);
-        assert!(((x * x + y * y).sqrt() - MOVE_NEGATIVE).abs() < 1e-5);
+        // The axes are bytes: full right is 127/127, full left 128/127 (walk-30 frames 2236-2262, 3100-3299).
+        assert_eq!(byte_axis(1.0), 1.0);
+        assert_eq!(byte_axis(-1.0), -MOVE_LONGEST);
+        assert_eq!(move_throw([1.0, 0.0]), [1.0, 0.0]);
+        assert!((move_throw([-1.0, 0.0])[0] + MOVE_LONGEST).abs() < 1e-5);
+        // A corner of left and up is the longest lean, along the stick (frames 2236-2262).
+        let [x, y] = move_throw([-1.0, 1.0]);
+        assert!((x.hypot(y) - MOVE_LONGEST).abs() < 1e-5);
     }
 
     #[test]

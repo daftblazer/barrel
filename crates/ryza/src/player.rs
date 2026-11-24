@@ -19,6 +19,9 @@ pub const FULL_SPEED: f32 = 600.0;
 // STAND-IN: The lean that starts a run is chosen, not read from the game.
 /// The lean at and above which she runs.
 pub const RUN_LEAN: f32 = 0.6;
+/// How far past half a turn (radians; 0.057 degrees, a stand-in: the walk's two half turns are
+/// 179.2 and 180.0 degrees) the turn still goes the positive way.
+const HALF_TURN_SLACK: f32 = 1e-3;
 // Measured: walk-30 frames 2150-2170 (her facing turns 0.2 rad, 11.46 degrees, every frame).
 /// How fast she turns toward where she goes, radians a second (0.2 a frame at 60 a second).
 pub const TURN_RATE: f32 = 12.0;
@@ -294,7 +297,9 @@ impl Player {
             let mut d = (want - self.turn).rem_euclid(std::f32::consts::TAU);
             // Measured: walk-30 frames 2560-2575 and 2780-2795 (179.2 degrees the negative way
             // and 179.99 the positive way: the short way, however near half a turn).
-            if d > std::f32::consts::PI {
+            // A half turn within `HALF_TURN_SLACK` goes the positive way too (the stick's direction
+            // is only known to the float's rounding there).
+            if d > std::f32::consts::PI + HALF_TURN_SLACK {
                 d -= std::f32::consts::TAU;
             }
             self.turn += d.clamp(-TURN_RATE * dt, TURN_RATE * dt);
