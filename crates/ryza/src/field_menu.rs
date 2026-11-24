@@ -487,6 +487,10 @@ pub enum ItemPage {
 /// pulse runs; `field-menu-pages`: A on 2000, the page's parts at 0.53 of their slide on 2050, so they began on 2041).
 pub const ITEM_PAGE_LATER: f32 = 41.0;
 
+/// Frames from A on the Guide button to the cursor ring's loop beginning again (it shows after the page: `field-menu-pages` 3360 with
+/// the ring 100 frames into its loop, 3410 at 29 (the opacity 100/255): 3260, A on 3160). STAND-IN: one capture (the Container's and tools' rings after their pages did not move with it).
+const GUIDE_RING_AT: f32 = 98.5;
+
 /// Frames from B on the Container page to the menu's coming back, and to the page's going: at once (`field-menu-pages` 2150: B, the page still
 /// whole but for its cursor; 2160: only the menu, at 0.027 of its fade, so its first frame was 2151). STAND-IN: one frame.
 pub const ITEM_PAGE_OUT: f32 = 1.0;
@@ -649,6 +653,9 @@ impl Nav {
                 TOOLS => ItemPage::Tools,
                 _ => ItemPage::Guide,
             };
+            if self.cursor == GUIDE_BUTTON {
+                self.ring_from = at + GUIDE_RING_AT;
+            }
             self.pick = Some(Pick { first: f32::MAX, card: 0, since: at, confirmed: Some(at + ITEM_PAGE_LATER), leaving: None, slot: 0, slot_since: None, status: false, row: 0, items: Some(items), cell: 0 });
         }
     }
