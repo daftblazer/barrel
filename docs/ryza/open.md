@@ -2916,8 +2916,8 @@ the walk's stall and the free play's draws. Rows `gather3-*` and the changed `ga
   from the old line's width (7 entries) to the new over 6.4 frames (`gather-rasen2` 3450: 0.625 of the way four frames into the fade). The fade's first
   step is 3447 as 2591's was (121 frames after the swing's action ended, 3326; the rows' spans end at 3325, the pad's two frames of lag
   counted in). `HelpBar::step_swung`, `State::swung`; the rows 3450, 3460 and 3490 count 0.
-- *The walk.* Three findings, all from the dumps (positions at 2004, 2010, 2470, 2960, 3000 within 2.2, 1.0, 5.5, 8.0, 8.0 units; part 2 had 2.3, 6.5,
-  5.0, 6.7 and 27):
+- *The walk.* Three findings, all from the dumps (`gather2-walk-first` 2.6 over 1950 to 2010, her stop at 2010 itself 1.0; `-2470` 5.5, `-2960` 8.0 and `gather3-walk-3000` 8.0
+  units; part 2 had 2.3, 6.5 at 2010, 5.0, 6.7 and 27 at 3000):
   the gimmicks' bodies are circles, not polygons (her x along the first honeycomb's slide, 33354.0 to 33354.8 over z 30022 to 30041, is a circle of 91.3
   round the comb's centre; `Wall::thick`, a wall of no length standing a radius out: a post); her top is a hemisphere to the walls (a wall that starts
   within the cap's height reaches only as far as the cap does there: the tilted trunk `A21-COMMON-TREE-ELM-03_ccap4` starts 77 above the ground and
@@ -2939,11 +2939,13 @@ is a floor; the free play's schedule is the capture's (the emitters' bases, visi
 none and keeps its own clock-seeded state.
 
 **Left.**
-- The walk from 3000 on: `gather2-walk` 3082, 3100, 3127 and 3159 are 76, 76, 75 and 75 off (`gather3-walk-3000`: 8.0). The game slows 7 frames at about
-  (32365, 30055), where she meets the signpost `A21-S06-POST` (a box 93 by 71 by 1117 turned 19.6 degrees at (32304, 30119), `_cbox` with a placement offset
-  of (2.7, 87.7, 5.2)): the game's east face is where Barrel's is (within 0.4 unit) but runs 20 units further south than Barrel's box ends, and Barrel
-  rounds the corner earlier. A box 1.45 times as long along its z (or a centre moved 20 along it) gives 11 to 16 at 3082, though a few units either way
-  of that gives 30 to 80: the slide round that corner is too sensitive to fit without the game's own shape (a capsule swept against the box?).
+- The walk from 3000 on: 3082 to 3159 are 76 off (`gather3-walk-3000` is 8.0). The game is slowed for 12 frames (3014 to 3026, 1.7 units a frame) sliding down
+  the east face of the signpost `A21-S06-POST`'s box and round its south corner, 22 units further than Barrel's; the face is where Barrel's is (within
+  0.4 unit). Barrel's box leans: the instance's turn is (0.044, 0.342, 0.024) rad, so the face's two triangles are a bottom edge and a tip, and at her
+  height the south end of the face has no wall: she leaves the face at 3015 and runs on 74 units ahead. With the box upright (the yaw alone, tried
+  and not kept: the light poles' boxes are turned by their x rotation) she slides to 3018 and 3082 is 60 off, the rest of it a z 8 units south of the
+  game's from 2956 on, where the game's stride dips to 9.1 and turns 2.8 degrees at (32745, 30063) for something Barrel has no wall for. The leaning
+  box's wall at its ends (a triangle's tip is not a wall: `engine::walk::wall`) is the thing to fix first, shared with Escha.
 - Which gimmicks get an icon (the `0x1411efbb8` table's kinds against the types: a notice board, a shop, a gathering place, a call), its fade and how the
   game picks the nearest (only one door of the captures); the icon's alpha was 1 in every frame captured.
 - The staff's ring: that it follows the prompt rather than the swing's reach, and its end (3190 shows it, 3200 does not).
