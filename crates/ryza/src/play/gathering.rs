@@ -201,7 +201,8 @@ impl Live {
     /// that hits nothing makes the plan too (`plan()`: its sounds), with no pictures.
     pub(super) fn step(&mut self, points: &Points, at: [f32; 3], turn: f32, tick: f32, buttons: (bool, bool), knowledge: &mut Vec<i32>, events: &[usize]) -> Option<Vec<usize>> {
         let (confirm, swing) = buttons;
-        if self.plan.as_ref().is_some_and(|p| tick - p.press > POPUPS_OVER) {
+        // A swing that hit nothing is over with its action; a gathering when its popups are.
+        if self.plan.as_ref().is_some_and(|p| tick - p.press > if p.found.is_empty() { SWING_ACTION_FROM + SWING_ACTION } else { POPUPS_OVER }) {
             self.plan = None;
         }
         if self.plan.is_some() {
@@ -247,8 +248,8 @@ impl Live {
     /// The popups at `tick`.
     pub(super) fn show(&self, tick: f32) -> barrel_ryza::field_hud::Gathering {
         match &self.plan {
-            Some(g) => barrel_ryza::field_hud::Gathering { near: Some(tick - g.near), pressed: Some(tick - g.press), found: g.found.clone(), notice_at: g.notice_at(), leave_at: g.leave_at(), staff: g.tool == Tool::Staff },
-            None => barrel_ryza::field_hud::Gathering { near: self.near.map(|n| tick - n), staff: self.staff_near, ..Default::default() },
+            Some(g) if !g.found.is_empty() => barrel_ryza::field_hud::Gathering { near: Some(tick - g.near), pressed: Some(tick - g.press), found: g.found.clone(), notice_at: g.notice_at(), leave_at: g.leave_at(), staff: g.tool == Tool::Staff },
+            _ => barrel_ryza::field_hud::Gathering { near: self.near.map(|n| tick - n), staff: self.staff_near, ..Default::default() },
         }
     }
 
