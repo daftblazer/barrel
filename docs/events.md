@@ -1917,3 +1917,10 @@ runner's are `0x140479820` and `0x14047c660`):
   half-second `u49` fades hold 33 frames (the opening's hold 32); `u76 {1, 0, 163, ...}` shows the picture `ipu\help_h_075` (numbers from
   163 on read as `help_h_<n - 88>`; the table that names them is not read). The field is then free play from 14862 (the opening's last
   `q5` for slot 0 is her start).
+
+**Sound commands of the opening (`opening-key4`'s `hooks.log`, `tools/ryza_cues.py`).** `u3 {5000 + n, percent, 0, 0}` (`ECT_SOUND_BG_PLAY`) asks
+for the music whose `stream.xml` tag starts `BGM<n, 5 digits>`; `u4` and `u5` (`_STOP`, `_FADEOUT`) stop the channels on their own frame; `u1`
+(`ECT_SOUND_SE_PLAY`) `{row, ...}` and `s124` `{character, row, ...}` play the effect that is row `row` (counted from 0) of `sfx.xml`
+(368 = `SE_FLD_065_OBJ_SEA`, 294 = `SE_EVE_034_DESK`: the one use of `s124` in the opening); the button that closes a line or hands its box on
+plays `SE_SYS_004_MESSAGE`. `s62`'s first operand is not a row (the opening's `s62 {543, 30, 30, 30}` plays nothing). The voice of a line is
+asked for by a hash the tables do not give (the voice container's ids are not a hash of anything tried).

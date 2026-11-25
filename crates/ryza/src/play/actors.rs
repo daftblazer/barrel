@@ -340,11 +340,13 @@ pub fn cover_white(stage: &barrel_engine::stage::Stage) -> f32 {
 }
 
 pub fn advance(play: &mut Playback, seconds: f32) {
+    // The stage's clock adds a 32-bit frame time each tick and its sums drift (a line's start fell on .8, .7, ... .5 of a frame as
+    // the opening went on, and the 13,000th frame took two ticks at once): each tick lands on its frame's own moment, a whole
+    // number of 60ths (a run from `--opening-at` catches up with the same clock as one that plays through).
     while play.stage.time + barrel_engine::stage::FRAME * 0.5 < seconds {
         play.tick();
+        play.stage.time = (play.stage.time * 60.0).round() / 60.0;
     }
-    // The stage's clock adds a 32-bit frame time each tick and its sums drift (a line's start falls on .8, .7, ... .5 of a frame as
-    // the opening goes on and the 13,000th frame takes two ticks at once): the clock is the frame's own moment.
     if (play.stage.time - seconds).abs() < barrel_engine::stage::FRAME * 0.5 {
         play.stage.time = seconds;
     }

@@ -618,6 +618,11 @@ mistake for a day). `u46` in the events does not play its movie yet.
   and right along a row, and Q and E (the pad's shoulder buttons; offscreen `--menu-keys` `lt` and `rt`, also `lb`
   and `rb`) the previous and next character round the party: Barrel's choice, the game's own keys on the PC are not read.
 
+- **Ryza's arrival after the opening shows the autosave mark and the story marquee, and writes no save.** The game saves as the free play begins
+  and tells that an entry was added to the story (docs/ryza/open.md, "The opening (P5b)", part 4); Barrel draws both (the spinner at the top left, the
+  marquee's scrolling text) but, as everywhere, never writes the original's saves. The story entry named is the first one (the game takes it from the
+  story's state).
+
 - **Ryza's run loop enters at a fitted phase.** When her run motion takes over from the start
   motion it begins 0.35 s into its loop (`player::RUN_LOOP_PHASE`, a stand-in: the game's
   hand-over is not read); with 0 the pelvis's cloth pins were 3.1 cm off the game's over the

@@ -411,6 +411,12 @@ time. `opening-key2`'s commands (`ryza-recomp/work/scenarios/opening-key2/comman
 (p 2, s 38, t 9, u 3, w 9); the unpaired are `s9` (the characters' walks, not read), the next
 event's start and a few waits (docs/ryza/open.md, "The opening (P5b)", part 2).
 
+Every-frame keys (`opening-key4`, 13120 to 15220): `barrel-parity diffs KEY a-b TRACE 0 INDEX` diffs every frame of a range against one Barrel run
+(`PARITY_LINES=1` prints the differing quads), `barrel-parity bquads TRACE a-b` prints Barrel's own frames as `quads` prints the game's, and
+`tools/cuediff.py KEY BARREL` compares two cue logs within a frame (`tools/ryza_cues.py` makes the game's from `hooks.log`).
+`tools/cmddiff.py` counts a pair as on the offset within a frame; of `opening-commands3`'s 926 pairs 850 are exactly at 1600, 15 a frame off and 61 more
+(docs/ryza/open.md, "The opening (P5b)", part 4).
+
 `barrel-tool ryza-commands INSTALL opening` plays the opening and the help event after it (`xx01_150`) as one run, the frames
 the opening's: against `opening-key3` (A every 120 frames to 23975, `BARREL_EVENT_PRESSES=2135:120:23975@1600`) 926 of 1118 commands
 through 15000 pair at 1600 with the same 61 off (`opening-commands3`; the help event's 19 are all on the offset). The 2D frames from

@@ -787,7 +787,7 @@ log into cue lines (`<game frame> <kind> <hash>`), the answer key (`work/scenari
 - **Effects** come from the `SE_*.ktsl2asbin` banks, loaded whole at the start (so file
   reads never show them).
 
-Barrel's side (2026-11-20, `crates/ryza/src/{sound,music}.rs`, `crates/formats/src/ktsr.rs`):
+Barrel's side (2026-11-20; the opening's own sound is in "The opening (P5b)", part 4; `crates/ryza/src/{sound,music}.rs`, `crates/formats/src/ktsr.rs`):
 `BARREL_TRACE_CUES=FILE` writes the same lines. One offscreen run steps the whole path and
 matches the key exactly (`--title --title-saves --saves DIR --title-press 692 --title-keys
 857:choose,1057:ok --into-field --frames 1260`; the log has the 7 lines above, plus a
@@ -1046,7 +1046,7 @@ opening's last `q5` put her (slot 0: 33488, 5951, 31691, yaw -327 degrees = 33).
 
 Left (STAND-INs named in the code):
 
-- **The arrival's popups, 14862 to about 15205**: the game shows, over the field's HUD, a panel (`a21_battle.g1t#4`, a nine-patch of 24
+- (Part 4 builds the arrival's popups and the help bar's first plate, and works the arrow's clock: below.) **The arrival's popups, 14862 to about 15205**: the game shows, over the field's HUD, a panel (`a21_battle.g1t#4`, a nine-patch of 24
   quads from 534 to 1392 across and -109 to 261 down at 14955, sliding), its text (up to 137 glyphs) and the autosave mark (a spinner of
   12 quads of `a21v2_saveload.g1t` at the top left); Barrel draws none of them (no area banner either: the game has none here). Rows
   at those frames are not at 0 (118 mismatches at 14865, 25 at 15205). The help bar's first plate (14865: 5 quads) is a frame or two
@@ -1060,7 +1060,95 @@ Left (STAND-INs named in the code):
   key's; the view-projection is 1.04 off (the game's free camera behind her: `--ryza` gives the field's default); the townsfolk
   (`npc22a`, `npc22b`, `npc27a` and others) are 1,800 to 4,500 units off in a few bones and one object 42,000 off (a new game's
   people stand elsewhere than the story-state default puts them: `standing_npcs` with the opening done); not fixed.
-- 12265's text opacity and 13145's fade a frame late (part 2) are not touched.
+- 12265's text opacity is not touched; 13145's fade a frame late was the stage clock's drift (part 4).
+
+### The opening, part 4: the arrival's popups, the tutorial arrow's clock and the opening's sound (13120 to 15221)
+
+`opening-key4` (ryza-recomp `scenarios/opening-key4`: the same input as `opening-key3`, but **every frame** from 13120 to 15220, with
+`hooks.log`; its commands are `tools/cmdlog.py --hex hooks.log`, its sound log `tools/ryza_cues.py hooks.log stream.xml sfx.xml`) is the
+key. Two parity tools help with every-frame keys: `barrel-parity diffs KEY a-b TRACE 0 INDEX` (one line a frame, `PARITY_LINES=1` adds the
+differing quads) against one Barrel run (`--opening --opening-at a --frames n` with `BARREL_TRACE_DRAWS`; the free play from 14862), and
+`barrel-parity bquads TRACE a-b` (Barrel's own frames, printed as `quads` prints the game's). A frame of the arrow is found from the two
+turning quads' corners (an arrow's turn mod 90 degrees is its clock mod 60 ticks).
+
+Rows (the local checks): `opening-arrival-*` (22 frames of 14862 to 15219), `opening-arrow-*` (the tutorial box's arrow, lines, plates and text on 28 frames of
+13141 to 14740, each a run from `--opening-at F`; the frame before a press, 13294, shows the plate in a run that plays through and not in a run from there,
+an open difference between the two), `opening-cues` and `opening-cues-free-play`.
+
+**The arrival (14862 to 15221): every frame of the key is at 0 in 2D** (23,699 mismatches over the 360 frames before; rows
+`opening-arrival-*`). After the opening the game saves and tells the story moved on, over the field's HUD
+(`crates/ryza/src/field_hud/arrival.rs`):
+
+- **The story marquee** (`fm_marquee` of `uil_a21_fm01.xml`): a plate (`gen_a21_field01_marquee`, `a21_field.g1t#3`) that slides in from
+  above by `anm_common_slide_in_top` (30 frames; colour and place both on `easing_outcubic`, opacity rounded to a byte, the clock two
+  frames ahead of the field's), the nine-patch of `gen_a21_battle05_mask_sl` (`a21_battle.g1t#4`, 24 quads) as its alpha mask (drawn as
+  `Clip`s that clip nothing: the quads are in the trace, not on the screen; the text, which falls inside the mask, is not clipped) and the
+  text `"<STR1>" added to Story.` (string 196612 of `strcombineall`, `STR1` the story summary's title, string 6160385) in dark red, which
+  **scrolls**: it comes in from the right at 30 pixels a frame (of 1080 lines), rests at its centred place from 14939 to 15151, goes out to
+  the left at the same speed for 37 frames, and the game draws no glyph that is wholly off the screen (the 3, 4, 7, 9 ... glyphs of the
+  key's first frames are that cull); the text is gone from 15190, as the plate slides out the same animation backwards from 15189.
+  STAND-INs (named in the code): the clocks (the marquee starts 2 frames before the field's first and holds to its 329th tick; the text's
+  place and times), the text 2 layout pixels left of its node's centre (the game's text-width measure is not read), the title being the first
+  one (the game takes it from the story's state).
+- **The autosave mark** (`loading_1` of `uil_a21_autosave.xml`): the saving spinner at the top left (36, 47; scale 1.2), faded in by
+  `anm_common_fade_in` from the frame before the field's first, held to its 166th tick and faded out by `anm_common_fade_out` (15 frames
+  each); gone at 15042. It is the boot's autosave window's spinner (`crates/ryza/src/spinner.rs`, factored out of `boot.rs`; the boot rows
+  pass as before). Its glows loop every 51 frames; on the wrap frame the key shows the first step (41 of 255) twice running where the
+  boot's plain restart showed 0 (`Spinner::glow_time`: 14912, 14963, 15014).
+  **Barrel saves nothing** (it never writes the original's saves): the mark is drawn, no file is written (docs/engine.md, "Deliberate differences").
+- **The help bar's first plate** arrives the way the key has it, not as the first appearance does: its fade starts on the field's 4th frame
+  (14865: 1/15), the full line shows at once and the plate grows linearly over 12.03 frames from 5.03 frames before the fade
+  (`HelpBar::arriving_at_once`, `quick`: 785 of 1191.5 pixels on 14865, whole on 14871).
+- Draw order: the marquee first (under everything), the spinner last. `field_hud::State::arrival` (set for the opening's free play) switches
+  both on.
+
+**The tutorial box's arrow and lines** (the two turning quads of the tutorial box, `a21_balloon_frame`, and what moves with them; every frame
+of 13141 to 14763). **2D 13120 to 14859: about 14,000 mismatches in 1,740 frames before this part, 290 after** (the five frames below);
+the rules the key's every frame gave, built in `engine::stage::Stage` (`tutorial_clock`: only the Ryza opening sets it) and `talk.rs`:
+
+- the tutorial box's arrow has a clock of its own: it counts the tutorial lines' frames only (a tutorial line: under a tutorial picture or a
+  system line, speaker -1), not the talk lines before them, and **a picture hiding (`u76` 0) starts it afresh** (the room tutorial's first line
+  has no tutorial line before it: 13141 shows 3; the first line after the picture hid at 13779 shows 1; the lines after the pictures coming
+  up at 13447 and 14080 continue the clock: the old rule, a reset when a picture comes, was backwards);
+- the clock loses a tick on the frame the button hands the box to the next line (13175 shows the same turn as 13174; 14255, 14375, 14495
+  and 14615 too) and none on a button that closes the last line; a closed line's fade out adds the tutorial's 30 frames (the talk lines' 16);
+- a joined line (the box handed on) takes it a frame after the button (`TUTORIAL_BETWEEN_FRAMES` 2 to 1: 13176, 13536, 14256, ...);
+- **the stage's clock drifted**: it adds a 32-bit frame time each tick, and the sums drifted by a third of a frame over the opening (a line
+  started on .8, .7 ... .5 of a frame; the 13,000th frame took two ticks and the arrow skipped one). `actors::advance` now lands each tick on
+  its frame's own moment (a whole number of 60ths), so a run from `--opening-at F` catches up with the clock a run that plays through has. This and the
+  rules above fixed most of the ±1 frames of part 2's lines;
+- a lone row of a tutorial box is centred by the box its glyphs fill: a row with a button's icon (rising 7 font units over the letters)
+  stands 7/3 pixels higher, a row of letters does not (part 3's constant was fitted to one row with an icon);
+- the hints' plate comes 31 frames into a tutorial line, stays through the frame of the press, and for a system line with no picture under
+  it fades in over 15 frames (13906 to 13920);
+- the first command after the picture 1a comes up (13447) waits no extra frame (`NO_HOLD_PICTURE`; 1b's and the help page's keep it), and an
+  action that changes the field holds its first wait whole (13779: 0.1 s holds 5 frames where other inline actions' hold 4).
+
+Left in 2D (all five frames of 13120 to 14859): a tutorial box coming in after a gap is drawn once at 1/30 of its fade a frame before the
+frame its clock gives (13329, 13478, 14174; at 13878 the first frame itself is at 1/30 and the next at 4/30), and the free play's HUD for one
+frame at 13845 (the game starts the field before the event's picture; the HUD is not in the opening). The arrow, text and plate are at 0
+on every other frame.
+
+**The opening's sound** (`sound::commands`, `schedule_commands`, `event_change`; row `opening-cues`: 55 of the key's 58 non-voice cues within a
+frame, none extra; `tools/cuediff.py KEY BARREL`): the opening's music is its commands': `u3 {5000 + n}` plays the stream whose tag
+starts `BGM<n, 5 digits>` (the title's music is stopped by the first `u5`), `u4`/`u5` stop, `u1`/`u8 {row}` and `s124 {character, row}` play row
+`row` of `sfx.xml` counted from 0 (the key has two: 368 `SE_FLD_065_OBJ_SEA` and 294 `SE_EVE_034_DESK`), each button that closes a line
+or hands the box on plays `SE_SYS_004_MESSAGE` (`Stage::lines_closed`; a frame after the step's time), the help event's start stops
+the channels the frame before and starts the field's music (`event_change`: 13845 and 13846), and the free play starts the field's music
+at 14862 and `SE_SYS_013_MARQUEE` 77 frames in, as the marquee's text comes to rest (`opening-cues-free-play`). In a window these play
+(the effects stay silent: the banks' codec is not decoded). Left: the **36 voice cues** (the voice container has no table and a line's clip
+hash is not a hash of anything tried: CRC32, FNV, Jenkins, Murmur3 of the tag or file names did not give stream.xml's hashes either), the stops at
+3701, 8115 and 11905 (8115 and 11905 come with `q4 71000002`, a field change, as do 1603 and 13779 which have none).
+
+**Commands.** `opening-commands3` is unchanged (926 of 1118 paired, 61 off): the 61 pairs are stretches of one thread early by 1 to 3 frames
+until the next button resynchronises it (6361 to 6520, 10316 to 10433, 12102 to 12353, 12547 to 12593, 12879 to 12953, 13017 to 13046:
+`pairs at exactly 1600` went 824 to 850 of 926, the one-frame ones 41 to 15 with the two fixes above). Found causes: 12953's fade of one second
+holds 64 frames where the rule gives 63 (13017's `u76` is then a frame early; the "a frame after a picture" STAND-IN hides it there:
+that is why it stays for 1b); 6361's `s8` takes 51 frames where Barrel gives 50; the 10316 and 12102 stretches begin at a `p3` wait and an
+`s1` (the character queue's end, "two frames on"). The unpaired `s9` walks (100 and more) are not built.
+
+Left (all named in the code or here): the five 2D frames above; the part 3 list (the free play's 3D, 12265's text opacity); the voices and
+three stops; `BARREL_WINDOW_SHOT` frames past about 10,000 of a window run (not looked at).
 
 ## Loops that take 50 or 51 frames
 
