@@ -5,12 +5,61 @@
 use barrel_engine::event::{Player, Timed};
 use barrel_engine::stage::{Playback, Stage};
 use barrel_formats::ebd::{Ebd, OperandTable};
+use barrel_formats::ebm::Message;
 
 /// An event's script in the archives: its chapter is the name's first part (`mm00_010` is in
 /// `mm00`). The scripts are under `event_jp` only; the languages differ in their messages.
 pub fn path(name: &str) -> Option<String> {
     let chapter = name.split('_').next().filter(|c| !c.is_empty() && c.len() < name.len())?;
     Some(format!("\\event\\event_jp\\{chapter}\\event_{name}.ebd"))
+}
+
+/// What an event's lines need: the messages (the chapter's `event_message_<name>.ebm`, see
+/// [`messages`]) and the button that advances them. Without presses a line takes no time.
+#[derive(Clone, Debug, Default)]
+pub struct Talk<'a> {
+    pub messages: &'a [Message],
+    pub buttons: Option<barrel_engine::event::Buttons>,
+}
+
+/// The game's closing time of a line after the button, in frames: the line's fade out and a few
+/// more before the next command (`u17`'s end on 17 frames after the press, the next command a
+/// frame on; the key's `opening-key2`, every line of the talk).
+pub const LINE_CLOSE_FRAMES: f32 = 18.0;
+/// The same under a tutorial picture (`u76`): 31 frames to the line's end, one more to the next
+/// command, as the key's room tutorial has it.
+pub const TUTORIAL_CLOSE_FRAMES: f32 = 32.0;
+
+/// The buttons of a scripted run: presses at the capture frames `frames`, for an event whose
+/// first command is on capture frame `start`.
+pub fn buttons_at(frames: &[i32], start: i32) -> barrel_engine::event::Buttons {
+    barrel_engine::event::Buttons {
+        presses: frames.iter().map(|&f| (f - start) as f32 / 60.0).collect(),
+        close: LINE_CLOSE_FRAMES / 60.0,
+        tutorial_close: TUTORIAL_CLOSE_FRAMES / 60.0,
+    }
+}
+
+/// The scripted presses `BARREL_EVENT_PRESSES` names, `FIRST:STEP:LAST@START` (capture frames: a
+/// press every STEP frames from FIRST to LAST, the event's first command on START), as
+/// [`buttons_at`] takes them. None when it is not set or does not parse.
+pub fn buttons_from_env() -> Option<barrel_engine::event::Buttons> {
+    let v = std::env::var("BARREL_EVENT_PRESSES").ok()?;
+    let (list, start) = v.split_once('@')?;
+    let n: Vec<i32> = list.split(':').map(|x| x.parse().ok()).collect::<Option<_>>()?;
+    let [first, step, last] = n[..] else { return None };
+    if step <= 0 {
+        return None;
+    }
+    let frames: Vec<i32> = (first..=last).step_by(step as usize).collect();
+    Some(buttons_at(&frames, start.parse().ok()?))
+}
+
+/// An event's messages in the game's language (`\event\event_en\<chapter>\event_message_<name>.ebm`).
+pub fn messages(install: &crate::install::Install, name: &str) -> Result<Vec<Message>, String> {
+    let chapter = name.split('_').next().ok_or("event name")?;
+    let bytes = install.read(&format!("\\event\\event_en\\{chapter}\\event_message_{name}.ebm")).map_err(|e| e.to_string())?;
+    barrel_formats::ebm::parse(&bytes).map_err(|e| format!("{name}: {e}"))
 }
 
 // STAND-IN: Events are read without their messages; the real thing is the game's message tables playing each line.
@@ -49,7 +98,7 @@ pub fn clock_pick(seconds: u32, low: i32, high: i32) -> i32 {
 /// as the game does: a pick from the clock's seconds (`clock` at the event's start, plus the
 /// waits so far), a wait anywhere in its range.
 pub fn schedule_drawn<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<Vec<Timed<'a>>, String> {
-    Ok(drawn_player(event, given, clock, until)?.schedule())
+    Ok(drawn_player(event, given, clock, until, &[])?.schedule())
 }
 
 /// A command the player took, as the script has it: when, in which action, and its words (the
@@ -59,14 +108,18 @@ pub type Taken = (f32, usize, Vec<u32>);
 
 /// [`schedule_drawn`] with the commands taken ([`Taken`]) from the same run.
 pub fn schedule_drawn_taken<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<(Vec<Timed<'a>>, Vec<Taken>), String> {
-    schedule_drawn_taken_with(event, given, clock, until, None)
+    schedule_drawn_taken_with(event, given, clock, until, None, Talk::default())
 }
 
 /// [`schedule_drawn_taken`] with `lengths` (see [`motion_lengths`]): `s36` then waits for its motion.
-pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32, lengths: Option<barrel_engine::event::MotionLength<'a>>) -> Result<(Vec<Timed<'a>>, Vec<Taken>), String> {
+pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32, lengths: Option<barrel_engine::event::MotionLength<'a>>, talk: Talk<'a>) -> Result<(Vec<Timed<'a>>, Vec<Taken>), String> {
     let table = OperandTable::ryza();
     let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
-    let player = drawn_player(event, given, clock, until)?;
+    let player = drawn_player(event, given, clock, until, talk.messages)?;
+    let player = match talk.buttons {
+        Some(b) => player.buttons(b),
+        None => player,
+    };
     let (steps, taken) = match lengths {
         Some(l) => player.motion_length(l).schedule_traced(),
         None => player.schedule_traced(),
@@ -81,7 +134,7 @@ pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, 
     Ok((steps, taken))
 }
 
-fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<Player<'a>, String> {
+fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32, messages: &'a [Message]) -> Result<Player<'a>, String> {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     let given = Rc::new(RefCell::new(given.iter().copied().collect::<std::collections::VecDeque<f32>>()));
@@ -104,7 +157,7 @@ fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Re
         s
     };
     let chance = barrel_engine::event::Chance { whole: Box::new(whole), seconds: Box::new(seconds) };
-    let player = Player::translated(event, &[], &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?;
+    let player = Player::translated(event, messages, &OperandTable::ryza(), barrel_formats::ebd_names::RYZA, barrel_formats::ebd_names::RYZA_SAME_AS_ESCHA).map_err(|e| format!("event: {e}"))?;
     Ok(player.counted_waits().inline_actions().chance(chance).until(until))
 }
 
@@ -112,8 +165,8 @@ fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Re
 /// (ryza-recomp's `tools/cmdlog.py --hex`): the time in seconds, the action, and the command's
 /// words as the script has them (the word, then its operands). `given` are the random commands'
 /// numbers in the order asked for (the lowest after them) and `until` where a looping event stops.
-pub fn commands(event: &Ebd, given: &[f32], until: f32, lengths: Option<barrel_engine::event::MotionLength<'_>>) -> Result<Vec<Taken>, String> {
-    Ok(schedule_drawn_taken_with(event, given, 0, until, lengths)?.1)
+pub fn commands<'a>(event: &'a Ebd, given: &[f32], until: f32, lengths: Option<barrel_engine::event::MotionLength<'a>>, talk: Talk<'a>) -> Result<Vec<Taken>, String> {
+    Ok(schedule_drawn_taken_with(event, given, 0, until, lengths, talk)?.1)
 }
 
 /// How long the motions of the event's characters last, for the player's `s36` waits: a

@@ -3526,7 +3526,11 @@ fn ryza_commands(root: &Path, event: &str, draws: &str) -> Result<()> {
     let install = barrel_ryza::install::Install::open(root)?;
     let path = barrel_ryza::event::path(event).ok_or(format!("{event}: not an event name"))?;
     let e = Ebd::parse(&install.read(&path)?).map_err(|err| format!("{path}: {err}"))?;
-    for (time, action, words) in barrel_ryza::event::commands(&e, &given, 600.0, Some(barrel_ryza::event::motion_lengths(&install)))? {
+    // BARREL_EVENT_PRESSES=FIRST:STEP:LAST@START plays the lines with the button pressed at those capture frames.
+    let name = path.rsplit('\\').next().and_then(|n| n.strip_prefix("event_")).and_then(|n| n.strip_suffix(".ebd")).unwrap_or(event);
+    let messages = barrel_ryza::event::messages(&install, name).unwrap_or_default();
+    let talk = barrel_ryza::event::Talk { messages: &messages, buttons: barrel_ryza::event::buttons_from_env() };
+    for (time, action, words) in barrel_ryza::event::commands(&e, &given, 600.0, Some(barrel_ryza::event::motion_lengths(&install)), talk)? {
         let words: Vec<String> = words.iter().map(|w| format!("{w:x}")).collect();
         println!("{} a{action} {}", (time * 60.0).round() as i64, words.join(" "));
     }

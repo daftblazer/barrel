@@ -1355,11 +1355,14 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // (numbers with commas between) gives the first draws in the order the event asks, for
     // playing what a run of the game drew; after them the clock draws as the game's does. An
     // hour of it is laid out.
+    // The opening's lines (the title's event has none).
+    let opening_messages = if a.opening { barrel_ryza::event::messages(&install, barrel_ryza::opening::EVENT)? } else { Vec::new() };
     let title_steps = match &title_event {
         Some(e) => {
             let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
             let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
-            Some(barrel_ryza::event::schedule_drawn_taken_with(e, &given, clock, 3600.0, a.opening.then(|| barrel_ryza::event::motion_lengths(&install)))?)
+            let talk = barrel_ryza::event::Talk { messages: &opening_messages, buttons: if a.opening { barrel_ryza::event::buttons_from_env() } else { None } };
+            Some(barrel_ryza::event::schedule_drawn_taken_with(e, &given, clock, 3600.0, a.opening.then(|| barrel_ryza::event::motion_lengths(&install)), talk)?)
         }
         None => None,
     };

@@ -342,6 +342,20 @@ pub const CHARA_ROT_MOVE_WAIT: u32 = 0x7300_001d;
 pub const CHARA_MOVE_PRE_WAIT: u32 = 0x7300_0015;
 /// `s18` (`ECT_CHARA_MOVE_SET`): `{character, position (6), extra, type, ...}`.
 pub const CHARA_MOVE: u32 = 0x7300_0012;
+/// `p2` (`ECT_MACRO_FIELDMAP_CAMERA_MOVE_WAIT`): waits for the field camera's moves.
+pub const CAMERA_MOVE_WAIT: u32 = 0x7000_0002;
+/// Frames the wait goes on after the move's length ([`CAMERA_MOVE_WAIT`]).
+const CAMERA_MOVE_SETTLE: f32 = 3.0;
+/// `t2` (`ECT_CAMERA_TIME_WAIT`): the camera waits, `{hundredths}`.
+pub const CAMERA_TIME_WAIT: u32 = 0x7400_0002;
+/// Ryza DX's `u24`: waits for the latest telop card (`u65`) to be shown.
+pub const NAME_CARD_WAIT: u32 = 0x7500_0018;
+// STAND-IN: The wait is a fixed 103 frames from the card; the real thing is the card layout's own animation (fitted to the three name cards of `opening-key2`, each 103 frames after its `u65`).
+/// How long after its `u65` a name card is shown, in frames.
+pub const NAME_CARD_FRAMES: f32 = 103.0;
+/// Ryza DX's `u76`: `{shown, ...}` shows (1) or hides (0) a tutorial picture; the lines under
+/// it close slower ([`Buttons::tutorial_close`]).
+pub const TUTORIAL_PICTURE: u32 = 0x7500_004c;
 /// `w1` (0x77000001): start action N (its operand) alongside the one running. Action 0 is the
 /// event's main script; it starts the others, each once, in order.
 pub const START_ACTION: u32 = 0x7700_0001;
@@ -491,6 +505,30 @@ pub enum Step<'a> {
     Command { action: usize, word: u32, name: Option<&'static str>, operands: &'a [u32] },
 }
 
+/// The presses of the button that advances a line, and how the game takes them (Ryza DX's
+/// events, docs/ryza/open.md "The opening (P5b)"): a line waits for the first press at or
+/// after the moment it comes up, then lasts `close` more seconds (its fade out) before the
+/// next command runs.
+#[derive(Clone, Debug, Default)]
+pub struct Buttons {
+    /// When the button goes down, in seconds from the event's start, rising.
+    pub presses: Vec<f32>,
+    /// From the press to the line's end, for a line of the story's talk.
+    pub close: f32,
+    /// The same while a tutorial picture is up (`u76` shows and hides it).
+    pub tutorial_close: f32,
+}
+
+impl Buttons {
+    /// The moment the next command runs after a line that came up at `shown`: the first press
+    /// at or after it plus the closing time. A line no later press ends is never left (infinity).
+    pub fn line_end(&self, shown: f32, tutorial: bool) -> f32 {
+        let close = if tutorial { self.tutorial_close } else { self.close };
+        // (a frame's slack for the float sums: a press a frame's thousandth early still counts)
+        self.presses.iter().find(|&&p| p >= shown - 1e-4).map_or(f32::INFINITY, |p| p + close)
+    }
+}
+
 pub struct Player<'a> {
     names: HashMap<u32, &'static str>,
     /// Each action's commands.
@@ -503,6 +541,8 @@ pub struct Player<'a> {
     /// How long [`Player::schedule`] holds each line: none by default, since the game waits
     /// for the player; [`Player::reading_time`] sets one for unattended playback.
     reading: Option<fn(&str) -> f32>,
+    /// The button presses that advance lines; see [`Player::buttons`].
+    buttons: Option<Buttons>,
     /// The motions' lengths for `s6`; without them `s6` takes no time.
     motion_length: Option<MotionLength<'a>>,
     /// The variable slots `t2/0x30` binds (slot number, 10000 and up, to a `Chara.xml` row):
@@ -604,7 +644,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, chance: None, until: None })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, buttons: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, chance: None, until: None })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -679,6 +719,9 @@ impl<'a> Player<'a> {
     /// alongside (docs/events.md, "Atelier Ryza DX's events").
     pub fn inline_actions(mut self) -> Self {
         self.inline_actions = true;
+        // A character's `p3` also waits for an action still running its last command (a motion wait):
+        // the starter's commands are taken out of time order here (opening: 8513).
+        self.finishing_waits = true;
         self
     }
 
@@ -705,6 +748,13 @@ impl<'a> Player<'a> {
     /// actions (in play it does nothing).
     pub fn replay(mut self, replay: bool) -> Self {
         self.replay = replay;
+        self
+    }
+
+    /// Holds each line until the button is pressed, as the game does ([`Buttons`]), in place of
+    /// the unattended reading time.
+    pub fn buttons(mut self, buttons: Buttons) -> Self {
+        self.buttons = Some(buttons);
         self
     }
 
@@ -1000,6 +1050,8 @@ impl<'a> Player<'a> {
         let mut caller: Vec<Option<(usize, f32)>> = vec![None];
         // Whether an inline action's first wait has been taken.
         let mut shortened: Vec<bool> = vec![false];
+        // Whether a thread has taken a character-queue wait (`s1`, [`CHARA_TIME_WAIT`]).
+        let mut queue_waited: Vec<bool> = vec![false];
         let mut out = Vec::new();
         let mut steps = Vec::new();
         // Each character's motion: (motion, division, started at, whether the command loops it).
@@ -1012,6 +1064,14 @@ impl<'a> Player<'a> {
         let mut scratch = crate::stage::Stage::default();
         let mut move_end: HashMap<u32, f32> = HashMap::new();
         let mut turn_end: HashMap<u32, f32> = HashMap::new();
+        // Whether a tutorial picture is up ([`TUTORIAL_PICTURE`]).
+        let mut tutorial = false;
+        // When the latest field camera move ends (the wait takes the latest one: the opening's 10673 has a 15 s yaw move still running) ([`CAMERA_MOVE_WAIT`]).
+        let mut camera_move_end = 0.0f32;
+        // When the latest telop card came up ([`EVENT_TELOP`]).
+        let mut card_at = 0.0f32;
+        // The `p3` (thread, command) last found busy and already logged.
+        let mut p3_logged: Option<(usize, usize)> = None;
         loop {
             // An action that has run all its commands lets its starter go on, from where its own
             // waits left the event's queue.
@@ -1049,6 +1109,11 @@ impl<'a> Player<'a> {
                     .map(|k| threads[k].0)
                     .fold(None, |m: Option<f32>, v| Some(m.map_or(v, |m| m.min(v))));
                 if let Some(ready) = busy {
+                    // The game's log has a wait once, from the frame it began.
+                    if p3_logged != Some((t, pc)) {
+                        taken.push((now, action, pc));
+                        p3_logged = Some((t, pc));
+                    }
                     threads[t] = (ready.max(now) + 1e-4, action, pc);
                     continue;
                 }
@@ -1059,7 +1124,11 @@ impl<'a> Player<'a> {
                 threads[t].2 = self.actions[action].len();
                 continue;
             }
-            taken.push((now, action, pc));
+            if p3_logged == Some((t, pc)) {
+                p3_logged = None;
+            } else {
+                taken.push((now, action, pc));
+            }
             match (c.word, c.operands) {
                 (VAR_RANDOM, [v, low, high, ..]) => {
                     let (low, high) = (*low as i32, *high as i32);
@@ -1091,6 +1160,40 @@ impl<'a> Player<'a> {
                 continue;
             }
             steps.clear();
+            if let (CHARA_TIME_WAIT, [_, hundredths, ..], true) | (CAMERA_TIME_WAIT, [hundredths, ..], true) = (c.word, c.operands, self.counted_waits) {
+                // Ryza DX's `s1`. The character's own queue waits, but the action's commands for it follow in order: the
+                // action holds. Its first wait is a frame short (STAND-IN, as `INLINE_SHORT`: fitted to
+                // the 11 waits of the opening's 6191 to 12850).
+                let held = counted_wait(*hundredths as i32 as f32 / 100.0) - if std::mem::replace(&mut queue_waited[t], true) { 0.0 } else { 1.0 / 60.0 };
+                threads[t].0 += held.max(0.0);
+            }
+            if c.word & !UNMAPPED == NAME_CARD_WAIT && self.counted_waits {
+                let end = card_at + NAME_CARD_FRAMES / 60.0;
+                event_clock[t] += (end - threads[t].0).max(0.0);
+                threads[t].0 = threads[t].0.max(end);
+            }
+            if c.word == EVENT_TELOP {
+                card_at = now;
+            }
+            if self.counted_waits {
+                // Ryza DX field camera moves (`t7/10` yaw, `t14/10` pitch, `t16/10` distance, `t18/10` target; Escha's `t3/10`, `t9/10`, `t11/10`, `t13/10` here) and `p2`, which waits for them.
+                let hundredths = match (c.word, c.operands) {
+                    (0x7410_0003 | 0x7410_0009 | 0x7410_000b, [_, h, ..]) | (0x7410_000d, [_, _, _, h, ..]) => Some(*h),
+                    _ => None,
+                };
+                if let Some(h) = hundredths {
+                    camera_move_end = now + counted_wait(h as i32 as f32 / 100.0);
+                }
+                if c.word == CAMERA_MOVE_WAIT && camera_move_end > threads[t].0 {
+                    // STAND-IN: 3 frames after the move's own length; fitted to the one `p2` of the opening (10673: a 4 s pitch move, the next command 243 frames on).
+                    let end = camera_move_end + CAMERA_MOVE_SETTLE / 60.0;
+                    event_clock[t] += end - threads[t].0;
+                    threads[t].0 = end;
+                }
+            }
+            if c.word == TUTORIAL_PICTURE {
+                tutorial = c.operands.first() == Some(&1);
+            }
             if let Some(n) = self.translate(action, c, &mut steps)
                 && n < self.actions.len() && !self.started[n] {
                     self.started[n] = true;
@@ -1098,6 +1201,7 @@ impl<'a> Player<'a> {
                     event_clock.push(now);
                     caller.push(None);
                     shortened.push(false);
+                    queue_waited.push(false);
                     if self.inline_actions {
                         let child = threads.len() - 1;
                         caller[child] = Some((t, threads[t].0));
@@ -1111,8 +1215,13 @@ impl<'a> Player<'a> {
                     threads[t].0 += held;
                     event_clock[t] += held;
                 }
-                let held = match (&s, self.reading) {
-                    (Step::Message { text, .. }, Some(f)) => f(&text.replace("<CR>", "")).max(0.0),
+                let held = match (&s, self.reading, &self.buttons) {
+                    (Step::Message { .. }, _, Some(b)) => {
+                        let end = b.line_end(threads[t].0, tutorial);
+                        event_clock[t] += end - threads[t].0;
+                        end - threads[t].0
+                    }
+                    (Step::Message { text, .. }, Some(f), None) => f(&text.replace("<CR>", "")).max(0.0),
                     _ => 0.0,
                 };
                 match &s {
@@ -1129,6 +1238,11 @@ impl<'a> Player<'a> {
                     Step::MotionSpeed { character, speed, .. } => {
                         if let Some(m) = motions.get_mut(character) {
                             m.3.set_speed(*speed, threads[t].0);
+                        }
+                    }
+                    Step::MotionRange { character, from, to, .. } => {
+                        if let Some(m) = motions.get_mut(character) {
+                            m.3.range = Some((*from, *to));
                         }
                     }
                     Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
@@ -1164,8 +1278,12 @@ impl<'a> Player<'a> {
                             let (length, loops) = self.motion_length.as_ref()?(*character, motion, division)?;
                             // A division says whether it loops; a whole clip loops as its command said.
                             let loops = if division.is_some() { loops } else { looping };
-                            // The rest of it at its speed.
-                            (!loops).then_some(playing.rate_from + (length - playing.played).max(0.0) / playing.speed)
+                            // The rest of it (of its range, when it has one) at its speed.
+                            let whole = match playing.range {
+                                Some((from, to)) if to > from => to - from,
+                                _ => length,
+                            };
+                            (!loops).then_some(playing.rate_from + (whole - playing.played).max(0.0) / playing.speed)
                         });
                         if let Some(end) = end {
                             threads[t].0 = threads[t].0.max(end);
