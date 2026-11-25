@@ -3017,7 +3017,7 @@ frames 2250 to 4900, her and the generator every frame, pictures every 50. Items
 **STAND-INs** (named in the code): the world's restocking schedule; the clock's 50 words to the hour; the made-item rank (a letter lower than
 `item_info`'s steps give: quality 49 is C here, D there); the help bar's plate width on the finished card (40.2 layout pixels more than its words, and the
 words "Fast Forward" until the card's 140 frames, then "Next"); the bar's going away 15 frames after A (10 has it, 20 does not); the title's size (24);
-the container's order for "first listed"; the Level UP numbers 2, 3 and 0 (the experience rule is not read).
+the Level UP numbers 2, 3 and 0 (the experience rule is not read).
 
 **The silhouette** (the capture's white Ryza on the right of Select Recipe and Add Materials): the
 pixels show it white, not black, in every frame I looked at (2250 none, 2400, 2800, 3400, 3500 white, 3050 and 3950 on: lit). The lit frames (3050) have draws the white ones (2800, 3400) lack: 41 big

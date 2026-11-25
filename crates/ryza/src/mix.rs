@@ -87,8 +87,8 @@ pub struct Made {
     pub hours: u32,
 }
 
-/// The container's units a synthesis of `recipe` takes when each row takes the first unit listed of its category (the list is the
-/// container's own order: STAND-IN, the screen's sort is not read), or `None` when a row finds too few.
+/// The container's units a synthesis of `recipe` takes when each row takes the first unit listed of its category (the screen's list is the
+/// container's own order: the capture's lists at `synth-atelier` 3050 and 3300 fit it), or `None` when a row finds too few.
 pub fn make(tables: &Tables, recipe: &Recipe, container: &[Worn]) -> Option<Made> {
     let mut taken: Vec<usize> = Vec::new();
     for row in &recipe.rows {
