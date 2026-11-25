@@ -341,6 +341,11 @@ pub struct Stage {
     pub line: Option<Line>,
     /// The next line starts its arrow's clock afresh (a tutorial picture came up: Ryza DX's `u76`).
     pub line_clock_reset: bool,
+    /// A tutorial picture is up ([`crate::event::TUTORIAL_PICTURE`]): its lines' arrow clock runs by [`Stage::tutorial_clock`].
+    pub tutorial_up: bool,
+    /// The arrow clock of a tutorial's lines: the frames a line's fade out adds to the clock once it is closed, and the
+    /// frames a button that hands the box to the next line costs the clock (`None`: as for any line).
+    pub tutorial_clock: Option<(u32, u32)>,
     /// How many times a button has closed a line or handed the box on ([`Step::LineClose`]): the
     /// player's message sound goes with each.
     pub lines_closed: u32,
@@ -388,6 +393,10 @@ pub struct Line {
     pub handed_over: bool,
     /// The command has more lines after this one.
     pub more_follows: bool,
+    /// It came up under a tutorial picture ([`Stage::tutorial_up`]) or is a system line (no speaker): the tutorial box's arrow has a clock of its own.
+    pub tutorial: bool,
+    /// The stage time the button handed the box on to the next line at (a handed-over line only).
+    pub handed_at: Option<f32>,
 }
 
 impl Stage {
@@ -465,15 +474,18 @@ impl Stage {
                 let now = self.time;
                 let until = self.reading.map(|f| now + f(&text.replace("<CR>", "")).max(0.0));
                 let reset = std::mem::take(&mut self.line_clock_reset);
-                let shown_before = self.line.as_ref().filter(|_| !reset).map_or(0, |p| {
+                // A tutorial's arrow keeps a clock of its own (over the tutorial lines only, a picture hiding starts it afresh).
+                let tutorial = self.tutorial_up || *speaker < 0;
+                let shown_before = self.line.as_ref().filter(|p| !reset && (p.tutorial == tutorial || self.tutorial_clock.is_none())).map_or(0, |p| {
+                    let (fade_out, stall) = self.tutorial_clock.filter(|_| p.tutorial).unwrap_or((LINE_FADE_OUT, 0));
                     let own = match p.closing {
-                        Some(c) => ((c - p.since) * 60.0).round() as u32 + LINE_FADE_OUT,
-                        None => ((now - p.since) * 60.0).round() as u32,
+                        Some(c) => ((c - p.since) * 60.0).round() as u32 + fade_out,
+                        None => (((now - p.since) * 60.0).round() as u32).saturating_sub(if p.handed_over { stall } else { 0 }),
                     };
                     p.shown_before + own
                 });
                 let joined = self.line.as_ref().is_some_and(|p| p.handed_over);
-                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before, joined, handed_over: false, more_follows: false });
+                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before, joined, handed_over: false, more_follows: false, tutorial, handed_at: None });
                 for (&n, b) in self.characters.iter_mut() {
                     let speaking = i64::from(n) == i64::from(*speaker);
                     b.talking = speaking;
@@ -485,7 +497,10 @@ impl Stage {
                     }
                 }
             }
-            Step::Command { word, operands, .. } if word & !crate::event::UNMAPPED == crate::event::TUTORIAL_PICTURE && operands.first() == Some(&1) => self.line_clock_reset = true,
+            Step::Command { word, operands, .. } if word & !crate::event::UNMAPPED == crate::event::TUTORIAL_PICTURE => {
+                self.tutorial_up = operands.first() == Some(&1);
+                self.line_clock_reset |= !self.tutorial_up;
+            }
             Step::LineClose { last, more, .. } => {
                 let now = self.time;
                 self.lines_closed += 1;
@@ -495,6 +510,7 @@ impl Stage {
                         l.closing = Some(now);
                     } else {
                         l.handed_over = true;
+                        l.handed_at = Some(now);
                     }
                 }
             }

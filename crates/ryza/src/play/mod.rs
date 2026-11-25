@@ -1514,7 +1514,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         _ => Default::default(),
     };
-    let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), s));
+    let mut title_play = title_steps.map(|s| barrel_engine::stage::Playback::new(barrel_engine::stage::Stage { tutorial_clock: Some(barrel_ryza::talk::TUTORIAL_CLOCK), ..Default::default() }, s));
     let added = title_event.as_ref().map(barrel_ryza::event::added).transpose()?.unwrap_or_default();
     let mut cast_files: Vec<actors::Files> = Vec::new();
     if let (Some(motions), Some(play)) = (title_motions, title_play.as_mut()) {

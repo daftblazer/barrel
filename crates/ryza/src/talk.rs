@@ -73,6 +73,8 @@ const TUTORIAL_WRAP: f32 = 750.0;
 const TUTORIAL_PEN: f32 = 598.5;
 const TUTORIAL_CENTRE: f32 = 892.5;
 const TUTORIAL_PITCH: f32 = 36.0;
+/// The arrow clock of a tutorial's lines (`engine::stage::Stage::tutorial_clock`): a closed line's fade out (30 frames) adds as many to it and a handed-over box costs 1 (`opening-key4` 13141 to 13442: run A and B at 0).
+pub const TUTORIAL_CLOCK: (u32, u32) = (30, 1);
 /// Where the letters' tops sit in the font's cell (the bracket's `y_offset`), in font units.
 const LETTER_TOP: f32 = 10.0;
 const TUTORIAL_TEXT: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
@@ -412,7 +414,9 @@ impl Talk {
             }
         }
         // the arrow and its shadow slide up with the box coming in
-        let ticks_run = line.shown_before + k_in as u32;
+        // (the frame the button hands the box on costs the clock one tick: `TUTORIAL_CLOCK`)
+        let stalled = line.handed_at.is_some_and(|h| (now - h) * 60.0 >= 1.5) as u32 * TUTORIAL_CLOCK.1;
+        let ticks_run = (line.shown_before + k_in as u32).saturating_sub(stalled);
         let turn = crate::title_menu::loop_shown(ticks_run as i32, 4.0) * 90.0;
         if std::env::var_os("TALK_DEBUG").is_some() {
             eprintln!("tutorial: since {} before {} ticks {ticks_run} turn {turn}", line.since, line.shown_before);
@@ -536,7 +540,7 @@ mod tests {
 
     #[test]
     fn a_line_fades_in_and_out_over_fifteen_frames() {
-        let line = Line { speaker: 0, name: None, text: String::new(), until: None, since: 1.0, closing: None, shown_before: 0, joined: false, handed_over: false, more_follows: false };
+        let line = Line { speaker: 0, name: None, text: String::new(), until: None, since: 1.0, closing: None, shown_before: 0, joined: false, handed_over: false, more_follows: false, tutorial: false, handed_at: None };
         // the frame drawn a tick after the command's: 7 frames on it is 8 ticks, 7/15
         assert_eq!(opacity(&line, 1.0 + 8.0 / 60.0), Some(7.0 / 15.0));
         assert_eq!(opacity(&line, 1.0 + 40.0 / 60.0), Some(1.0));
