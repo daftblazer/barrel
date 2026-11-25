@@ -112,6 +112,8 @@ struct Args {
     mix_sheet: Option<(u16, u32, Option<(f32, f32)>)>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
     mix_complete: Option<(u32, u32, u32, f32)>,
+    /// `--mix-result ITEM:QUALITY:EFFECT,..`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows).
+    mix_result: Option<(u16, u16, Vec<u16>)>,
     /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
     hud_stick: Vec<(f32, f32)>,
     /// `--hud-slips F,..`: the capture frames at which the game's animation clock lost a frame (its looping glows run 1 frame behind from each).
@@ -215,7 +217,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, mix_complete: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, mix_complete: None, mix_result: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -322,6 +324,13 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--save-hour" => a.save_hour = Some(value()?.parse()?),
             "--hud-at" => a.hud_at = value()?.parse()?,
             "--hud-arrival" => a.hud_arrival = value()?.parse()?,
+            "--mix-result" => {
+                let v = value()?;
+                let n: Vec<&str> = v.split(':').collect();
+                let [item, quality, effects] = n[..] else { return Err("--mix-result ITEM:QUALITY:EFFECT,..".into()) };
+                let effects = effects.split(',').filter(|e| !e.is_empty()).map(str::parse).collect::<std::result::Result<Vec<u16>, _>>()?;
+                a.mix_result = Some((item.parse()?, quality.parse()?, effects));
+            }
             "--mix-complete" => {
                 let v = value()?;
                 let n = v.split(':').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
@@ -755,12 +764,14 @@ fn page_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
 }
 
 /// Which of the synthesis's finishing screens `--mix-sheet` or `--mix-complete` shows.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum MixShown {
     /// The item's card with the number made.
     Card(u32, Option<(f32, f32)>),
     /// The "Complete" screen's level panel: the level, the experience to the next and the experience gained.
     Complete(u32, u32, u32, f32),
+    /// The made item's card: its quality and effects.
+    Result(u16, Vec<u16>),
 }
 
 /// The card's help bar says "Fast Forward" until its coming in has run this many frames of the animation clock, then "Next".
@@ -773,6 +784,7 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
     use barrel_ryza::field_page as fp;
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let image = tables.image(item);
+    let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
     // The background (`a21_bg01`) and the still picture (`ipu/still_ns01`): the capture's quads (the layout's `etc_a21_bg` is a 1920 by
     // 1080 picture drawn twice the screen's size over twice its uv, as the capture has it).
     let files = [install.read("\\data\\x64\\res_cmn\\ui\\a21_bg01.g1t")?, install.read("\\data\\x64\\res_cmn\\ipu\\still_ns01.g1t")?];
@@ -784,15 +796,24 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
     let fill = [quad([0.0, 0.0, 2.0 * w, 2.0 * h], [0.0, 0.0, 2.0, 2.0], 0), quad([0.0, 0.0, 2.0 * w, 2.0 * h], [0.0, 0.0, 2.0, 2.0], 0), quad([0.0, 0.0, w, h], [0.0, 0.0, 1.0, 1.0], 1)];
     back.set(gpu, &fill)?;
     // The card.
-    let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &[fp::ShelfItem { image, category: None }])?;
-    let (quads, additive, clips) = match shown {
+    let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &[fp::ShelfItem { image, category: items.row(item).and_then(|r| r.category) }])?;
+    let (quads, additive, clips) = match shown.clone() {
         MixShown::Card(count, clock) => page.sheet_quads(&fp::SheetLook { item, image, count, clock: clock.map(|c| c.0), frames: clock.map_or(0.0, |c| c.1) }, screen),
         MixShown::Complete(level, next, gained, age) => page.complete_quads(&fp::CompleteLook { level, next, gained, age }, screen),
+        MixShown::Result(quality, ref effects) => {
+            let mut effect = [0xffff; 4];
+            effect[..effects.len().min(4)].copy_from_slice(&effects[..effects.len().min(4)]);
+            let unit = barrel_ryza::save::Worn { item, quality, level: 0, effects: effect, potentials: [290; 3], potential_levels: [0; 3], slots: 0 };
+            let mut card = items.card(&unit, &[], image);
+            // STAND-IN: the rank letter of quality 49 is C in the capture (`synth-atelier` 4060), where `item_info`'s steps give D.
+            card.rank = card.rank.saturating_sub(1);
+            page.result_quads(&card, screen)
+        }
     };
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     // The help bar ("A Next") under the card, from the menu's own.
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
-    bar.set(gpu, &match shown { MixShown::Card(_, clock) => view.next_help(screen, clock.is_some_and(|c| c.0 < CARD_COMES_IN)), MixShown::Complete(..) => Vec::new() })?;
+    bar.set(gpu, &match shown.clone() { MixShown::Card(_, clock) => view.next_help(screen, clock.is_some_and(|c| c.0 < CARD_COMES_IN)), MixShown::Result(..) => view.next_help(screen, false), MixShown::Complete(..) => Vec::new() })?;
     Ok(vec![back, sheet, bar])
 }
 
@@ -2438,10 +2459,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t, &container.0.iter().chain(&tools).map(|u| barrel_ryza::field_page::ShelfItem { image: t.image(u.item), category: item_info.as_ref().and_then(|i| i.row(u.item)).and_then(|r| r.category) }).chain(item_info.as_ref().into_iter().flat_map(|i| (0..barrel_ryza::library::TABS).flat_map(|tab| library.cards(i, &know_items, tab, &|n| t.image(n)))).map(|c| barrel_ryza::field_page::ShelfItem { image: c.image, category: None })).collect::<Vec<_>>())?),
         _ => None,
     };
-    let mix_screen = match (a.mix_sheet, a.mix_complete) {
-        (Some((item, count, clock)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
-        (None, Some((level, next, gained, age))) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
-        (None, None) => None,
+    let mix_screen = match (a.mix_sheet, a.mix_complete, a.mix_result.clone()) {
+        (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
+        (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
+        (None, None, Some((item, quality, effects))) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Result(quality, effects), (width, height))?),
+        (None, None, None) => None,
     };
     let mut showing_page = false;
     // The Settings screen's own layer and what it shows (the config's values over the defaults).

@@ -1299,6 +1299,19 @@ impl Page {
     }
 }
 
+impl Page {
+    /// The "Complete" screen's item card, as the Container page's (the made item's `card`: a `normal_item` card at its place), and the
+    /// title plate, on a `screen` of pixels.
+    pub fn result_quads(&self, card: &Card, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new() };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        self.item_card(&mut w, &root, "normal_item", None, card, &[]);
+        self.caption_plate(&mut w, &root, COMPLETE_TITLE, Slide::NONE);
+        (w.out, w.additive, w.clips)
+    }
+}
+
 /// The animation clock's reading at game frame `frame`: the frame less the stalls so far.
 pub fn animation_clock(frame: f32) -> f32 {
     frame - (frame / STALL_EVERY).floor()
