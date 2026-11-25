@@ -2809,4 +2809,13 @@ window are not heard by a test (the offscreen run schedules them and the cue tra
 (`frand(0, 15)` every 20 to 60 frames) so the index stays in step after 2040. The next capture wanted: a gathering with a
 tool (a rod or the sickle) and two items, the gathering from a point the library knows, and the same from a
 second point with the hook on `0x14008e290` named.
+- **Answer key 2 (`gather-rasen2`, 2026-11-25).** gather-rasen's input, then a second comb (fixID 52) with A at 2500:
+  two items from one press (two `gatherfn` at 2501, the first `irand(0, 69)`, the second's list from `0x1404b278f`);
+  then the staff point fixID 49 (`_WAND_ACTION`, `BOX_ROD`) with X at 3160: the swing (`irand(0, 1)` from
+  `0x1400e4b73` and a sound) and the gathering at 3184 (its own draw list, three sounds); X at 3260 swings and gets
+  nothing. Her feet and the generator dumped every frame 2380-3400, draws every 10 frames 2380-3500, pixels at 2665.
+- **The walk drifts from the game's over later walks** (P3): Barrel's walk matched the game's first walk (gather-rasen,
+  1900-2010) within 5 cm, but the next one (2400, 45 frames, from her stop after the gathering) ended 1 m off
+  (Barrel 33636, 29800 vs the game's 33647.2, 29701.8) and a 215-frame one 3 m off; and with her turned back after a
+  gathering the camera faces her (stick up walks her east). The camera's follow after a stop is the suspect.
 
