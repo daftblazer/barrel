@@ -399,4 +399,14 @@ player takes from the same event, as `frame aACTION word operands...` in hex, fr
 second from the event's start. `tools/cmddiff.py GAME BARREL --from FRAME` pairs the two in
 order within each group of commands (the word's letter) and prints, per group, the counts, the
 commands only one side has, and the pairs whose frames are off the commonest offset. An event
-is at parity when every command pairs and none is off the offset.
+is at parity when every command pairs and none is off the offset. The tool lets a pair be one
+frame off (the game's fades and waits jitter by one: docs/ryza/open.md); `work`-style variants that
+count every frame show them.
+
+An event with lines (Ryza DX's opening) waits for the button: `BARREL_EVENT_PRESSES=FIRST:STEP:LAST@START`
+(capture frames; START the event's first frame) gives `ryza-commands` and the opening's live play
+the scripted presses of the key (`opening-key2`: `2135:120:13975@1600`); without it a line takes no
+time. `opening-key2`'s commands (`ryza-recomp/work/scenarios/opening-key2/commands.txt`) pair at
+1600 over 1600 to 14000: 908 pairs of 1106 game commands, 61 of them more than a frame off
+(p 2, s 38, t 9, u 3, w 9); the unpaired are `s9` (the characters' walks, not read), the next
+event's start and a few waits (docs/ryza/open.md, "The opening (P5b)", part 2).

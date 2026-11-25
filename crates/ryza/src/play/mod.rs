@@ -367,7 +367,7 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 /// shows, its strip's rectangle, texture coordinates and atlas in the layer (a name card is not
 /// drawn yet). The atlases are the hd ones above 1080 lines, as `telop_layer` has them.
 #[allow(clippy::type_complexity)]
-fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, cards: &std::collections::BTreeSet<u32>, screen: (u32, u32)) -> Result<(text::Layer, std::collections::HashMap<u32, Vec<([f32; 4], [f32; 4], usize)>>, barrel_ryza::talk::Talk)> {
+fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, cards: &std::collections::BTreeSet<u32>, pictures: &[u32], screen: (u32, u32)) -> Result<(text::Layer, std::collections::HashMap<u32, Vec<([f32; 4], [f32; 4], usize)>>, barrel_ryza::talk::Talk)> {
     use barrel_ryza::telop;
     let hd = screen.1 > 1080;
     let layout = install.read("\\saves\\ui_en\\a21_telop\\uil_a21_telop01.xml")?;
@@ -416,8 +416,36 @@ fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     // (the hints' plate is the fourth texture of a21_common)
     let (font, balloon, common, white) = (&talk_g1t[0].textures[0], &talk_g1t[1].textures[0], &talk_g1t[2].textures[3], &talk_g1t[3].textures[0]);
     textures.extend([font, balloon, common, white, &card_g1t.textures[0], &card_g1t.textures[1]]);
+    // The tutorial's pictures: a tiled texture, two backgrounds, the arrow's shadow, then each picture (`t<84 + number>`).
+    let mut set_files = vec![
+        install.read("\\data\\x64\\character\\fm_d02_barrel_02\\fm_d02_barrel_02.g1t")?,
+        install.read("\\data\\x64\\res_cmn\\ui\\a21_bg05.g1t")?,
+        install.read("\\data\\x64\\res_cmn\\ui\\a21_bg12.g1t")?,
+        install.read("\\data\\x64\\res_cmn\\ui\\sys_alpha_circle.g1t")?,
+    ];
+    for id in pictures {
+        set_files.push(install.read(&format!("\\data\\x64\\res_cmn\\ipu\\t{}.g1t", 84 + id))?);
+    }
+    let set_g1t: Vec<G1t> = set_files.iter().map(|b| G1t::parse(b).map_err(|e| format!("tutorial textures: {e}"))).collect::<std::result::Result<_, _>>()?;
+    textures.push(&set_g1t[0].textures[1]);
+    textures.extend(set_g1t[1..].iter().map(|g| &g.textures[0]));
     let names = barrel_ryza::talk::names(&install.read("\\saves\\text_en\\str_event_chara_name.xml")?);
-    let talk = barrel_ryza::talk::Talk::new(glyphs, (font.width, font.height), names, barrel_ryza::talk::Textures { font: base, balloon: base + 1, common: base + 2, white: base + 3 });
+    let talk = barrel_ryza::talk::Talk::new(
+        glyphs,
+        (font.width, font.height),
+        names,
+        barrel_ryza::talk::Textures {
+            font: base,
+            balloon: base + 1,
+            common: base + 2,
+            white: base + 3,
+            tiled: base + 6,
+            background: base + 7,
+            frame: base + 8,
+            circle: base + 9,
+            pictures: pictures.iter().enumerate().map(|(i, &id)| (id, base + 10 + i)).collect(),
+        },
+    );
     // The cards the event shows (`u65`'s numbers 1 to 14 are `name00` to `name13`).
     let mut cards_shown: std::collections::HashMap<u32, Vec<([f32; 4], [f32; 4], usize)>> = shown.into_iter().map(|(n, k, (rect, uv))| (n, vec![(rect, uv, k)])).collect();
     let (card_layout, card_styles) = (install.read("\\saves\\ui_en\\a21_telop\\uil_a21_telop01.xml")?, install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_charatelop.xml")?);
@@ -2154,7 +2182,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     };
     // The opening's telops and fade (`--opening`): one layer of the strips' atlases.
     let mut opening_layer = match a.opening {
-        true => Some(opening_telops(&install, &gpu, &renderer, &opening_cards, (width, height))?),
+        true => Some(opening_telops(&install, &gpu, &renderer, &opening_cards, &opening_cues.picture_ids(), (width, height))?),
         false => None,
     };
     // The title screen (`--title`): its glyphs from the executable, its layout from the archives.
@@ -2525,6 +2553,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     if opening_cues.bars(seen) {
                         quads.extend(talk.bars((width, height)));
                     }
+                    let pictures = opening_cues.pictures(seen);
+                    if let Some(set) = pictures {
+                        quads.extend(talk.picture_quads(set, play.stage.time, (width, height)));
+                    }
                     if let Some((n, alpha)) = barrel_ryza::event::telop(&play.stage)
                         && let Some(pictures) = telops.get(&n)
                     {
@@ -2533,7 +2565,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                     }
                     if let Some(line) = &play.stage.line {
-                        quads.extend(talk.line_quads(line, play.stage.time, opening_cues.hint(seen), (width, height)));
+                        if pictures.is_some() {
+                            quads.extend(talk.tutorial_quads(line, play.stage.time, (width, height)));
+                        } else {
+                            quads.extend(talk.line_quads(line, play.stage.time, opening_cues.hint(seen), (width, height)));
+                        }
                     }
                     let cover = actors::cover(&play.stage);
                     if cover > 0.0 {

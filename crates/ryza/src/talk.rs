@@ -60,12 +60,63 @@ const PLATE_TILE_WIDTH: f32 = 184.0;
 const PLATE_END_AT: f32 = 1911.5;
 const PLATE_END_TO: f32 = 1920.0;
 
+/// The tutorial's pieces (the opening's room tutorial, `opening-key2` 13025 to 13779): the pictures' panel, the second
+/// picture's fade, the box and its text (16 pixels' size: 2/3 of the atlas, rows 36 apart about a centre, wrapped at
+/// 750: 714 fits and 768 does not), the arrow beside it with its shadow (a square of 38.4 turned 49.4 degrees), the dark
+/// red text and its markup colours.
+const PICTURE_PANEL: [f32; 4] = [249.6, 43.2, 1670.4, 842.4];
+const PICTURE_FADE: f32 = 60.0;
+const TUTORIAL_BOX: [f32; 4] = [426.0, 760.5, 1536.0, 1040.5];
+const TUTORIAL_BOX_UV: [f32; 4] = [0.034615386, 0.00125, 0.88846153, 0.17625];
+const TUTORIAL_SCALE: f32 = 2.0 / 3.0;
+const TUTORIAL_WRAP: f32 = 750.0;
+const TUTORIAL_PEN: f32 = 598.5;
+const TUTORIAL_CENTRE: f32 = 892.5;
+const TUTORIAL_PITCH: f32 = 36.0;
+const TUTORIAL_TEXT: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
+const TEXT_COLOR_DARK: [f32; 3] = TUTORIAL_TEXT;
+const TUTORIAL_ARROW: [f32; 3] = [1390.0, 935.5, 25.0];
+const TUTORIAL_SLIDE: f32 = 45.0;
+const TUTORIAL_SHADOW_SIDE: f32 = 38.4;
+const TUTORIAL_SHADOW_TURN: f32 = 49.4;
+const TUTORIAL_SHADOW_ALPHA: f32 = 60.0 / 255.0;
+const TUTORIAL_FADE: f32 = 30.0;
+// STAND-IN: the hints come in between 27 and 37 frames into a tutorial line (capture frames 13165 and 13175); 30 is a guess.
+const TUTORIAL_HINT_AFTER: f32 = 30.0;
+
+/// A tutorial text without its markup, and where each colour starts (`<#RRGGBB>`, `<CLNR>` back to the plain colour), by character.
+fn markup(text: &str) -> (String, Vec<(usize, [f32; 3])>) {
+    let (mut plain, mut runs) = (String::new(), Vec::new());
+    let mut rest = text;
+    while !rest.is_empty() {
+        if let Some(tag) = rest.strip_prefix("<#").and_then(|r| r.get(..7)).filter(|t| t.ends_with('>')) {
+            let v = u32::from_str_radix(&tag[..6], 16).unwrap_or(0);
+            runs.push((plain.chars().count(), [(v >> 16) as f32 / 255.0, (v >> 8 & 0xff) as f32 / 255.0, (v & 0xff) as f32 / 255.0]));
+            rest = &rest[9..];
+        } else if let Some(r) = rest.strip_prefix("<CLNR>") {
+            runs.push((plain.chars().count(), TUTORIAL_TEXT));
+            rest = r;
+        } else {
+            let c = rest.chars().next().unwrap();
+            plain.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    (plain, runs)
+}
+
 /// The textures the talk draws from, as the layer holds them (`Talk::TEXTURES` after the layer's own).
 pub struct Textures {
     pub font: usize,
     pub balloon: usize,
     pub common: usize,
     pub white: usize,
+    /// The tutorial pictures' set: a tiled texture first, the two backgrounds, the arrow's shadow and each picture (`u76`'s number, its texture).
+    pub tiled: usize,
+    pub background: usize,
+    pub frame: usize,
+    pub circle: usize,
+    pub pictures: Vec<(u32, usize)>,
 }
 
 /// The button hints under a line.
@@ -102,6 +153,8 @@ pub struct Cues {
     bars: Vec<(f32, bool)>,
     // (time, u6 on, u7 on) after the command
     hints: Vec<(f32, bool, bool)>,
+    // `u76` (a tutorial picture): (time, shown, picture number)
+    pictures: Vec<(f32, bool, u32)>,
 }
 
 impl Cues {
@@ -122,6 +175,7 @@ impl Cues {
                     short = on;
                     cues.hints.push((*time, full, short));
                 }
+                0x7500_004c => cues.pictures.push((*time, on, words.get(3).copied().unwrap_or(0))),
                 _ => {}
             }
         }
@@ -131,6 +185,28 @@ impl Cues {
     /// Whether the letterbox is up at stage time `t` (commands up to `t` taken).
     pub fn bars(&self, t: f32) -> bool {
         self.bars.iter().take_while(|b| b.0 <= t).last().is_some_and(|b| b.1)
+    }
+
+    /// The tutorial pictures up at stage time `t`: the first, and the one that came over it with the time it did.
+    pub fn pictures(&self, t: f32) -> Option<(u32, Option<(u32, f32)>)> {
+        let mut state = None;
+        for &(time, shown, id) in self.pictures.iter().take_while(|p| p.0 <= t) {
+            state = match (shown, state) {
+                (false, _) => None,
+                (true, None) => Some((id, None)),
+                (true, Some((first, None))) if first != id => Some((first, Some((id, time)))),
+                (true, s) => s,
+            };
+        }
+        state
+    }
+
+    /// The numbers of the pictures the event shows (to load).
+    pub fn picture_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self.pictures.iter().filter(|p| p.1).map(|p| p.2).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     }
 
     /// The hints at stage time `t`.
@@ -155,10 +231,10 @@ pub struct Talk {
 fn opacity(line: &Line, now: f32) -> Option<f32> {
     let ticks = |since: f32| ((now - since) * 60.0).round() - 1.0;
     // (nothing is drawn for the first frames: capture frame 8395, two frames into a line, has none)
-    if ticks(line.since) < FIRST_DRAWN {
+    if ticks(line.since) < FIRST_DRAWN && !line.joined {
         return None;
     }
-    let mut a = (ticks(line.since) / FADE).clamp(0.0, 1.0);
+    let mut a = if line.joined { 1.0 } else { (ticks(line.since) / FADE).clamp(0.0, 1.0) };
     if let Some(c) = line.closing {
         a = a.min(1.0 - (ticks(c) / FADE).clamp(0.0, 1.0));
     }
@@ -208,6 +284,11 @@ impl Talk {
 
     /// A line's rows: the text wrapped greedily at [`WRAP`], a word being what is between spaces and the spaces after it.
     fn rows(&self, text: &str) -> Vec<String> {
+        self.rows_at(text, TEXT_SCALE, WRAP)
+    }
+
+    /// [`Talk::rows`] at `scale` and a width of `wrap` pixels.
+    fn rows_at(&self, text: &str, scale: f32, wrap: f32) -> Vec<String> {
         let mut rows = Vec::new();
         for paragraph in text.split("<CR>") {
             let (mut row, mut x) = (String::new(), 0.0f32);
@@ -217,18 +298,123 @@ impl Talk {
                 let bare = rest.find(' ').unwrap_or(rest.len());
                 let end = bare + rest[bare..].len() - rest[bare..].trim_start_matches(' ').len();
                 let (word, tail) = rest.split_at(end);
-                let fit = self.advance(word.trim_end_matches(' '), TEXT_SCALE);
-                if x > 0.0 && x + fit > WRAP {
+                let fit = self.advance(word.trim_end_matches(' '), scale);
+                if x > 0.0 && x + fit > wrap {
                     rows.push(std::mem::take(&mut row));
                     x = 0.0;
                 }
-                x += self.advance(word, TEXT_SCALE);
+                x += self.advance(word, scale);
                 row.push_str(word);
                 rest = tail;
             }
             rows.push(row);
         }
         rows
+    }
+
+    /// The tutorial's pictures at stage time `now`, in the game's draw order: the tiled texture, each picture whole, the white
+    /// fill, the first background, each picture in its panel, the second background. The second picture comes in over a second.
+    pub fn picture_quads(&self, set: (u32, Option<(u32, f32)>), now: f32, screen: (u32, u32)) -> Vec<Quad> {
+        let k = screen.1 as f32 / SCREEN;
+        let left = (screen.0 as f32 - 1920.0 * k) * 0.5;
+        let to = |r: [f32; 4]| [left + r[0] * k, r[1] * k, left + r[2] * k, r[3] * k];
+        let quad = |rect: [f32; 4], uv: [f32; 4], alpha: f32, texture: usize| Quad { turn: false, spin: None, rect: to(rect), uv, color: [1.0, 1.0, 1.0, alpha], texture };
+        let texture = |id: u32| self.textures.pictures.iter().find(|p| p.0 == id).map_or(self.textures.white, |p| p.1);
+        let shown: Vec<(u32, f32)> = std::iter::once((set.0, 1.0)).chain(set.1.map(|(id, at)| (id, (((now - at) * 60.0).round() / PICTURE_FADE).clamp(0.0, 1.0)))).collect();
+        let mut out = vec![quad([0.0, 0.0, 9600.0, 3240.0], [0.0, 0.0, 7.5, 4.5], 1.0, self.textures.tiled)];
+        for &(id, a) in &shown {
+            out.push(quad([0.0, 0.0, 1920.0, 1080.0], [0.0, 0.0, 1.0, 1.0], a, texture(id)));
+        }
+        out.push(quad([0.0, 0.0, 1920.0, 1080.0], [0.0, 0.0, 0.125, 0.125], 1.0, self.textures.white));
+        out.push(quad([0.0, 0.0, 3840.0, 2160.0], [0.0, 0.0, 2.0, 2.0], 1.0, self.textures.background));
+        for &(id, a) in &shown {
+            out.push(quad(PICTURE_PANEL, [0.0, 0.0, 1.0, 1.0], a, texture(id)));
+        }
+        out.push(quad([0.0, 0.0, 3840.0, 2160.0], [0.0, 0.0, 2.0, 2.0], 1.0, self.textures.frame));
+        out
+    }
+
+    /// A tutorial line at stage time `now`: its box, its text in dark red (`<#RRGGBB>` to `<CLNR>` in that colour), the
+    /// arrow's shadow and arrow, and the hints. It comes in over 30 frames along an ease-out cubic (the arrow sliding up
+    /// 45 pixels with it) and goes out over 30 along an ease-in cubic.
+    pub fn tutorial_quads(&self, line: &Line, now: f32, screen: (u32, u32)) -> Vec<Quad> {
+        let ticks = |since: f32| ((now - since) * 60.0).round() - 1.0;
+        let k_in = ticks(line.since);
+        if k_in < FIRST_DRAWN && !line.joined {
+            return Vec::new();
+        }
+        let t_in = if line.joined { 1.0 } else { (k_in / TUTORIAL_FADE).clamp(0.0, 1.0) };
+        let mut alpha = 1.0 - (1.0 - t_in).powi(3);
+        if let Some(c) = line.closing {
+            alpha = alpha.min(1.0 - (ticks(c) / TUTORIAL_FADE).clamp(0.0, 1.0).powi(3));
+        }
+        if alpha * 255.0 < 1.0 {
+            return Vec::new();
+        }
+        let k = screen.1 as f32 / SCREEN;
+        let left = (screen.0 as f32 - 1920.0 * k) * 0.5;
+        let to = |r: [f32; 4]| [left + r[0] * k, r[1] * k, left + r[2] * k, r[3] * k];
+        // the box, its text and the arrow all slide up with the fade: 45 pixels where it is clear
+        let slide = TUTORIAL_SLIDE * (1.0 - alpha);
+        let fixed = to;
+        let to = |r: [f32; 4]| fixed([r[0], r[1] + slide, r[2], r[3] + slide]);
+        let mut out = vec![Quad { turn: false, spin: None, rect: to(TUTORIAL_BOX), uv: TUTORIAL_BOX_UV, color: [1.0, 1.0, 1.0, alpha], texture: self.textures.balloon }];
+        // the text: rows wrapped at TUTORIAL_WRAP, a block centred on TUTORIAL_CENTRE; colours by the markup
+        let (plain, runs) = markup(&line.text);
+        let rows = self.rows_at(&plain, TUTORIAL_SCALE, TUTORIAL_WRAP);
+        let top = TUTORIAL_CENTRE - TUTORIAL_PITCH * rows.len() as f32 * 0.5;
+        let mut at = 0;
+        for (i, row) in rows.iter().enumerate() {
+            let mut pen = TUTORIAL_PEN;
+            for ch in row.chars() {
+                let color = runs.iter().rev().find(|r| r.0 <= at).map_or(TUTORIAL_TEXT, |r| r.1);
+                self.glyph_quads(&ch.to_string(), (pen, top + TUTORIAL_PITCH * i as f32), TUTORIAL_SCALE, [color[0], color[1], color[2], alpha], &to, &mut out);
+                pen += self.advance(&ch.to_string(), TUTORIAL_SCALE);
+                at += 1;
+            }
+        }
+        // the arrow and its shadow slide up with the box coming in
+        let ticks_run = line.shown_before + k_in as u32;
+        let turn = crate::title_menu::loop_shown(ticks_run as i32, 4.0) * 90.0;
+        if std::env::var_os("TALK_DEBUG").is_some() {
+            eprintln!("tutorial: since {} before {} ticks {ticks_run} turn {turn}", line.since, line.shown_before);
+        }
+        let [cx, cy, half] = TUTORIAL_ARROW;
+        let pivot = to([cx, cy, cx, cy]);
+        let pivot = [pivot[0], pivot[1]];
+        let shadow_half = TUTORIAL_SHADOW_SIDE * 0.5;
+        out.push(Quad { turn: false, spin: Some(Spin::About { pivot, angle: TUTORIAL_SHADOW_TURN.to_radians() }), rect: to([cx - shadow_half, cy - shadow_half, cx + shadow_half, cy + shadow_half]), uv: [1.0, 1.0, 0.0, 0.0], color: [TEXT_COLOR_DARK[0], TEXT_COLOR_DARK[1], TEXT_COLOR_DARK[2], TUTORIAL_SHADOW_ALPHA * alpha], texture: self.textures.circle });
+        let still = to([cx - half, cy - half, cx + half, cy + half]);
+        for (uv, theta) in ARROW_UV.iter().zip([turn, -turn]) {
+            out.push(Quad { turn: false, spin: Some(Spin::About { pivot, angle: theta.to_radians() }), rect: still, uv: *uv, color: [1.0, 1.0, 1.0, alpha], texture: self.textures.balloon });
+        }
+        out.push(Quad { turn: false, spin: None, rect: still, uv: ARROW_UV[2], color: [1.0, 1.0, 1.0, alpha], texture: self.textures.balloon });
+        // the hints come in once the line has
+        if (k_in >= TUTORIAL_HINT_AFTER || line.joined) && line.closing.is_none() {
+            out.extend(self.hint_quads(Hint::Full, 1.0, &fixed));
+        }
+        out
+    }
+
+    /// The hints' plate and words at `alpha`.
+    fn hint_quads(&self, hint: Hint, alpha: f32, to: &impl Fn([f32; 4]) -> [f32; 4]) -> Vec<Quad> {
+        let mut out = Vec::new();
+        let mut at = hint.plate_left();
+        let mut plate = |from: f32, to_x: f32, uv: [f32; 4]| out.push(Quad { turn: false, spin: None, rect: to([from, PLATE_Y[0], to_x, PLATE_Y[1]]), uv, color: [1.0, 1.0, 1.0, alpha], texture: self.textures.common });
+        plate(at, at + PLATE_LEFT_WIDTH, PLATE_LEFT_UV);
+        at += PLATE_LEFT_WIDTH;
+        while at < PLATE_END_AT - 0.01 {
+            let end = (at + PLATE_TILE_WIDTH).min(PLATE_END_AT);
+            let mut uv = PLATE_TILE_UV;
+            uv[2] = uv[0] + (uv[2] - uv[0]) * (end - at) / PLATE_TILE_WIDTH;
+            plate(at, end, uv);
+            at = end;
+        }
+        plate(PLATE_END_AT, PLATE_END_TO, PLATE_END_UV);
+        let text = hint.text();
+        let pen = HINT_END - self.advance(text, HINT_SCALE);
+        self.glyph_quads(text, (pen, HINT_TOP), HINT_SCALE, [1.0, 1.0, 1.0, alpha], to, &mut out);
+        out
     }
 
     /// The letterbox's two bars, black.
@@ -260,6 +446,9 @@ impl Talk {
         // The arrow: its clock runs over the lines that stood before and this one's ticks.
         let ticks = line.shown_before + (((now - line.since) * 60.0).round() as u32).saturating_sub(1);
         let turn = crate::title_menu::loop_shown(ticks as i32, 4.0) * 90.0;
+        if std::env::var_os("TALK_DEBUG").is_some() {
+            eprintln!("talk: since {} before {} ticks {ticks} turn {turn}", line.since, line.shown_before);
+        }
         let [cx, cy, half] = ARROW;
         let still = to([cx - half, cy - half, cx + half, cy + half]);
         let pivot = [(still[0] + still[2]) * 0.5, (still[1] + still[3]) * 0.5];
@@ -272,26 +461,10 @@ impl Talk {
         // The hints come in after a moment and go when the button goes down.
         let since = ((now - line.since) * 60.0).round() - 1.0;
         // (the hints fade in once, with the first line; after it they stand at once, at the same moment: capture frames 8645/8655 and 8285/8295 hold it between 12 and 16)
-        let hint_alpha = if line.shown_before == 0 { ((since - HINT_AFTER) / FADE).clamp(0.0, 1.0) } else { f32::from(u8::from(since >= HINT_AFTER)) };
+        let hint_alpha = if line.joined { 1.0 } else if line.shown_before == 0 { ((since - HINT_AFTER) / FADE).clamp(0.0, 1.0) } else { f32::from(u8::from(since >= HINT_AFTER)) };
         let hint = hint.filter(|_| line.closing.is_none() && hint_alpha * 255.0 >= 1.0);
         if let Some(h) = hint {
-            let mut at = h.plate_left();
-            let mut plate = |from: f32, to_x: f32, uv: [f32; 4]| out.push(Quad { turn: false, spin: None, rect: to([from, PLATE_Y[0], to_x, PLATE_Y[1]]), uv, color: [1.0, 1.0, 1.0, hint_alpha], texture: self.textures.common });
-            plate(at, at + PLATE_LEFT_WIDTH, PLATE_LEFT_UV);
-            at += PLATE_LEFT_WIDTH;
-            while at < PLATE_END_AT - 0.01 {
-                let end = (at + PLATE_TILE_WIDTH).min(PLATE_END_AT);
-                let mut uv = PLATE_TILE_UV;
-                uv[2] = uv[0] + (uv[2] - uv[0]) * (end - at) / PLATE_TILE_WIDTH;
-                plate(at, end, uv);
-                at = end;
-            }
-            plate(PLATE_END_AT, PLATE_END_TO, PLATE_END_UV);
-        }
-        if let Some(h) = hint {
-            let text = h.text();
-            let pen = HINT_END - self.advance(text, HINT_SCALE);
-            self.glyph_quads(text, (pen, HINT_TOP), HINT_SCALE, [1.0, 1.0, 1.0, hint_alpha], &to, &mut out);
+            out.extend(self.hint_quads(h, hint_alpha, &to));
         }
         out
     }
@@ -307,7 +480,7 @@ mod tests {
 
     fn talk() -> Talk {
         let glyphs = [('a', glyph(24)), (' ', glyph(12)), ('b', glyph(24))].into_iter().collect();
-        Talk::new(glyphs, (4096, 2048), HashMap::new(), Textures { font: 0, balloon: 1, common: 2, white: 3 })
+        Talk::new(glyphs, (4096, 2048), HashMap::new(), Textures { font: 0, balloon: 1, common: 2, white: 3, tiled: 4, background: 5, frame: 6, circle: 7, pictures: Vec::new() })
     }
 
     #[test]
@@ -325,13 +498,34 @@ mod tests {
 
     #[test]
     fn a_line_fades_in_and_out_over_fifteen_frames() {
-        let line = Line { speaker: 0, name: None, text: String::new(), until: None, since: 1.0, closing: None, shown_before: 0 };
+        let line = Line { speaker: 0, name: None, text: String::new(), until: None, since: 1.0, closing: None, shown_before: 0, joined: false, handed_over: false, more_follows: false };
         // the frame drawn a tick after the command's: 7 frames on it is 8 ticks, 7/15
         assert_eq!(opacity(&line, 1.0 + 8.0 / 60.0), Some(7.0 / 15.0));
         assert_eq!(opacity(&line, 1.0 + 40.0 / 60.0), Some(1.0));
         let closing = Line { closing: Some(2.0), ..line };
         assert_eq!(opacity(&closing, 2.0 + 2.0 / 60.0), Some(14.0 / 15.0));
         assert_eq!(opacity(&closing, 2.0 + 17.0 / 60.0), None);
+    }
+
+    #[test]
+    fn the_markup_colours_a_run() {
+        let (plain, runs) = markup("go <#006E5A>save<CLNR> now");
+        assert_eq!(plain, "go save now");
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].0, 3);
+        assert!((runs[0].1[1] - 110.0 / 255.0).abs() < 1e-6);
+        assert_eq!(runs[1], (7, TUTORIAL_TEXT));
+    }
+
+    #[test]
+    fn the_pictures_follow_the_commands() {
+        let taken: Vec<Taken> = vec![(1.0, 0, vec![0x7500_004c, 1, 0, 27]), (5.0, 0, vec![0x7500_004c, 1, 0, 26]), (9.0, 0, vec![0x7500_004c, 0, 0, 4])];
+        let cues = Cues::from_taken(&taken);
+        assert_eq!(cues.picture_ids(), [26, 27]);
+        assert_eq!(cues.pictures(0.5), None);
+        assert_eq!(cues.pictures(2.0), Some((27, None)));
+        assert_eq!(cues.pictures(6.0), Some((27, Some((26, 5.0)))));
+        assert_eq!(cues.pictures(9.0), None);
     }
 
     #[test]

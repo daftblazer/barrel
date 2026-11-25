@@ -29,6 +29,9 @@ pub const LINE_CLOSE_FRAMES: f32 = 18.0;
 /// The same under a tutorial picture (`u76`): 31 frames to the line's end, one more to the next
 /// command, as the key's room tutorial has it.
 pub const TUTORIAL_CLOSE_FRAMES: f32 = 32.0;
+/// Between the lines of one command under a tutorial picture, the next takes the box at once (a frame after the button:
+/// STAND-IN, `opening-key2` shows it within 10 frames, 13176 to 13185).
+pub const TUTORIAL_BETWEEN_FRAMES: f32 = 2.0;
 
 /// The buttons of a scripted run: presses at the capture frames `frames`, for an event whose
 /// first command is on capture frame `start`.
@@ -37,6 +40,7 @@ pub fn buttons_at(frames: &[i32], start: i32) -> barrel_engine::event::Buttons {
         presses: frames.iter().map(|&f| (f - start) as f32 / 60.0).collect(),
         close: LINE_CLOSE_FRAMES / 60.0,
         tutorial_close: TUTORIAL_CLOSE_FRAMES / 60.0,
+        tutorial_between: TUTORIAL_BETWEEN_FRAMES / 60.0,
     }
 }
 

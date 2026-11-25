@@ -339,6 +339,8 @@ pub struct Stage {
     pub telop_alpha: crate::field_camera::Tween,
     /// The latest line ([`Stage::line_shown`] says whether it is still up).
     pub line: Option<Line>,
+    /// The next line starts its arrow's clock afresh (a tutorial picture came up: Ryza DX's `u76`).
+    pub line_clock_reset: bool,
     /// How long a line stays up, for playback nobody reads along with: the reading time the
     /// schedule holds each line for (`event::Player::reading_time`). None keeps each line up
     /// until the next.
@@ -376,6 +378,13 @@ pub struct Line {
     /// The frames the lines before it stood up (a line's own fade out counted): the clock of the
     /// arrow that turns beside them runs over them all.
     pub shown_before: u32,
+    /// It came up as the box's next line within a few frames of the last one's button (a command's lines under a tutorial
+    /// picture): it takes the box at once, with no coming in.
+    pub joined: bool,
+    /// The button gave the box to the line after it ([`Step::LineClose`] not `last`): it stays as it is until that comes.
+    pub handed_over: bool,
+    /// The command has more lines after this one.
+    pub more_follows: bool,
 }
 
 impl Stage {
@@ -452,14 +461,16 @@ impl Stage {
                 }
                 let now = self.time;
                 let until = self.reading.map(|f| now + f(&text.replace("<CR>", "")).max(0.0));
-                let shown_before = self.line.as_ref().map_or(0, |p| {
+                let reset = std::mem::take(&mut self.line_clock_reset);
+                let shown_before = self.line.as_ref().filter(|_| !reset).map_or(0, |p| {
                     let own = match p.closing {
                         Some(c) => ((c - p.since) * 60.0).round() as u32 + LINE_FADE_OUT,
                         None => ((now - p.since) * 60.0).round() as u32,
                     };
                     p.shown_before + own
                 });
-                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before });
+                let joined = self.line.as_ref().is_some_and(|p| p.handed_over);
+                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before, joined, handed_over: false, more_follows: false });
                 for (&n, b) in self.characters.iter_mut() {
                     let speaking = i64::from(n) == i64::from(*speaker);
                     b.talking = speaking;
@@ -471,10 +482,16 @@ impl Stage {
                     }
                 }
             }
-            Step::LineClose { .. } => {
+            Step::Command { word, operands, .. } if word & !crate::event::UNMAPPED == crate::event::TUTORIAL_PICTURE && operands.first() == Some(&1) => self.line_clock_reset = true,
+            Step::LineClose { last, more, .. } => {
                 let now = self.time;
                 if let Some(l) = self.line.as_mut() {
-                    l.closing = Some(now);
+                    l.more_follows = *more;
+                    if *last {
+                        l.closing = Some(now);
+                    } else {
+                        l.handed_over = true;
+                    }
                 }
             }
             Step::RemoveAll { .. } => self.characters.clear(),

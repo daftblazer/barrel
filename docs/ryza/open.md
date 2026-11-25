@@ -956,6 +956,52 @@ bones at 2405 are within 0.2 of the key's, at 2605 and 2705 within 1.5 except th
   `hooks.log` has the requests but the sound tables are packed), and a short run holding A at
   the title's New Game with saves present (the menu then starts on Load Game).
 
+### The opening, part 2: the talk, the second telops and the room tutorial (1600 to 14000)
+
+`opening-key2` (ryza-recomp `scenarios/opening-key2.sh`: the same input, A every 120 frames from 2135 to 13975; 801 frames
+every 10 from 5995 to 13995, `commands.txt`, `hooks.log`) is the key. The scripted button goes to Barrel as
+`BARREL_EVENT_PRESSES=2135:120:13975@1600` (docs/parity.md, "Event commands"); a parity frame is
+`BARREL_EVENT_PRESSES=... PARITY_SKIP=tex tools/parity.sh KEY/draws F "$G" - OUT.png --size 1920x1080 --opening --opening-at F`
+(`PARITY_SKIP=tex`: the unindexed `tex8afc81b50b49e048` quads are the talk's particles, up to 51 of them, not drawn).
+
+**Commands** (`barrel-tool ryza-commands`, `tools/cmddiff.py --from 1600 --to 14000`): 908 of the game's 1106 commands pair
+at 1600, 61 of the pairs more than a frame off (p 2, s 38, t 9, u 3, w 9; every group's commonest offset is 1600). What the player
+learned (docs/events.md, "Atelier Ryza DX's events", the last item): lines wait for the button (`event::Buttons`: the first press
+at or after the line's frame, the line ends 17 frames on, the next command 18 on; 31 for the last line under a tutorial picture;
+a command's other lines give the box to the next at once), `s1`/`t2` waits (a frame short when an action's first: STAND-IN),
+`u24` (103 frames from the card: STAND-IN), `p2` (the camera's latest move plus 3 frames: STAND-IN), `p3` passes two frames after
+the queue ends (STAND-IN) and is logged once, `s38`'s range ends `s36`, `s46` plays a motion once, a preset-1 fade holds a frame
+less (STAND-IN, one fade). The unpaired game commands: the `s9` walks (100), the commands of the event that follows at 13846,
+`w3/14`. Left off by more than a frame: the `s36` waits of motions 92510/2530 (1 to 3 frames), the p3 waits after 11590, the
+`opening-commands2` row counts them.
+
+**2D** (`talk.rs`; frames at 0 in 2D, `PARITY_SKIP=tex`): the letterbox (`74200011`/`12`), the lines (text at 508.5, tops 930 and
+975, wrapped at 900 in the font's size 20; the name "Name : " in `str_event_chara_name.xml` ending where the text's first glyph
+begins; fade in over 15 frames from the command's frame, out over 15 from the button, nothing drawn for the first 3), the turning
+arrow (the title cursor's three pictures, its clock the frames the lines stood up, in the capture's own corner form), the hints
+(`u6`/`u7`: plate and words, from 15 frames, once at 1 after the first), `u15` lines (no wait), the name cards (`a21_charatelop`
+from the layout: plate and name, `telop::name_card`), the second telop run and its fades (6035 to 7555, the white fade of preset
+1), the tutorial (`u76`: the pictures' set, the box on an ease-out cubic of 30 frames with the arrow and text sliding 45 pixels,
+dark red text with `<#RRGGBB>` colours, wrapped at 750 in size 16). Checked at 0 (rows `opening-talk-*`, `-name-card-`, `-telop-run2-`, `-white-fade-`): 8205 to 8505 every 10 (box in, full, out),
+8885 to 8985 (cards), 6035 to 7555, 7245 to 7325, and the sweep in the report below.
+
+Left (all STAND-INs named in the code):
+
+- **The arrow's clock.** Lines 6 to 9 are exact (the clock is the sum of the lines' standing frames, `Line::shown_before`); from
+  the 10th the two arrow quads are a tick or two off in some lines (10515 to 10665, 10935 to 10995, the tutorial's), the sum
+  drifts by 1 to 2 and the rule behind it (a frame lost at the 241st tick, the multi-line commands) is not found. 45-degree
+  frames tie in the capture's corner choice (8475).
+- **Particles and the effects** under the talk (`tex8afc81b50b49e048`) and the 3D: not done (part 1's list).
+- **The tutorial**: the tiled texture quad (`fm_d02_barrel_02#1`, 9600 x 3240) is a stale binding drawn as the key has it; the
+  hints' arrival (27 to 37 frames in) is a guess at 30; a black fill of alpha 3e-7 (the key's 13105) is not drawn; the arrow is
+  as above. 13855 on (the next event) is not drawn.
+- **Timing**: the first line of the talk follows the fade of preset 2 at 12953 a frame early (the game's fades of one second
+  hold 63 or 64 frames).
+- **Live play**: the buttons come only from the environment; a window plays the lines with no time (the schedule is laid out up
+  front: to wait for the real button it would be laid out again at each press, which `Buttons` allows).
+- Next capture wanted: every frame (not every 10th) of 8195 to 8290 and 13130 to 13190 (the first frames of a line and of the
+  tutorial's box, and the hints' first frame), and a run with other press times (the arrow's clock and the line rules).
+
 ## Loops that take 50 or 51 frames
 
 The game adds `speed x frame time` to a looping animation's time each frame, in 32-bit floats,

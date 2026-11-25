@@ -164,6 +164,9 @@ pub const CHARA_MOTION_SPEED_RYZA: u32 = 0x73ee_0003;
 /// to, flag}`: the motion plays only between two points of its own, in hundredths of a frame at 60 a second
 /// (the opening's `13000 18100` on Ryza's motion 2281: frames 130 to 181).
 pub const CHARA_MOTION_RANGE: u32 = 0x73ee_0002;
+/// Ryza's `s46` (0x7300002e, read here as the engine's own word): `{character, motion, 0 ...}` plays a whole motion once and
+/// holds its last pose (the opening's `7 2282 ...` at 11927, which `s36` waits out at 35 percent speed: 175 frames).
+pub const CHARA_MOTION_ONCE_RYZA: u32 = 0x73ee_0005;
 /// Ryza's `t26` (`ECT_CAMERA_FOV_MOVE`, 0x7400001a, read here as the engine's own word): `{hundredths of a
 /// degree}`: the manual camera's vertical field of view. The one operand carries no time: it is taken as
 /// set at once (the opening's shots, docs/ryza/open.md, "The opening (P5b)").
@@ -353,6 +356,9 @@ pub const NAME_CARD_WAIT: u32 = 0x7500_0018;
 // STAND-IN: The wait is a fixed 103 frames from the card; the real thing is the card layout's own animation (fitted to the three name cards of `opening-key2`, each 103 frames after its `u65`).
 /// How long after its `u65` a name card is shown, in frames.
 pub const NAME_CARD_FRAMES: f32 = 103.0;
+/// Ryza DX's `u15` (0x7500000f, read here as the engine's own word): `{first, last}` shows lines as `u17` does but
+/// does not wait for the button: the line stands while the event goes on (the opening's 26th, 11153 to 11590).
+pub const SHOW_MESSAGES_UNHELD_RYZA: u32 = 0x75ee_0001;
 /// Ryza DX's `u76`: `{shown, ...}` shows (1) or hides (0) a tutorial picture; the lines under
 /// it close slower ([`Buttons::tutorial_close`]).
 pub const TUTORIAL_PICTURE: u32 = 0x7500_004c;
@@ -381,7 +387,7 @@ pub enum Step<'a> {
     Message { index: usize, speaker: i32, name: Option<i32>, text: String, expression: Option<i32>, gesture: Option<i32> },
     /// The button went down on the line showing: it goes out (Ryza DX's events; only with
     /// [`Player::buttons`]).
-    LineClose { action: usize },
+    LineClose { action: usize, last: bool, more: bool },
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
     /// counts down by each frame's elapsed time).
     Wait { seconds: f32 },
@@ -518,8 +524,10 @@ pub struct Buttons {
     pub presses: Vec<f32>,
     /// From the press to the line's end, for a line of the story's talk.
     pub close: f32,
-    /// The same while a tutorial picture is up (`u76` shows and hides it).
+    /// The same while a tutorial picture is up (`u76` shows and hides it), for the last line of a command.
     pub tutorial_close: f32,
+    /// The same for a line the command goes on from: the next one takes the box at once.
+    pub tutorial_between: f32,
 }
 
 impl Buttons {
@@ -530,8 +538,12 @@ impl Buttons {
         self.presses.iter().copied().find(|&p| p >= shown - 1e-4)
     }
 
-    pub fn line_end(&self, shown: f32, tutorial: bool) -> f32 {
-        let close = if tutorial { self.tutorial_close } else { self.close };
+    pub fn line_end(&self, shown: f32, tutorial: bool, last: bool) -> f32 {
+        let close = match (tutorial, last) {
+            (_, false) => self.tutorial_between,
+            (false, true) => self.close,
+            (true, true) => self.tutorial_close,
+        };
         // (a frame's slack for the float sums: a press a frame's thousandth early still counts)
         self.presses.iter().find(|&&p| p >= shown - 1e-4).map_or(f32::INFINITY, |p| p + close)
     }
@@ -877,6 +889,9 @@ impl<'a> Player<'a> {
                 let blend = f(*hundredths) / 100.0;
                 out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: false, division: Some(*division) });
             }
+            (CHARA_MOTION_ONCE_RYZA, [character, motion, ..]) => {
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend: 0.0, looping: false, division: None })
+            }
             (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: self.slot(*character), division: *division }),
             (CHARA_MOTION_SPEED | CHARA_MOTION_SPEED_RYZA, [character, percent, ..]) if self.motion_speeds || c.word == CHARA_MOTION_SPEED_RYZA => {
                 let speed = if *percent > 0 { *percent as f32 / 100.0 } else { 0.1 };
@@ -972,7 +987,7 @@ impl<'a> Player<'a> {
                 out.push(Step::Effect { action, character: Some(*character), effect: *effect, volume: *volume as f32 / 100.0, pan: se_pan(*pan) })
             }
             (CHARA_VOICE_PLAY, [character, clip, ..]) => out.push(Step::Voice { action, character: Some(*character), clip: *clip }),
-            (SHOW_MESSAGES, [first, last]) => {
+            (SHOW_MESSAGES | SHOW_MESSAGES_UNHELD_RYZA, [first, last]) => {
                 for i in *first as usize..=(*last as usize) {
                     if let Some(m) = self.messages.get(i) {
                         let field = |k: usize| m.fields.get(k).copied().filter(|&v| v >= 0);
@@ -1122,7 +1137,9 @@ impl<'a> Player<'a> {
                         taken.push((now, action, pc));
                         p3_logged = Some((t, pc));
                     }
-                    threads[t] = (ready.max(now) + 1e-4, action, pc);
+                    // STAND-IN: the game's wait sees the character's queue empty two frames after its last command ends (opening-key2: 8637 to 8639, 10314 to 10316); the real thing is the queue's own test.
+                    let after = if self.counted_waits { 2.0 / 60.0 } else { 1e-4 };
+                    threads[t] = (ready.max(now) + after, action, pc);
                     continue;
                 }
             }
@@ -1199,7 +1216,7 @@ impl<'a> Player<'a> {
                     threads[t].0 = end;
                 }
             }
-            if c.word == TUTORIAL_PICTURE {
+            if c.word & !UNMAPPED == TUTORIAL_PICTURE {
                 tutorial = c.operands.first() == Some(&1);
             }
             if let Some(n) = self.translate(action, c, &mut steps)
@@ -1217,19 +1234,23 @@ impl<'a> Player<'a> {
                     }
                     out.push(Timed { time: now, action, step: Step::StartAction { action: n } });
                 }
-            for s in steps.drain(..) {
+            let last_line = steps.iter().rposition(|s| matches!(s, Step::Message { .. }));
+            for (step_at, s) in steps.drain(..).enumerate() {
                 if let Step::Wait { seconds } = s {
                     let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true));
                     threads[t].0 += held;
                     event_clock[t] += held;
                 }
                 let held = match (&s, self.reading, &self.buttons) {
+                    (Step::Message { .. }, _, _) if c.word == SHOW_MESSAGES_UNHELD_RYZA => 0.0,
                     (Step::Message { .. }, _, Some(b)) => {
-                        let end = b.line_end(threads[t].0, tutorial);
+                        let end = b.line_end(threads[t].0, tutorial, Some(step_at) == last_line);
                         event_clock[t] += end - threads[t].0;
                         if end.is_finite() {
-                            // the game takes the press a frame before the pad's frame (the line's fade out starts then)
-                            out.push(Timed { time: b.line_press(threads[t].0).unwrap_or(end) - 1.0 / 60.0, action, step: Step::LineClose { action } });
+                            // the game takes the press a frame before the pad's frame (the line's fade out starts then); only a command's last line fades out,
+                            // the others give the box to the next
+                            let last = Some(step_at) == last_line;
+                            out.push(Timed { time: b.line_press(threads[t].0).unwrap_or(end) - 1.0 / 60.0, action, step: Step::LineClose { action, last, more: Some(step_at) != last_line } });
                         }
                         end - threads[t].0
                     }
@@ -1753,13 +1774,13 @@ mod tests {
         let messages = vec![msg("a"), msg("b"), msg("c")];
         let table = OperandTable::new(&[(SHOW_MESSAGES, Some(2)), (TIME_WAIT, Some(1))]);
         // presses at 1 s and 2 s; a line lasts to 18 frames after its press
-        let buttons = Buttons { presses: vec![1.0, 2.0], close: 18.0 / 60.0, tutorial_close: 32.0 / 60.0 };
+        let buttons = Buttons { presses: vec![1.0, 2.0], close: 18.0 / 60.0, tutorial_close: 32.0 / 60.0, tutorial_between: 1.0 / 60.0 };
         let timed = Player::new(&event, &messages, &table).unwrap().buttons(buttons).schedule();
         let lines: Vec<(String, f32)> = timed.iter().filter_map(|t| match &t.step { Step::Message { text, .. } => Some((text.clone(), t.time)), _ => None }).collect();
-        // "a" at 0 waits for the press at 1.0 s and ends at 1.3; "b" follows at once and takes the press at 2.0 s; the wait of
+        // "a" at 0 waits for the press at 1.0 s and hands the box to "b" a frame on; "b" takes the press at 2.0 s (ends at 2.3); the wait of
         // 0.1 s then "c", which finds no press after it
         assert_eq!(lines[0], ("a".into(), 0.0));
-        assert!((lines[1].1 - 1.3).abs() < 1e-4 && lines[1].0 == "b", "{lines:?}");
+        assert!((lines[1].1 - (1.0 + 1.0 / 60.0)).abs() < 1e-4 && lines[1].0 == "b", "{lines:?}");
         let closes: Vec<f32> = timed.iter().filter(|t| matches!(t.step, Step::LineClose { .. })).map(|t| t.time).collect();
         assert!((closes[0] - (1.0 - 1.0 / 60.0)).abs() < 1e-4 && (closes[1] - (2.0 - 1.0 / 60.0)).abs() < 1e-4, "{closes:?}");
         assert_eq!(timed.iter().filter(|t| matches!(t.step, Step::Message { .. })).count(), 3);

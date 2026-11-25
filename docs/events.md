@@ -1893,3 +1893,21 @@ runner's are `0x140479820` and `0x14047c660`):
   (a guess).
 - `u49 {1, preset, hundredths}` (`ECT_EVENT_CONTRAST_SET_MIX`, Escha's `u22`) fades the screen
   and the event waits for it (`event::fade_hold`, fitted: docs/ryza/open.md).
+- **The opening's talk and what its commands do (read from `opening-key2`, docs/ryza/open.md).**
+  `u17 {first, last}` shows lines `first` to `last` of the event's messages (event_en's `.ebm`, counted
+  from 0) one after the other, each waiting for the confirm button: the line ends 17 frames after the
+  frame the pad's press comes on (the fade out starts a frame before it) and the next command runs 18
+  on; under a tutorial picture the last line of a command takes 31 (a 30-frame fade out), the others
+  give the box to the next line at once. `u6 {1/0}` switches the full button hints (event log, fast
+  forward, skip, auto-play) and `u7 {1/0}` the short ones (fast forward, skip). `t/0x20` 17 and 18
+  (`74200011`, `74200012`, no operands) put the letterbox's two bars up and take them down. `u65 N`
+  with `N` 1 to 14 shows the name card `name00` to `name13` (the plate and the character's name,
+  `a21_charatelop`) and `u24` waits until it is shown (103 frames after the `u65`). `u76 {shown, 0,
+  picture, ...}` shows (1) or hides (0) a tutorial picture, the file `t<84 + picture>` of
+  `res_cmn\ipu`: the first at once, the next over a second; `u3/0x10 {id, ...}` and `u5/0x10` start
+  and stop music by their ids. `s1 {character, hundredths}` and `t2 {hundredths}` (Escha's `s3`
+  and `t2`) wait on the character's or the camera's own queue, a frame short when they are an
+  action's first (`Player::inline_actions` actions hold their starter only for their `p` waits);
+  `p2` waits for the camera's latest move (3 frames after its length) and `p3 {character}` for
+  the character's queue to be empty (two frames after its last command ends); `s46 {character,
+  motion, ...}` plays a motion once (read as `s5`) and `s36` waits it out at its `s39` speed.
