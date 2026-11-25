@@ -100,6 +100,13 @@ pub struct Exit {
     pub to: String,
 }
 
+/// Whether an exit's destination (`S02_I_LIVINGROOM`) is the inside of a building: the game floats an icon over the door of one.
+// STAND-IN: the one door of the captures (Rasenboden's `S02_I_LIVINGROOM`) is the only exit with an icon over it in view and the only one
+// to an interior; the game's own choice (an icon kind per gimmick, `0x1411efbb8`'s table) is not read.
+pub fn leads_inside(to: &str) -> bool {
+    to.split('_').nth(1) == Some("I")
+}
+
 /// The exits of a field, from the table's bytes: `FIELDMAP_CHANGE_EX` rows, with or without a model.
 pub fn exits(bytes: &[u8]) -> Result<Vec<Exit>, String> {
     let root = table::parse(bytes).map_err(|e| format!("gimmick: {e}"))?;

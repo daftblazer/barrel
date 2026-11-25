@@ -41,12 +41,14 @@ pub const GUIDE: usize = 8;
 /// The marquee's mask (`a21_battle.g1t#4`) and the autosave mark's orbs (`a21v2_saveload.g1t#0`).
 pub const BATTLE: usize = 9;
 pub const SAVELOAD: usize = 10;
+/// The gimmicks' icon balloon (`a21_field.g1t#0`).
+pub const BALLOON: usize = 11;
 /// How many textures the layer has.
-pub const TEXTURES: usize = 11;
+pub const TEXTURES: usize = 12;
 /// The textures of the gathered items' pictures, when the layer has them (after the others), two for
 /// each item in the order gathered: the small picture (`a21_item_s.g1t`, the item's own texture) and
 /// the large one (`a21_item_l_<n>.g1t`).
-pub const ITEM_PICTURES: usize = 11;
+pub const ITEM_PICTURES: usize = 12;
 
 /// The layer's texture of the `k`th gathered item's small or large picture.
 pub const fn item_texture(k: usize, large: bool) -> usize {
@@ -241,6 +243,8 @@ pub struct State {
     pub camera_yaw: Option<f32>,
     /// The frames the HUD has been up (60 a second), which the destination's glow pulses by.
     pub tick: f32,
+    /// The clock the looping glows run by: `tick`, less the frames the game's animations lost (a capture's replay lists them).
+    pub anim: f32,
     /// The frames since the field's arrival, which the area name's banner runs by.
     pub age: f32,
     /// The area name's and the map name's string numbers (`place_names`), if the field has them.
@@ -252,6 +256,8 @@ pub struct State {
     pub arrival: bool,
     /// The gathering's popups.
     pub gather: Gathering,
+    /// The gimmicks' icons over the field (`world_mark`), in the camera's view.
+    pub marks: Vec<WorldMark>,
 }
 
 /// What the minimap marks, as places in the field (game units, x then z).
@@ -266,6 +272,8 @@ pub struct Markers {
     pub water: Vec<[f32; 2]>,
     /// Where the story goes next, if it is in this field: a place, or the way out toward it.
     pub destination: Option<[f32; 2]>,
+    /// The doors into buildings (exits to an interior), which float an icon over them in the field (game units, x y z).
+    pub doors: Vec<[f32; 3]>,
 }
 
 pub struct Sources<'a> {
@@ -294,6 +302,8 @@ pub struct Sources<'a> {
     pub sizes: [(u32, u32); TEXTURES - 2],
     /// `uia_a21_fm01.xml` (the item notices' fades).
     pub field_anims: &'a [u8],
+    /// `uil_a21_fm_advertise01.xml` (the gimmicks' icon over the field).
+    pub advertise: &'a [u8],
     /// The sizes of a gathered item's small and large pictures' textures (the same for every item), when the layer has them.
     pub item_sizes: Option<[(u32, u32); 2]>,
 }
@@ -324,6 +334,9 @@ pub struct Hud {
     count_origin: [f32; 2],
     // The tool disc.
     disc: ([f32; 4], [f32; 2]),
+    /// The highlight of a point the tool reaches (`ok_corsol`'s picture and its pulsing copy's).
+    ring: [f32; 4],
+    ring_glow: [f32; 4],
     disc_mask: ([f32; 4], f32),
     tools: Vec<[f32; 4]>,
     tool_at: [f32; 2],
@@ -348,11 +361,66 @@ pub struct Hud {
     help_at: [f32; 2],
     help_text: Label,
     help_left: f32,
+    // The gimmicks' icon over the field.
+    balloon: Balloon,
     // The arrival's popups.
     arrival: Option<Arrival>,
     // The gathering's popups, and the atlases of the item pictures.
     popups: Option<Popups>,
     item_atlases: Option<[(f32, f32); 2]>,
+}
+
+/// The icon the game floats over a gimmick (`fm_icon_gimmick` of `uil_a21_fm_advertise01.xml`): a balloon with the gimmick's
+/// picture in it, laid out in world units around the node's origin.
+struct Balloon {
+    /// The balloon's picture (`gen_a21v2_field01_mini_balloon`) and its place from the origin.
+    picture: [f32; 4],
+    at: [f32; 2],
+    /// The gimmick picture (`gen_a21_icon01_gimmick`'s `image_no`), its place in the balloon, its size and its tint.
+    icon: [f32; 4],
+    icon_at: [f32; 2],
+    icon_size: f32,
+    icon_color: [f32; 4],
+    /// The node's scale (the layout keeps it at one half).
+    scale: f32,
+}
+
+/// Where a gimmick's icon stands in the view: the node's origin on the screen and what a world unit measures there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WorldMark {
+    /// The origin in screen pixels.
+    pub at: [f32; 2],
+    /// Pixels a world unit measures at the origin's depth.
+    pub per_unit: f32,
+    /// The icon's scale by its distance from the eye (`MARK_FAR`).
+    pub near: f32,
+}
+
+/// How far above the gimmick the icon's origin floats (world units).
+// STAND-IN: fitted to the capture (`gather-rasen2` 3130, the door at fixID 13: 49.75 to 50 units); the game takes it from its per-type
+// table at run time (`0x141a94948` + 0x64), which is not read.
+const MARK_LIFT: f32 = 50.0;
+/// From this distance to the eye the icon is its full size; nearer it shrinks by `0.1 + 0.9 * d / 1000` (`0x14049d6ca` to `0x14049d734`:
+/// the constants 1e6 for d squared, 1000, 0.9 and 0.1).
+const MARK_FAR: f32 = 1000.0;
+/// The UI's own camera looks with a vertical field of view of 45 degrees whatever the scene's: the balloon's width in the capture is
+/// its 316 style pixels, three to a layout pixel, times the node's one half (52.67 units), over the focal length of 45 degrees.
+const MARK_FOV: f32 = 45.0;
+
+/// Where the icon over the gimmick at `door` (game units) is in the view `vp` (render space, x mirrored) with the eye at `eye`,
+/// or `None` where the origin is behind the eye.
+pub fn world_mark(vp: &glam::Mat4, eye: glam::Vec3, door: [f32; 3], screen: (u32, u32)) -> Option<WorldMark> {
+    let render = glam::Vec3::new(-door[0], door[1], door[2]);
+    let c = *vp * glam::Vec4::new(render.x, render.y + MARK_LIFT, render.z, 1.0);
+    if c.w <= 0.0 {
+        return None;
+    }
+    let (w, h) = (screen.0 as f32, screen.1 as f32);
+    let at = [(c.x / c.w * 0.5 + 0.5) * w, (c.y / c.w * 0.5 + 0.5) * h];
+    let per_unit = h * 0.5 / (MARK_FOV.to_radians() * 0.5).tan() / c.w;
+    let far = (eye - render).length();
+    let near = if far >= MARK_FAR { 1.0 } else { 0.1 + 0.9 * far / MARK_FAR };
+    Some(WorldMark { at, per_unit, near })
 }
 
 fn node<'a>(layout: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -476,6 +544,22 @@ impl Hud {
         let (_, left_side) = inside(help_bg, "left_side", [0.0; 2]).ok_or("uil_a21_shade: no left_side")?;
         let (help_bg_node, _) = node(&help_layout, "bg")?;
         let (help_text, help_text_at) = inside(help_bg_node, "text", [0.0; 2]).ok_or("uil_a21_shade: no bg/text")?;
+        // The gimmicks' icon: the balloon and the picture inside it, as the layout places them under the node's own scale.
+        let advertise = table::parse(src.advertise).map_err(|e| format!("uil_a21_fm_advertise01: {e}"))?;
+        let (gimmick_e, _) = find(&advertise, "fm_icon_gimmick", [0.0; 2]).ok_or("uil_a21_fm_advertise01: no fm_icon_gimmick")?;
+        let balloon_e = gimmick_e.children.iter().find(|e| e.attr("name") == Some("iconbg")).ok_or("fm_icon_gimmick: no iconbg")?;
+        let glyph_e = balloon_e.children.iter().find(|e| e.attr("name") == Some("icon_gimmick")).ok_or("fm_icon_gimmick: no icon_gimmick")?;
+        let glyph_no = glyph_e.attr("image_no").and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(0);
+        let tint = numbers(glyph_e, "color");
+        let balloon = Balloon {
+            picture: picture(&field, &style_of(balloon_e)?)?,
+            at: pair(balloon_e, "pos", [0.0; 2]),
+            icon: pictures(&icons, &style_of(glyph_e)?)?.get(glyph_no).copied().ok_or("fm_icon_gimmick: no such picture")?,
+            icon_at: pair(glyph_e, "pos", [0.0; 2]),
+            icon_size: pair(glyph_e, "size_wh", [50.0; 2])[0],
+            icon_color: if tint.len() == 4 { [tint[0] / 255.0, tint[1] / 255.0, tint[2] / 255.0, tint[3] / 255.0] } else { [1.0; 4] },
+            scale: scale_of(gimmick_e),
+        };
         let atlases = src.sizes.map(|(w, h)| (w as f32 * 2.0, h as f32 * 2.0));
         let arrival = Arrival::read(&src, &places, &field, &atlases)?;
         let popups = Popups::read(&src, &places, &field)?;
@@ -502,6 +586,8 @@ impl Hud {
             count: label(num_e, pair(num_e, "pos", [0.0; 2])),
             count_origin: num_at,
             disc: (picture(&field, &style_of(bg_e)?)?, disc_at),
+            ring: picture(&field, "gen_a21_field01_equip_corsol03")?,
+            ring_glow: picture(&field, "gen_a21_field01_equip_corsol02")?,
             disc_mask: (picture(&field, &style_of(mask_c)?)?, scale_of(mask_c)),
             tools: pictures(&icons, &style_of(item_e)?)?,
             tool_at,
@@ -523,6 +609,7 @@ impl Hud {
             help_at,
             help_text: label(help_text, help_text_at),
             help_left: left_side[0],
+            balloon,
             arrival: Some(arrival),
             popups: Some(popups),
             item_atlases,
@@ -548,12 +635,18 @@ impl Hud {
     /// `hud-walk`: the mask quad writes stencil 1 with no colour, the terrain, markers and arrow
     /// test equal to 1); the tool disc's mask goes to a target of its own the tool's picture is
     /// multiplied by, drawn here as a mask that clips nothing (the tool sits inside the disc).
-    pub fn quads(&self, state: &State, markers: &Markers, screen: (u32, u32)) -> (Vec<Quad>, Vec<Clip>, std::ops::Range<usize>) {
+    pub fn quads(&self, state: &State, markers: &Markers, screen: (u32, u32)) -> (Vec<Quad>, Vec<Clip>, Vec<std::ops::Range<usize>>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { hud: self, k, left, out: Vec::new() };
         let white = [1.0; 4];
         let mut clips = Vec::new();
+        let mut additive = Vec::new();
+
+        // The gimmicks' icons over the field, under the HUD.
+        for m in &state.marks {
+            self.world_icon(&mut pen, m);
+        }
 
         // The story marquee of the arrival after the opening, under everything else.
         if state.arrival {
@@ -623,7 +716,7 @@ impl Hud {
             }
             // With an arrival the loop starts 2 frames before it (hud-walk's 1728 and the opening's 14862 both fit it); a still without one keeps the fitted phase.
             let arrival = state.tick - state.age;
-            let (alpha, scale) = glow_pulse(state.tick, if arrival > 0.0 { arrival - 2.0 } else { GLOW_PHASE });
+            let (alpha, scale) = glow_pulse(state.anim, if arrival > 0.0 { arrival - 2.0 } else { GLOW_PHASE });
             let tint = |a: f32| [GLOW_TINT[0], GLOW_TINT[1], GLOW_TINT[2], a];
             pen.centered(FIELD, self.destination_icon, at, 1.0, white);
             // The game draws no glow while the pulse is at 0 (`hud-walk` 1800: loop frame 3).
@@ -632,7 +725,7 @@ impl Hud {
                 pen.centered(GLOW, self.glows[1], at, 1.0, tint(alpha));
             }
         }
-        let glow = glow..pen.out.len();
+        additive.push(glow..pen.out.len());
 
         // The basket: its disc, its picture and the count on its plate.
         let dim = [0.0, 0.0, 0.0, 100.0 / 255.0];
@@ -647,6 +740,20 @@ impl Hud {
         pen.picture(FIELD, self.disc.0, self.disc.1, 1.0, white);
         clips.push(Clip { mask: pen.out.len(), quads: 0..0 });
         pen.picture(FIELD, self.disc_mask.0, self.disc.1, self.disc_mask.1, white);
+        // The highlight of a staff point in reach: the ring and its copy over it, and between them the pulsing glow (added).
+        let gathering = &state.gather;
+        if gathering.staff && gathering.near.is_some() && gathering.pressed.is_none_or(|p| p < gathering.notice_at) {
+            pen.picture(FIELD, self.ring, self.disc.1, 1.0, white);
+            let (alpha, scale) = ring_pulse(state.anim, if state.tick - state.age > 0.0 { state.tick - state.age - 2.0 } else { GLOW_PHASE });
+            if alpha > 0.0 {
+                let half = self.ring_glow[2] / PER_LAYOUT / 2.0;
+                let middle = [self.disc.1[0] + half, self.disc.1[1] + half];
+                let from = pen.out.len();
+                pen.centered(FIELD, self.ring_glow, middle, scale, [1.0, 1.0, 1.0, alpha]);
+                additive.push(from..pen.out.len());
+            }
+            pen.picture(FIELD, self.ring, self.disc.1, 1.0, white);
+        }
         if let Some(tool) = self.tools.get(state.tool) {
             pen.sized(ICON, *tool, [self.disc.1[0] + self.tool_at[0], self.disc.1[1] + self.tool_at[1]], self.tool_size, [26.0 / 255.0, 0.0, 0.0, 1.0]);
         }
@@ -678,7 +785,28 @@ impl Hud {
         if state.arrival {
             self.autosave_mark(&mut pen, state.age);
         }
-        (pen.out, clips, glow)
+        (pen.out, clips, additive)
+    }
+
+    /// A gimmick's icon: the balloon about its middle (it shrinks about it by the distance's scale) and the gimmick's picture in it.
+    fn world_icon(&self, pen: &mut Pen, m: &WorldMark) {
+        let b = &self.balloon;
+        // The layout's pixels (the style's three to one) are world units times the node's scale.
+        let unit = b.scale * m.per_unit;
+        let (w, h) = (b.picture[2] / PER_LAYOUT, b.picture[3] / PER_LAYOUT);
+        let middle = [m.at[0] + (b.at[0] + w / 2.0) * unit, m.at[1] + (b.at[1] + h / 2.0) * unit];
+        let size = [w * unit * m.near, h * unit * m.near];
+        let rect = [middle[0] - size[0] / 2.0, middle[1] - size[1] / 2.0, middle[0] + size[0] / 2.0, middle[1] + size[1] / 2.0];
+        let screen = [2.0 * pen.left + 1280.0 * pen.k, 720.0 * pen.k];
+        if rect[2] < 0.0 || rect[3] < 0.0 || rect[0] > screen[0] || rect[1] > screen[1] {
+            return;
+        }
+        pen.quad(BALLOON, pen.uv(BALLOON, b.picture), rect, [1.0; 4]);
+        // The picture sits at its place from the balloon's corner, scaled with it.
+        let ratio = unit * m.near;
+        let at = [rect[0] + b.icon_at[0] * ratio, rect[1] + b.icon_at[1] * ratio];
+        let side = b.icon_size * ratio;
+        pen.quad(ICON, pen.uv(ICON, b.icon), [at[0], at[1], at[0] + side, at[1] + side], b.icon_color);
     }
 
     /// The button help bar at the screen's lower right (the load screen's look): a plate as wide
@@ -753,6 +881,19 @@ fn glow_pulse(tick: f32, start: f32) -> (f32, f32) {
     let u = ((t - 10.0) / 60.0).clamp(0.0, 1.0);
     // Quantised to bytes, as the game's colour.
     ((alpha * 255.0).round() / 255.0, 0.8 + 0.2 * (1.0 - (1.0 - u).powi(3)))
+}
+
+/// The tool ring's pulse (`anm_a21_fm_minimap_equip_icon`: alpha 0 until frame 5, 128 at 10, 0 at 70; scale 1 until 10, easing out to 1.1
+/// at 70) on the glows' loop (`glow_pulse`), as the colour byte it is drawn with.
+fn ring_pulse(anim: f32, start: f32) -> (f32, f32) {
+    let t = (anim - start).rem_euclid(GLOW_PERIOD);
+    let alpha = match t {
+        t if t < 5.0 => 0.0,
+        t if t < 10.0 => (t - 5.0) / 5.0,
+        t => ((70.0 - t) / 60.0).max(0.0),
+    };
+    let u = ((t - 10.0) / 60.0).clamp(0.0, 1.0);
+    ((alpha * 128.0).round() / 255.0, 1.0 + 0.1 * (1.0 - (1.0 - u).powi(3)))
 }
 
 const TERRAIN_ORIGIN: [f32; 2] = [1152.67, 590.66];

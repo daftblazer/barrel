@@ -39,6 +39,8 @@ const DISCOVERY_HOLD: f32 = 211.0;
 // together, the hold counted from the last one's start (the fade-out began on 2751 = 2610 + 141). A third item's gap is taken
 // as the same.
 const ITEM_GAP: f32 = 22.0;
+/// How many frames further along its slide the notice's text is than its plate (STAND-IN: 2 layout pixels of the 9.5 a frame, from the one frame, `gather-rasen2` 3200, where it shows).
+const TEXT_AHEAD: f32 = 0.21;
 const NOTICE_STEP: f32 = 44.0;
 const NOTICE_UP_FRAMES: f32 = 21.0;
 /// The frames the prompt takes to slide in (`anm_common_slide_in_bottom`'s 30).
@@ -180,9 +182,24 @@ fn under(ink: [f32; 4], tint: [f32; 4]) -> [f32; 4] {
 }
 
 impl Hud {
-    /// The prompt, the discovery log and the item notice for `g`, over the rest of the HUD.
+    /// The discovery log, the prompt and the item notices for `g`, over the rest of the HUD (`gather-rasen2` 3200: the game's quads of
+    /// one texture run the log's, the prompt's, the notices').
     pub(super) fn gathering(&self, pen: &mut Pen, g: &Gathering) {
         let Some(p) = &self.popups else { return };
+        let since = g.pressed.filter(|_| !g.found.is_empty());
+        // The discovery log (the first item the library did not know).
+        let first = pen.out.len();
+        if let (Some(since), Some((k, f))) = (since, g.found.iter().enumerate().find(|(_, f)| f.new)) {
+            let age = since - (g.notice_at - 1.0) - k as f32 * ITEM_GAP;
+            if let Some((tint, shift)) = log_state(&p.discovery_in_color, &p.discovery_in_pos, &p.discovery_out, age, DISCOVERY_HOLD) {
+                let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT];
+                pen.picture(FIELD, p.back.0, at(p.back.1), 1.0, tint);
+                pen.dropped(&p.index, [shift, ROOT_SHIFT], self.string(280), under(p.index.color.unwrap_or([1.0; 4]), tint), p.index_bold, tint);
+                pen.sized(item_texture(k, true), [0.0, 0.0, 512.0, 512.0], at(p.large), p.large_size, tint);
+                pen.text(&p.name, [shift, ROOT_SHIFT], self.word(f.name), under(p.name.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
+            }
+        }
+        keep_in_view(pen, first);
         // The prompt: slides up from below while a point is in reach, back down from A on.
         if let Some(near) = g.near {
             let along = g.pressed.map_or(near, |since| SLIDE_FRAMES - (since - g.leave_at).max(0.0));
@@ -198,20 +215,9 @@ impl Hud {
                 pen.text(&p.prompt_text, [0.0, ROOT_SHIFT + shift], self.word(word), [ink[0], ink[1], ink[2], color[3]]);
             }
         }
-        let Some(since) = g.pressed.filter(|_| !g.found.is_empty()) else { return };
-        let first = pen.out.len();
-        // The discovery log (the first item the library did not know).
-        if let Some((k, f)) = g.found.iter().enumerate().find(|(_, f)| f.new) {
-            let age = since - (g.notice_at - 1.0) - k as f32 * ITEM_GAP;
-            if let Some((tint, shift)) = log_state(&p.discovery_in_color, &p.discovery_in_pos, &p.discovery_out, age, DISCOVERY_HOLD) {
-                let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT];
-                pen.picture(FIELD, p.back.0, at(p.back.1), 1.0, tint);
-                pen.dropped(&p.index, [shift, ROOT_SHIFT], self.string(280), under(p.index.color.unwrap_or([1.0; 4]), tint), p.index_bold, tint);
-                pen.sized(item_texture(k, true), [0.0, 0.0, 512.0, 512.0], at(p.large), p.large_size, tint);
-                pen.text(&p.name, [shift, ROOT_SHIFT], self.word(f.name), under(p.name.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
-            }
-        }
+        let Some(since) = since else { return };
         // The item notices, each pushed up a slot by the next one's coming; they leave together.
+        let first = pen.out.len();
         let start = |k: usize| g.notice_at + k as f32 * ITEM_GAP;
         let last = start(g.found.len() - 1);
         for (k, f) in g.found.iter().enumerate() {
@@ -221,16 +227,22 @@ impl Hud {
             let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT - up];
             pen.picture(FIELD, p.plate.0, at(p.plate.1), 1.0, tint);
             pen.sized(item_texture(k, false), [0.0, 0.0, 256.0, 256.0], at(p.small), p.small_size, tint);
-            pen.text(&p.line, [shift, ROOT_SHIFT - up], self.word(f.name), under(p.line.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
+            // The notice's text is a fifth of a frame ahead of its plate on the slide (`gather-rasen2` 3200: its glyphs sit 3 pixels right of Barrel's, one of them over the screen's edge).
+            let text_shift = if since - start(k) < hold { p.notice_in_pos.at((since - start(k) + TEXT_AHEAD) / 60.0)[0] } else { shift };
+            pen.text(&p.line, [text_shift, ROOT_SHIFT - up], self.word(f.name), under(p.line.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
         }
-        // The game draws nothing that falls wholly off the screen (the notices come in from the left).
-        let (from, to) = (pen.left, pen.left + 1280.0 * pen.k);
-        let mut at = 0;
-        pen.out.retain(|q| {
-            at += 1;
-            at <= first || (q.rect[0] < to && q.rect[2] > from)
-        });
+        keep_in_view(pen, first);
     }
+}
+
+/// The game draws nothing that falls wholly off the screen (the notices come in from the left): the quads from `first` on.
+fn keep_in_view(pen: &mut Pen, first: usize) {
+    let (from, to) = (pen.left, pen.left + 1280.0 * pen.k);
+    let mut at = 0;
+    pen.out.retain(|q| {
+        at += 1;
+        at <= first || (q.rect[0] < to && q.rect[2] > from)
+    });
 }
 
 /// A notice's colour and how far right of its place it is `age` frames after it began (`None`

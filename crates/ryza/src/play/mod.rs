@@ -110,6 +110,8 @@ struct Args {
     hud_arrival: f32,
     /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
     hud_stick: Vec<(f32, f32)>,
+    /// `--hud-slips F,..`: the capture frames at which the game's animation clock lost a frame (its looping glows run 1 frame behind from each).
+    hud_slips: Vec<f32>,
     /// `--gather NEAR:PRESS`: the capture's frames a gathering point came in reach (its prompt began to slide in) and A was pressed at it; the HUD shows the gathering's popups by them (`BARREL_RANDOM_STATE` is the generator they draw from).
     gather: Option<(f32, f32)>,
     /// `--swing NEAR:PRESS`: the same for the staff's swing (X) at a point of its own kind.
@@ -120,6 +122,12 @@ struct Args {
     learned: Vec<i32>,
     /// The camera's yaw in the game's terms, when a run is given it (`--camera-yaw`), instead of behind her.
     camera_yaw: Option<f32>,
+    /// `--camera-length L`: how far the eye is from her look point, as a capture has it (no pull-in against the ground behind her).
+    camera_length: Option<f32>,
+    /// `--camera-target X,Y,Z`: where the follow camera looks (game units), as a capture has it.
+    camera_target: Option<[f32; 3]>,
+    /// `--camera-pitch P`: the follow camera's pitch in degrees, as a capture has it.
+    camera_pitch: Option<f32>,
     /// `--no-skyline`: objects behind the ground are drawn too.
     no_skyline: bool,
     no_occluders: bool,
@@ -203,7 +211,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -322,6 +330,7 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--spent" => a.spent = value()?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
             "--learned" => a.learned = value()?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
+            "--hud-slips" => a.hud_slips = value()?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
             "--hud-stick" => {
                 for span in value()?.split(',') {
                     let (from, to) = span.split_once('-').ok_or("--hud-stick FROM-TO,...")?;
@@ -329,6 +338,13 @@ fn args(args: Vec<String>) -> Result<Args> {
                 }
             }
             "--camera-yaw" => a.camera_yaw = Some(value()?.parse()?),
+            "--camera-length" => a.camera_length = Some(value()?.parse()?),
+            "--camera-target" => {
+                let v = value()?;
+                let n = v.split(',').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
+                a.camera_target = Some(*n.first_chunk::<3>().ok_or("--camera-target X,Y,Z")?);
+            }
+            "--camera-pitch" => a.camera_pitch = Some(value()?.parse()?),
             "--no-skyline" => a.no_skyline = true,
             "--no-occluders" => a.no_occluders = true,
             "--ryza" => {
@@ -613,6 +629,7 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
         ("\\data\\x64\\res_en\\ui\\a21_battle.g1t", 4),
         ("\\data\\x64\\res_cmn\\ui\\a21v2_saveload.g1t", 0),
+        ("\\data\\x64\\res_en\\ui\\a21_field.g1t", 0),
     ];
     // The gathered items' pictures, two each: the small one is the item's own texture of `a21_item_s.g1t`, the large one `a21_item_l_<n>.g1t`'s only.
     let item_files = items.iter().flat_map(|&n| [("\\data\\x64\\res_cmn\\ui\\a21_item_s.g1t".to_string(), n), (format!("\\data\\x64\\res_cmn\\ui\\a21_item_l_{n:03}.g1t"), 0)]);
@@ -639,7 +656,8 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         various_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
         strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
-        sizes: [size(2), size(3), size(4), size(5), size(6), size(7), size(8), size(9), size(10)],
+        sizes: [size(2), size(3), size(4), size(5), size(6), size(7), size(8), size(9), size(10), size(11)],
+        advertise: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_fm_advertise01.xml")?,
         field_anims: &install.read("\\saves\\ui_en\\a21_field\\uia_a21_fm01.xml")?,
         item_sizes: (!items.is_empty()).then(|| [size(fh::item_texture(0, false)), size(fh::item_texture(0, true))]),
     })?;
@@ -898,6 +916,7 @@ fn minimap_markers(install: &barrel_ryza::install::Install, field: &str, story: 
         water: at("WATERSIDE"),
         folk: townsfolk.iter().filter(|n| n.talk).map(|n| [n.position[0], n.position[2]]).collect(),
         destination,
+        doors: exits.iter().filter(|x| barrel_ryza::gimmick::leads_inside(&x.to)).map(|x| x.position).collect(),
     }
 }
 
@@ -2094,7 +2113,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // How high above her feet the camera looks (`LOOK_HEIGHT`).
     let mut look_height = barrel_ryza::walk::LOOK_HEIGHT;
     let (mut yaw, mut pitch) = match (follow, &rig) {
-        (Some(c), Some(r)) => (a.camera_yaw.map_or(c.yaw - r.player.turn.to_degrees(), |g| 180.0 - g), c.pitch),
+        (Some(c), Some(r)) => (a.camera_yaw.map_or(c.yaw - r.player.turn.to_degrees(), |g| 180.0 - g), a.camera_pitch.unwrap_or(c.pitch)),
         _ => (a.yaw, a.pitch),
     };
     let mut dist = a.distance.or(follow.map(|c| c.length)).unwrap_or(radius / (fov * 0.5).sin() * 1.05).max(1.0);
@@ -2109,6 +2128,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         cam = cam.following();
     }
     let mut center = match (follow, &rig) {
+        (Some(_), Some(_)) if a.camera_target.is_some() => Vec3::from(a.camera_target.unwrap_or_default()) * Vec3::new(-1.0, 1.0, 1.0),
         (Some(_), Some(r)) => (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
         _ => center,
     };
@@ -2670,6 +2690,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 i.prev_model = i.model;
                 i.model = render_space(Mat4::from_scale_rotation_translation(Vec3::from(r.chara.size), glam::Quat::from_rotation_y(r.player.turn), r.player.at));
                 center = match (a.look_at, pump.is_none()) {
+                    _ if a.camera_target.is_some() => Vec3::from(a.camera_target.unwrap_or_default()) * Vec3::new(-1.0, 1.0, 1.0),
                     (Some(p), true) if a.walk_from.is_some() => (p + (r.player.at - walk_start)) * Vec3::new(-1.0, 1.0, 1.0),
                     _ => (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0),
                 };
@@ -2911,8 +2932,9 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             scene.write_palette(&gpu, &palette, &prev_palette)?;
         }
         // Following her: no nearer than the ground behind her allows (`camera::clear_distance`).
-        let drawn_dist = match (follow, rig.as_ref().and_then(|r| r.ground.as_ref().map(|g| (r, g)))) {
-            (Some(_), Some((r, g))) => {
+        let drawn_dist = match (a.camera_length, follow, rig.as_ref().and_then(|r| r.ground.as_ref().map(|g| (r, g)))) {
+            (Some(l), ..) => l,
+            (_, Some(_), Some((r, g))) => {
                 let (y, p) = (yaw.to_radians(), pitch.to_radians());
                 let way = Vec3::new(-y.sin() * p.cos(), p.sin(), y.cos() * p.cos());
                 let clear = barrel_ryza::camera::clear_distance(g, r.walls.as_ref(), r.player.at + Vec3::new(0.0, look_height, 0.0), way, dist);
@@ -2941,6 +2963,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         let sun_probe = rig.as_ref().map_or(center, |r| (r.player.at + Vec3::new(0.0, look_height, 0.0)) * Vec3::new(-1.0, 1.0, 1.0));
         let mut view = look_for(sub_box, center, sun_probe, yaw, pitch, drawn_dist, fov, (width, height), prev_vp, environment.as_ref(), &flare_look, shadow_size, presets_now.get().shadow, static_box, title_clip, sky_clock);
         eye_now.set(Vec3::from_slice(&view.look[4][..3]));
+        // The icons over the doors in view, for the HUD.
+        let hud_marks: Vec<barrel_ryza::field_hud::WorldMark> = hud_markers.doors.iter().filter_map(|&d| barrel_ryza::field_hud::world_mark(&view.vp, eye_now.get(), d, (width, height))).collect();
         if let Some(h) = &horizon {
             h.borrow_mut().look_from(eye_now.get() * Vec3::new(-1.0, 1.0, 1.0));
             // Where the townsfolk stand this frame, in the field's space (x mirrored back).
@@ -3607,9 +3631,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 map: a.field == barrel_ryza::field_hud::MAP_FIELD,
                 camera_yaw: play.map_rotation.then_some(180.0 - yaw),
                 tick,
+                anim: tick - a.hud_slips.iter().filter(|&&f| tick >= f).count() as f32,
                 age: tick - a.hud_arrival,
                 place: barrel_ryza::field_hud::place_names(&a.field).filter(|_| !a.no_banner),
                 arrival: a.no_banner,
+                marks: hud_marks.clone(),
                 gather: match &gather_plan {
                     Some(g) => barrel_ryza::field_hud::Gathering { near: (tick >= g.near).then(|| tick - g.near), pressed: (tick >= g.press).then(|| tick - g.press), found: g.found.clone(), notice_at: g.notice_at(), leave_at: g.leave_at(), staff: g.tool == gathering::Tool::Staff },
                     None => live_gather.show(tick),
@@ -3628,7 +3654,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 },
             };
             let (quads, clips, glows) = view.quads(&state, &hud_markers, (width, height));
-            layer.set_blended(&gpu, &quads, &clips, glows)?;
+            layer.set_blended_by(&gpu, &quads, &clips, &|i| glows.iter().any(|r| r.contains(&i)))?;
         }
         // The item gathered brings its pictures: the HUD's layer is made again with them.
         if let Some(images) = gather_hud_items.take() {
