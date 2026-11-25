@@ -2785,7 +2785,7 @@ frames from 1995, the generator's window every frame 1890 to 2100).
   fishing and water icons (the game's gimmick icons 3 and 4, drawn after the exits, before the townsfolk).
   `--gather NEAR:PRESS` replays it against a capture (the frames the prompt came up and A went down) with
   `BARREL_RANDOM_STATE` for the generator; the sounds (`SE_FLD_001_GATHER01`, `_002_GATHER02`, and `SE_FLD_091_NEW_DISCOVERY`
-  for a new item) 40, 85 and 88 frames after A. In a window, A (Enter or the pad's confirm) at a faced point gathers.
+  for a new item) 40, 85 and 88 frames after A. In a window, A (Enter or the pad's confirm) at a faced point gathers (checked 2026-11-25 with `BARREL_PAD_SCRIPT` and window shots at the comb point: the prompt, then New Discovery and the item notice; the item is the clock seed's, and one run gave two items, of which the HUD shows the first).
 - The timeline read off 2005 to 2695: the prompt starts at 1995 (her facing came within 48 degrees of the point), is
   steady from 2025, slides out from 2040 (the press) to 2070; the discovery log fades in 87 frames after the press (2127),
   the notice a frame later, the notice fades out from 141 frames after its start, the log from 211 after its (2269, 2338).
