@@ -415,7 +415,7 @@ Every-frame keys (`opening-key4`, 13120 to 15220): `barrel-parity diffs KEY a-b 
 (`PARITY_LINES=1` prints the differing quads), `barrel-parity bquads TRACE a-b` prints Barrel's own frames as `quads` prints the game's, and
 `tools/cuediff.py KEY BARREL` compares two cue logs within a frame (`tools/ryza_cues.py` makes the game's from `hooks.log`).
 `tools/cmddiff.py` counts a pair as on the offset within a frame; of `opening-commands3`'s 926 pairs 850 are exactly at 1600, 15 a frame off and 61 more
-(docs/ryza/open.md, "The opening (P5b)", part 4).
+(docs/ryza/open.md, "The opening (P5b)", part 4). After part 5 `opening-commands3` has 939 pairs, none more than a frame off, 899 exactly (`cmddiff.py` prints `exact:`).
 
 `barrel-tool ryza-commands INSTALL opening` plays the opening and the help event after it (`xx01_150`) as one run, the frames
 the opening's: against `opening-key3` (A every 120 frames to 23975, `BARREL_EVENT_PRESSES=2135:120:23975@1600`) 926 of 1118 commands

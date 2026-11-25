@@ -1150,6 +1150,36 @@ that is why it stays for 1b); 6361's `s8` takes 51 frames where Barrel gives 50;
 Left (all named in the code or here): the five 2D frames above; the part 3 list (the free play's 3D, 12265's text opacity); the voices and
 three stops; `BARREL_WINDOW_SHOT` frames past about 10,000 of a window run (not looked at).
 
+### The opening, part 5: the characters' walks, counted waits, the sound stops (1600 to 14861)
+
+**Commands: `opening-commands3` is 939 of 1118 paired with 0 off** (899 exactly at 1600, 40 a frame off; before: 926 paired, 61 off;
+`opening-commands2` off 0). `cmddiff.py` now also prints `exact:`. The "100 unpaired `s9` walks" were 13 `s9` (their y differed) plus
+the game's own implicit commands, which are what stays unpaired (below).
+
+- **The walks.** Ryza's `s5` (`ECT_CHARA_MOVE_SET`) and `s9` are Escha's `s18`: `{character, 0 0 0 x y z, extra, 0, speed, 0 0 0}`
+  (`RYZA_SAME_AS_ESCHA`). `s9` lands on the terrain: the game rewrites its y with `floor(terrain(x, z) - y)` when it starts
+  (`event::CHARA_WALK_RYZA`, `walk_height`; the 13 walks of the key agree, one with y -29 gives terrain + 29; the heightmap alone,
+  `walk::heightmap_ground`, `opening::terrain`; the sign is a STAND-IN from that one walk). `s3` places a character at (x, terrain + y,
+  z) (`CHARA_PLACE_GROUND_RYZA`: the room scenes use y 0, the walk at 4526 -29 after an `s2` at terrain - 29, her feet). `s17` is a timed
+  turn to face a position (`Step::FaceOver`, hundredths, curve). `s8` is `MOVE_PRE_WAIT`. A looping `s40` of the motion already
+  playing leaves it going (`Step::Motion::keep`: the second walk at 3701). `diff3d` of `pc00a` at 3505 to 3685, 4245 to 4525,
+  4565 to 4885, 5125 to 5325, 5725 to 5965 is within 0.7 (bones; was 293 and more).
+- **Counted waits.** The queues count whole frames: `s8` ends on the first frame the move has the time or less left (6250's move of
+  2.134 s, 0.3 s before its end: 6361), an `s36` on the first frame at or past the clip's end (67.33 frames: 68), a motion's own range
+  (`s38`) a frame more (STAND-IN: 10193, 120 held 121), and an `s1` is a frame short only before the queue has waited at all
+  (12547: 240 frames after an `s36`). These removed all 61 off pairs.
+- **Sound.** `u2/0x10` (`SE_STOP`, the sea's effect at 3701) is a stop, and a field change to another map than the last stops the
+  channels (8115, 11905; the first and a repeat, 1603 and 13779, do not): `opening-cues` 58 of 58.
+- **2D.** A tutorial box coming in after another's is drawn once at the first tick of its fade a frame before the third (STAND-IN,
+  `talk::tutorial_quads`): 13329, 13478, 14174 from 55 to 147 mismatches to 2 (the arrow's turn on that frame is 2 degrees off).
+  13878 (59: Barrel is at the third tick where the game shows the first, a line not after a tutorial line) and 13845's HUD frame are left.
+
+Left: the game's implicit commands (a line's facial resets `s105`/`s109` after an `s40`, about 100, never in a script) are not in
+Barrel's log, so 179 of the game's 1118 stay unpaired; 12485's `s36` takes 62 frames for a clip of 61 and the range wait's extra frame has
+no rule (float rounding of the clip's length, not read); after a walk's arrival (4918) the character's facing is not the walk's (the key
+at 4925 and 4965 is 223 off in a hand bone; her facing there looks like the one she had before the walk: not built); 13878; 13845; 3D after
+3925 (the camera: view-projection off from 3965); 12265's text; the free play's 3D.
+
 ## Loops that take 50 or 51 frames
 
 The game adds `speed x frame time` to a looping animation's time each frame, in 32-bit floats,

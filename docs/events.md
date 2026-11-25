@@ -1918,6 +1918,11 @@ runner's are `0x140479820` and `0x14047c660`):
   163 on read as `help_h_<n - 88>`; the table that names them is not read). The field is then free play from 14862 (the opening's last
   `q5` for slot 0 is her start).
 
+- **The characters' moves in Ryza's events (opening, docs/ryza/open.md part 5).** `s5` `{character, 0 0 0 x y z, extra, 0, speed, 0 0 0}`
+  and `s9` (the same form; its y is rewritten to `floor(terrain - y)`) walk like Escha's `s18`; `s3 {character, 0 0 0 x y z}` places the
+  character at the terrain plus y; `s17 {character, position, hundredths, curve}` turns to face a position over the time; `s8
+  {character, hundredths}` waits until the move has that long left.
+
 **Sound commands of the opening (`opening-key4`'s `hooks.log`, `tools/ryza_cues.py`).** `u3 {5000 + n, percent, 0, 0}` (`ECT_SOUND_BG_PLAY`) asks
 for the music whose `stream.xml` tag starts `BGM<n, 5 digits>`; `u4` and `u5` (`_STOP`, `_FADEOUT`) stop the channels on their own frame; `u1`
 (`ECT_SOUND_SE_PLAY`) `{row, ...}` and `s124` `{character, row, ...}` play the effect that is row `row` (counted from 0) of `sfx.xml`
