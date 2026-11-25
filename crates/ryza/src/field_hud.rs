@@ -103,6 +103,11 @@ const HELP_GROW_FRAMES: f32 = 16.0;
 // STAND-IN: The short line's switch to the full one falls with the plate's grow start; the capture has it at 1740 (short, 7 frames in) and 1750 (full, 17 frames in).
 /// The entries (of `HELP_ENTRIES`) the bar shows when it first comes up, before the full line.
 const HELP_FIRST: [usize; 2] = [2, 5];
+/// The entry the bar drops once she has swung the staff (`gather-rasen2` 3450 on: the line is without its sixth entry, the staff's hint
+/// of the X button; the bar of 2591 to 2860, before the swing, has it).
+// STAND-IN: that the hint goes with the first swing (rather than with the first gathering by it) is read off the one capture, whose
+// first swing was a gathering; the game's own flag is not read.
+const STAFF_HINT: usize = 5;
 /// The returning bar's plate takes these frames to grow and is this far on at the fade's first frame (the menu's plate frames,
 /// fitted on 2575 and 2580), and its fade starts this many frames after an arrival's would.
 const BACK_GROW_FRAMES: f32 = 6.4;
@@ -150,12 +155,17 @@ pub struct HelpBar {
     /// before the fade the growth has run and the frames it takes (the menu's return, the
     /// arrival after the opening); `None` for the first showing's short line and slow grow.
     quick: Option<(f32, f32)>,
+    /// Frames since the bar last began to show, and whether its line had the staff's hint when it was last shown and when this showing
+    /// began (a changed line has the plate tween from the old line's width, `help_bar`).
+    lit: f32,
+    hint_last: bool,
+    hint_from: bool,
 }
 
 impl HelpBar {
     /// The bar at a field's arrival.
     pub fn arriving() -> HelpBar {
-        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0, quick: None }
+        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0, quick: None, lit: 0.0, hint_last: true, hint_from: true }
     }
 
     /// The bar at the arrival after the opening: no rest to wait for, it fades in from the third frame (`opening-key4`: the
@@ -176,11 +186,23 @@ impl HelpBar {
 
     /// Moves on `frames` frames (60 a second), the move stick out of its dead zone or not.
     pub fn step(&mut self, stick: bool, frames: f32) {
+        self.step_swung(stick, frames, false);
+    }
+
+    /// As `step`, with whether she has swung the staff (the line then leaves out its hint: `STAFF_HINT`).
+    pub fn step_swung(&mut self, stick: bool, frames: f32, swung: bool) {
         self.idle = if stick { 0.0 } else { self.idle + frames };
         let toward = if self.idle > HELP_IDLE { frames } else { -frames } / HELP_FADE;
+        let was = self.alpha > 0.0;
         self.alpha = (self.alpha + toward).clamp(0.0, 1.0);
         if self.alpha > 0.0 {
             self.shown += frames;
+            if !was {
+                self.lit = 0.0;
+                self.hint_from = self.hint_last;
+            }
+            self.lit += frames;
+            self.hint_last = !swung;
         }
     }
 
@@ -258,6 +280,8 @@ pub struct State {
     pub gather: Gathering,
     /// The gimmicks' icons over the field (`world_mark`), in the camera's view.
     pub marks: Vec<WorldMark>,
+    /// Whether she has swung the staff (the help bar then leaves out its hint, `STAFF_HINT`).
+    pub swung: bool,
 }
 
 /// What the minimap marks, as places in the field (game units, x then z).
@@ -780,7 +804,7 @@ impl Hud {
         };
         pen.text(&self.time, self.time_origin, &shown.to_string(), white);
         if state.help.alpha() > 0.0 {
-            self.help_bar(&mut pen, &state.help);
+            self.help_bar(&mut pen, &state.help, state.swung);
         }
         if state.arrival {
             self.autosave_mark(&mut pen, state.age);
@@ -811,18 +835,21 @@ impl Hud {
 
     /// The button help bar at the screen's lower right (the load screen's look): a plate as wide
     /// as its words, tiled, and the line of each key's glyph and words.
-    fn help_bar(&self, pen: &mut Pen, bar: &HelpBar) {
+    fn help_bar(&self, pen: &mut Pen, bar: &HelpBar, swung: bool) {
         let entry = |&(glyph, n): &(char, u32)| format!("{glyph}{}", self.word(n));
-        let line = if bar.first_line() {
-            HELP_FIRST.iter().map(|&i| entry(&HELP_ENTRIES[i])).collect::<Vec<_>>().join(" ")
-        } else {
-            HELP_ENTRIES.iter().map(entry).collect::<Vec<_>>().join(" ")
-        };
+        let full_line = |hint: bool| HELP_ENTRIES.iter().enumerate().filter(|&(i, _)| hint || i != STAFF_HINT).map(|(_, e)| entry(e)).collect::<Vec<_>>().join(" ");
+        let line = if bar.first_line() { HELP_FIRST.iter().map(|&i| entry(&HELP_ENTRIES[i])).collect::<Vec<_>>().join(" ") } else { full_line(!swung) };
         let s = self.help_text.size * pen.k / ATLAS_SIZE;
-        let words: f32 = line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k;
         // STAND-IN: The plate is one atlas pixel of the text (size / ATLAS_SIZE layout pixels) wider than the advances' sum, fitted to the capture as the load screen's is (`load_view::help_bar`); the real thing is the game's own text-width measure.
-        let full = words + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
-        let width = (HELP_PLATE_MIN + (full - HELP_PLATE_MIN) * bar.grow()).max(HELP_PLATE_MIN);
+        let plate = |line: &str| line.chars().filter_map(|c| self.glyphs[0].get(&c)).map(|g| g.advance as f32 * s).sum::<f32>() / pen.k + self.help_text.size / ATLAS_SIZE - self.help_text.at[0] + self.help_left;
+        let full = plate(&line);
+        let mut width = (HELP_PLATE_MIN + (full - HELP_PLATE_MIN) * bar.grow()).max(HELP_PLATE_MIN);
+        // A line that changed since the bar last showed (the hint gone) has the plate tween from the old line's width, as the returning bar's grows
+        // (`gather-rasen2` 3450: 4 frames into the fade, 0.625 of the way from the 7 entries' plate to the 6 entries').
+        if bar.hint_from == swung && !bar.first_line() && bar.quick.is_none() {
+            let old = plate(&full_line(bar.hint_from));
+            width = old + (full - old) * (bar.lit / BACK_GROW_FRAMES).clamp(0.0, 1.0);
+        }
         let alpha = [1.0, 1.0, 1.0, bar.alpha()];
         pen.tiled(GUIDE, &self.help, [1280.0 - width, self.help_at[1]], width, alpha);
         pen.text(&self.help_text, [1280.0, 720.0], &line, alpha);

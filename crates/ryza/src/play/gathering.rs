@@ -193,6 +193,8 @@ pub(super) struct Live {
     /// The points gathered from (they give nothing more: `gather-rasen` 2200 and 2360 got nothing).
     spent: Vec<u32>,
     rng: Option<Random>,
+    /// Whether the staff has been swung (the help bar's hint of it is gone).
+    swung: bool,
 }
 
 impl Live {
@@ -231,6 +233,7 @@ impl Live {
         for g in &plan.gave {
             eprintln!("gathered: item {} quality {} potentials {:?}{}", g.item, g.quality, g.potentials, if g.new { " (new discovery)" } else { "" });
         }
+        self.swung |= plan.tool == Tool::Staff;
         self.spent.extend(plan.spot);
         let images = plan.images.clone();
         self.plan = Some(plan);
@@ -251,6 +254,11 @@ impl Live {
             Some(g) if !g.found.is_empty() => barrel_ryza::field_hud::Gathering { near: Some(tick - g.near), pressed: Some(tick - g.press), found: g.found.clone(), notice_at: g.notice_at(), leave_at: g.leave_at(), staff: g.tool == Tool::Staff },
             _ => barrel_ryza::field_hud::Gathering { near: self.near.map(|n| tick - n), staff: self.staff_near, ..Default::default() },
         }
+    }
+
+    /// Whether she has swung the staff.
+    pub(super) fn swung(&self) -> bool {
+        self.swung
     }
 
     /// The plan, if a gathering is on.

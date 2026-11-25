@@ -602,10 +602,10 @@ const PAD_HOLD: f32 = 6.0;
 /// The help bar at capture frame `tick` for a field whose arrival fell on `arrival`, the move
 /// stick out of its dead zone at the script frames of `spans` (`--hud-stick`): stepped from the
 /// arrival frame by frame.
-fn replay_help(arrival: f32, tick: f32, spans: &[(f32, f32)], mut bar: barrel_ryza::field_hud::HelpBar) -> barrel_ryza::field_hud::HelpBar {
+fn replay_help(arrival: f32, tick: f32, spans: &[(f32, f32)], swung_from: Option<f32>, mut bar: barrel_ryza::field_hud::HelpBar) -> barrel_ryza::field_hud::HelpBar {
     let mut f = arrival;
     while f <= tick {
-        bar.step(spans.iter().any(|&(from, to)| f >= from + PAD_LAG && f < to + PAD_LAG), 1.0);
+        bar.step_swung(spans.iter().any(|&(from, to)| f >= from + PAD_LAG && f < to + PAD_LAG), 1.0, swung_from.is_some_and(|p| f >= p));
         f += 1.0;
     }
     bar
@@ -2636,7 +2636,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         // The field stands still under the menu.
         if let (Some((dt, mut sticks, zoom)), false) = (drive, menu_up) {
             let length = (sticks.left[0] * sticks.left[0] + sticks.left[1] * sticks.left[1]).sqrt();
-            help_bar.step(length > barrel_ryza::walk::MOVE_DEAD_ZONE || gather_busy, dt * 60.0);
+            help_bar.step_swung(length > barrel_ryza::walk::MOVE_DEAD_ZONE || gather_busy, dt * 60.0, live_gather.swung());
             let full = if pump.as_ref().is_some_and(|p| p.held(winit::keyboard::KeyCode::ShiftLeft) || p.held(winit::keyboard::KeyCode::ShiftRight)) { SHIFT_LEAN } else { 1.0 };
             if length > full {
                 sticks.left = sticks.left.map(|v| v / length * full);
@@ -3636,6 +3636,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 place: barrel_ryza::field_hud::place_names(&a.field).filter(|_| !a.no_banner),
                 arrival: a.no_banner,
                 marks: hud_marks.clone(),
+                swung: match &gather_plan {
+                    Some(g) => g.tool == gathering::Tool::Staff && tick >= g.press,
+                    None => live_gather.swung(),
+                },
                 gather: match &gather_plan {
                     Some(g) => barrel_ryza::field_hud::Gathering { near: (tick >= g.near).then(|| tick - g.near), pressed: (tick >= g.press).then(|| tick - g.press), found: g.found.clone(), notice_at: g.notice_at(), leave_at: g.leave_at(), staff: g.tool == gathering::Tool::Staff },
                     None => live_gather.show(tick),
@@ -3648,7 +3652,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     bar
                 } else if pump.is_none() && a.walk_from.is_none() {
                     // A still: the bar only where the arrival frame is given (`--hud-arrival`).
-                    if a.hud_arrival > 0.0 { replay_help(a.hud_arrival, tick, &a.hud_stick, if a.no_banner { barrel_ryza::field_hud::HelpBar::arriving_at_once() } else { barrel_ryza::field_hud::HelpBar::arriving() }) } else { barrel_ryza::field_hud::HelpBar::arriving() }
+                    if a.hud_arrival > 0.0 { replay_help(a.hud_arrival, tick, &a.hud_stick, gather_plan.as_ref().filter(|g| g.tool == gathering::Tool::Staff).map(|g| g.press), if a.no_banner { barrel_ryza::field_hud::HelpBar::arriving_at_once() } else { barrel_ryza::field_hud::HelpBar::arriving() }) } else { barrel_ryza::field_hud::HelpBar::arriving() }
                 } else {
                     help_bar
                 },
