@@ -189,7 +189,8 @@ impl Hud {
             if along > 0.0 {
                 let t = along / 60.0;
                 let (c, shift) = (p.slide_color.at(t), p.slide_pos.at(t)[1]);
-                let color = [1.0, 1.0, 1.0, c[3] / 255.0];
+                // The game keeps the colour as bytes: a slide-out frame at 216.3 draws 216 (`gather-rasen2` 3200).
+                let color = [1.0, 1.0, 1.0, c[3].floor() / 255.0];
                 pen.picture(FIELD, p.prompt.0, [p.prompt.1[0], p.prompt.1[1] + ROOT_SHIFT + shift], 1.0, color);
                 let (button, word) = if g.staff { (X_BUTTON, SWING_WORD) } else { (A_BUTTON, PROMPT_WORD) };
                 pen.text(&p.prompt_button, [0.0, ROOT_SHIFT + shift], button, color);

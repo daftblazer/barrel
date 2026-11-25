@@ -49,7 +49,7 @@ usage:
   barrel-tool ryza-save-events INSTALL SAVE OUT EVENT...  a copy of a Ryza DX save (data.dat) with the story events
       named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves)
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
-  barrel-tool ryza-gather INSTALL STATE.bin PLACE [--save FILE] [--known ITEM,..] [--rank N] [--difficulty N] [--draws]  a gathering at a place
+  barrel-tool ryza-gather INSTALL STATE.bin PLACE [--save FILE] [--known ITEM,..] [--hand|--staff] [--rank N] [--difficulty N] [--draws]  a gathering at a place
       (FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND or without the prefix) from the game's random generator state
       (a dump of its window; ryza-recomp's dumps/F.1.bin): each draw (`irand a b`, hex, `frand a b` -> value) and the items;
       --draws prints only the calls (to diff against a hook log); --save gives the library's levels and the events played
@@ -176,6 +176,7 @@ fn main() -> ExitCode {
         ["ryza-commands", root, event, draws] => ryza_commands(Path::new(root), event, draws),
         ["walk", args @ ..] => ryza_walk::run(args),
         ["walk-near", args @ ..] => ryza_walk::near(args),
+        ["walk-walls", args @ ..] => ryza_walk::walls(args),
         ["walk-ground", args @ ..] => ryza_walk::ground(args),
         ["ryza-field", root] => ryza_field(Path::new(root), None),
         ["ryza-field", root, field] => ryza_field(Path::new(root), Some(field)),
@@ -1782,7 +1783,7 @@ fn ryza_save(file: &Path, out: &Path) -> Result<()> {
 /// must not exist: never the game's own saves). Checked by decoding it back.
 /// `ryza-gather`: one gathering at a place from a generator state (`barrel_ryza::gather`).
 fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Result<()> {
-    let (mut save, mut rank, mut difficulty, mut calls_only, mut known) = (None, 0usize, 1i32, false, Vec::<usize>::new());
+    let (mut save, mut rank, mut difficulty, mut calls_only, mut known, mut tool) = (None, 0usize, 1i32, false, Vec::<usize>::new(), None::<&str>);
     let mut it = rest.iter();
     while let Some(&flag) = it.next() {
         match flag {
@@ -1791,6 +1792,7 @@ fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Resu
             "--rank" => rank = it.next().ok_or("--rank N")?.parse()?,
             "--difficulty" => difficulty = it.next().ok_or("--difficulty N")?.parse()?,
             "--draws" => calls_only = true,
+            "--hand" | "--staff" => tool = Some(flag),
             other => return Err(format!("ryza-gather: {other}?").into()),
         }
     }
@@ -1816,7 +1818,10 @@ fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Resu
     let flag = |f: i32| usize::try_from(f).is_ok_and(|f| played.contains(&f));
     let ctx = barrel_ryza::gather::Context { difficulty, rank, knowledge: &knowledge, flag: &flag, more_items: 0, boost: Default::default() };
     let start = rng.index();
+    // Her clip: the staff's swing draws it before the gathering, a hand's gathering after.
+    let swing = (tool == Some("--staff")).then(|| barrel_ryza::gather::swing_clip(&mut rng));
     let got = tables.gather(&ctx, &mut rng, n);
+    let spoke = if tool == Some("--hand") { barrel_ryza::gather::hand_clip(&mut rng) } else { None };
     for d in rng.draws() {
         if calls_only {
             println!("{}", d.to_string().split(" @").next().unwrap_or_default());
@@ -1825,6 +1830,9 @@ fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Resu
         }
     }
     if !calls_only {
+        if let Some(clip) = swing.or(spoke) {
+            println!("voice clip {clip}");
+        }
         println!("place {} ({n}); generator index {start:x} -> {:x}", tables.place_name(n).unwrap_or("?"), rng.index());
         for g in &got {
             println!("item {} quality {} potentials {:?} effects {:?}{}", g.item, g.quality, g.potentials, g.effects, if g.new { " (new discovery)" } else { "" });

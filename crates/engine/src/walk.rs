@@ -89,6 +89,30 @@ impl Walls {
         Walls { leaves }
     }
 
+    #[cfg(test)]
+    fn count(&self) -> usize {
+        self.leaves.iter().map(|l| l.2.len()).sum()
+    }
+
+    /// The walls with a point within `radius` of (x, z) (a diagnostic: which walls she is against).
+    pub fn within(&self, at: [f32; 2], radius: f32) -> Vec<Wall> {
+        let mut out = Vec::new();
+        for (lo, hi, walls) in &self.leaves {
+            if at[0] + radius < lo[0] || at[0] - radius > hi[0] || at[1] + radius < lo[1] || at[1] - radius > hi[1] {
+                continue;
+            }
+            out.extend(walls.iter().filter(|w| closest(at, w.a, w.b).0.iter().zip(at).map(|(c, p)| (c - p).powi(2)).sum::<f32>() <= radius * radius));
+        }
+        out
+    }
+
+    /// Takes these walls out (a body that is gone: they are found as they were made).
+    pub fn remove(&mut self, gone: &[Wall]) {
+        for (_, _, walls) in &mut self.leaves {
+            walls.retain(|w| !gone.contains(w));
+        }
+    }
+
     /// These walls and `other`'s.
     pub fn join(mut self, other: Walls) -> Walls {
         self.leaves.extend(other.leaves);
@@ -378,6 +402,17 @@ fn closest(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> ([f32; 2], f32) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn a_body_taken_out_leaves_the_other_walls() {
+        let wall = |x: f32| Wall { a: [x, 0.0], b: [x, 100.0], low: 0.0, high: 100.0, outline: None };
+        let mut walls = Walls::from_walls(vec![wall(10.0), wall(5000.0), wall(5100.0)], 2000.0);
+        assert_eq!(walls.within([10.0, 50.0], 20.0).len(), 1);
+        walls.remove(&[wall(10.0), wall(5000.0)]);
+        assert_eq!((walls.count(), walls.within([10.0, 50.0], 20.0).len()), (1, 0));
+    }
+
     #[test]
     fn a_sloping_wall_spans_its_own_heights_where_she_is() {
         // A rail's side, 1000 long, its top falling from 200 to 0 and its bottom at -400:

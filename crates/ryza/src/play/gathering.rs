@@ -128,11 +128,11 @@ impl Points {
 
     /// The gathering at `spot`: the draws in the game's order (the staff's clip before the gathering's, her voice after it).
     fn plan_at(&self, spot: &Spot, frames: (f32, f32), tool: Tool, rng: &mut Random, knowledge: &mut Vec<i32>, events: &[usize]) -> Option<Plan> {
-        use barrel_ryza::sound::{GATHER_VOICES, GATHER_VOICE_PERCENT};
+        use barrel_ryza::sound::GATHER_VOICES;
         let mut voice = if tool == Tool::Staff { swing_voice(rng) } else { None };
         let gave = self.gather(spot, rng, knowledge, events);
-        if tool == Tool::Hand && rng.chance(GATHER_VOICE_PERCENT) {
-            voice = GATHER_VOICES[rng.irand(0, 2) as usize];
+        if tool == Tool::Hand {
+            voice = barrel_ryza::gather::hand_clip(rng).and_then(|clip| GATHER_VOICES[clip]);
         }
         barrel_ryza::gather::learn(knowledge, &gave);
         let found = gave.iter().map(|g| Found { name: barrel_ryza::item_info::NAME_BASE + g.item as u32, new: g.new }).collect();
@@ -143,7 +143,7 @@ impl Points {
 
 /// The staff's swing clip (`irand(0, 1)`).
 fn swing_voice(rng: &mut Random) -> Option<u32> {
-    Some(barrel_ryza::sound::SWING_VOICES[rng.irand(0, 1) as usize])
+    Some(barrel_ryza::sound::SWING_VOICES[barrel_ryza::gather::swing_clip(rng)])
 }
 
 impl Plan {

@@ -257,6 +257,8 @@ pub fn step(player: &mut Player, cam: &mut Camera, sticks: &Sticks, dt: f32, gro
 pub struct Terrain {
     pub ground: Option<Ground>,
     pub walls: Option<Walls>,
+    /// The gimmicks' bodies, already among the walls, by `fixID` (to take one out when its point is spent).
+    pub bodies: Vec<(u32, Vec<Wall>)>,
     /// The point asked for with its height from the heightmap (as given when there is none).
     pub start: Vec3,
 }
@@ -269,11 +271,46 @@ pub fn heightmap_ground(main: &Elixir, area: &str) -> Option<Ground> {
         .map(Ground::of_heightmap)
 }
 
+/// The sides of the polygon a round body is walled with.
+const BODY_SIDES: usize = 12;
+/// What a body's wall stands out from its radius (units).
+// STAND-IN: fitted to `gather-rasen2`: she slid round the first honeycomb (radius 0.5 m, scale 1.2) 91.2 units from its centre,
+// 63.2 of them the body's with her 28; what the 3.2 is (a contact margin, a larger shape) is not known.
+const BODY_SKIN: f32 = 3.2;
+
+/// The bodies of the field's gimmicks as walls, by the gimmick's `fixID`: each model that has a collision radius in `charabase.xml` (`FMrad`, in metres,
+/// times the placement's scale; `FMhig` its height) is a cylinder she cannot walk through. The field's own tables do not
+/// place these models (`<AREA>.opl2` has the trees and rocks), so the game's own collision for them is the cylinder.
+// STAND-IN: the cylinder's footprint is a 16-sided polygon with its corners on the circle; the boxes (`Fmdepth`, the wooden
+// boxes) are cylinders of their `FMrad` too; the game's own shape is not read. Checked against `gather-rasen2`'s walks by the
+// honeycombs (radius 0.5, scale 1.2): she stopped 91 and 100 units from their centres, and walked through the first one's
+// place once it was gathered (a point that is spent has no body: the callers take it out with `Walls::remove`).
+pub fn gimmick_walls(charabase: &[u8], gimmicks: &[crate::gimmick::Gimmick]) -> Vec<(u32, Vec<Wall>)> {
+    let Ok(root) = barrel_formats::table::parse(charabase) else { return Vec::new() };
+    let number = |tag: &str, key: &str| {
+        let row = root.children.iter().find(|r| r.attr("BaseTag") == Some(tag))?;
+        row.attr(key)?.trim().parse::<f32>().ok()
+    };
+    let mut out = Vec::new();
+    for g in gimmicks {
+        let (Some(radius), Some(height)) = (number(&g.tag, "FMrad"), number(&g.tag, "FMhig")) else { continue };
+        // The polygon's sides, not its corners, stand at the radius.
+        let r = (radius * 100.0 * g.scale[0].max(g.scale[2]) + BODY_SKIN) / (std::f32::consts::PI / BODY_SIDES as f32).cos();
+        let high = g.position[1] + height * 100.0 * g.scale[1];
+        let corner = |k: usize| {
+            let t = std::f32::consts::TAU * k as f32 / BODY_SIDES as f32;
+            [g.position[0] + r * t.cos(), g.position[2] + r * t.sin()]
+        };
+        out.push((g.id, (0..BODY_SIDES).map(|k| Wall { a: corner(k), b: corner(k + 1), low: g.position[1] - 100.0, high, outline: None }).collect()));
+    }
+    out
+}
+
 /// A field's ground and walls as she walks on them: the heightmap (`<AREA>.khm`), the field's
 /// own walls (`<field>_le.koc`), the placed models' collision meshes (`solids`) as more walls
 /// and floors (added after the start is stood on the heightmap, so she does not start on a
 /// tree's top) and the field's own shapes (`<AREA>_coll.bin`). `at` is where she starts.
-pub fn load_terrain(install: &Install, field: &str, area: &str, main: &Elixir, objects: &Elixir, at: Vec3) -> Result<Terrain, Box<dyn std::error::Error>> {
+pub fn load_terrain(install: &Install, field: &str, area: &str, main: &Elixir, objects: &Elixir, at: Vec3, gimmicks: &[crate::gimmick::Gimmick]) -> Result<Terrain, Box<dyn std::error::Error>> {
     let mut ground = heightmap_ground(main, area);
     let walls = install
         .read(&format!("\\data\\x64\\field\\{0}\\{0}_le.koc", field.to_ascii_lowercase()))
@@ -289,6 +326,13 @@ pub fn load_terrain(install: &Install, field: &str, area: &str, main: &Elixir, o
     let walls = match (walls, borders) {
         (Some(w), Some(b)) => Some(w.join(b)),
         (w, b) => w.or(b),
+    };
+    let bodies = install.read("\\saves\\chara\\charabase.xml").map(|b| gimmick_walls(&b, gimmicks)).unwrap_or_default();
+    let body_walls = || Walls::from_walls(bodies.iter().flat_map(|(_, w)| w.iter().copied()).collect(), 2000.0);
+    let walls = match (walls, bodies.is_empty()) {
+        (w, true) => w,
+        (Some(w), false) => Some(w.join(body_walls())),
+        (None, false) => Some(body_walls()),
     };
     let placements = barrel_engine::field::named(main, &format!("{area}.opl2")).map(barrel_formats::opl2::parse).transpose()?;
     let (mut solids, fit) = placements.map(|p| crate::solids::placed_meshes(&p, objects)).unwrap_or_default();
@@ -314,7 +358,7 @@ pub fn load_terrain(install: &Install, field: &str, area: &str, main: &Elixir, o
         })
     });
     eprintln!("model collision: {} meshes, {} triangles", solids.len(), solids.iter().map(|c| c.triangles.len()).sum::<usize>());
-    Ok(Terrain { ground, walls, start })
+    Ok(Terrain { ground, walls, bodies, start })
 }
 
 #[cfg(test)]
@@ -322,6 +366,21 @@ mod tests {
     use super::*;
 
     const DT: f32 = 1.0 / 60.0;
+
+    #[test]
+    fn a_gimmicks_model_is_a_body_of_its_radius_and_scale() {
+        let base = br#"<Root><CharaBase BaseTag="FM_HONEYCOMB_01" FMrad="0.5" FMhig="10"/></Root>"#;
+        let comb = crate::gimmick::Gimmick { id: 51, tag: "FM_HONEYCOMB_01".into(), position: [33445.0, 6198.0, 30027.0], yaw: 0.0, rotation: [0.0; 3], scale: [1.2; 3], story: Default::default(), span: None };
+        let other = crate::gimmick::Gimmick { id: 7, tag: "NO_SUCH".into(), ..comb.clone() };
+        let bodies = gimmick_walls(base, &[comb, other]);
+        assert_eq!(bodies.len(), 1, "only a model with a collision radius has a body");
+        let (id, walls) = &bodies[0];
+        assert_eq!((*id, walls.len()), (51, BODY_SIDES));
+        // Each side stands 60 units and its skin out from the centre (the corners a little further).
+        let side = walls[0];
+        let mid = [(side.a[0] + side.b[0]) / 2.0 - 33445.0, (side.a[1] + side.b[1]) / 2.0 - 30027.0];
+        assert!((mid[0].hypot(mid[1]) - (60.0 + BODY_SKIN)).abs() < 0.01, "{mid:?}");
+    }
 
     fn player() -> Player {
         Player::new(Vec3::ZERO, 0.0, &[])

@@ -46,9 +46,7 @@ pub const NEW_DISCOVERY: u32 = 0xffd0_422c;
 pub const GATHER_SOUND_AT: [i64; 3] = [40, 85, 88];
 /// What she says when a gathering begins (`gather-rasen2`: a chance of `GATHER_VOICE_PERCENT` in 100 on the frame after the
 /// gathering's draws, then `irand(0, 2)` picks the clip). Voice clips have no table: only the first clip's hash is known.
-// STAND-IN: the percentage is between 28 and 31 (a draw of 27 spoke on 2502, one of 31 did not on `gather-rasen` 2042);
-// the other two clips' hashes were not drawn.
-pub const GATHER_VOICE_PERCENT: i32 = 30;
+// STAND-IN: the other two clips' hashes were not drawn (the chance's percentage is `gather::VOICE_PERCENT`).
 pub const GATHER_VOICES: [Option<u32>; 3] = [Some(0xdf33_fd76), None, None];
 /// The staff's swing (X on a point or not): her clip (`irand(0, 1)` picks it), `SE_PTC_001_KLAUDIA_001`, `SE_FLD_003_WAND01`,
 /// frames after the press (`gather-rasen2`: X at 3160, the clip on 3166, the sounds on 3177 and 3179).
@@ -73,6 +71,24 @@ pub fn gather_cues(press: i64, staff: bool, voice: Option<u32>, new: bool) -> Ve
         out.extend(takes.iter().filter(|&&(hash, _)| hash != NEW_DISCOVERY || new).map(|&(hash, at)| Cue::effect(press + at, hash)));
     }
     out
+}
+
+#[cfg(test)]
+mod gather_tests {
+    use super::*;
+
+    #[test]
+    fn a_gatherings_cues_fall_where_the_captures_have_them() {
+        let frames = |cues: Vec<Cue>| cues.iter().map(|c| (c.at_frame, c.hash)).collect::<Vec<_>>();
+        // `gather-rasen2`: A at 2500 (her clip, then the three sounds) and X at 3160 (the swing's, then the pick-up's).
+        assert_eq!(frames(gather_cues(2500, false, GATHER_VOICES[0], true)), [(2502, 0xdf33_fd76), (2540, GATHER_REACH), (2585, GATHER_TAKE), (2588, NEW_DISCOVERY)]);
+        assert_eq!(
+            frames(gather_cues(3160, true, Some(SWING_VOICES[0]), true)),
+            [(3166, 0xffc8_b3d0), (3177, 0x03b1_031e), (3179, 0xb1ba_fbe5), (3186, 0x9dbf_c51d), (3192, GATHER_TAKE), (3195, NEW_DISCOVERY)]
+        );
+        // Nothing new: no chime; no clip: none first.
+        assert_eq!(frames(gather_cues(2500, false, None, false)).len(), 2);
+    }
 }
 
 /// Frames from the load's stop to the field's music (the answer key: the stop at game frame

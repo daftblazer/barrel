@@ -244,6 +244,21 @@ pub struct Gathered {
     pub new: bool,
 }
 
+/// How likely she is to speak as a gathering by hand begins, in 100 (`gather-rasen2`: a draw of 27 spoke on 2502, one of 31 did not on
+/// `gather-rasen` 2042; the percentage is between 28 and 31).
+pub const VOICE_PERCENT: i32 = 30;
+
+/// Her clip as a gathering by hand begins (made on the frame after its draws): a chance of `VOICE_PERCENT`, then `irand(0, 2)` for the
+/// clip's number; `None` when she does not speak.
+pub fn hand_clip(rng: &mut Random) -> Option<usize> {
+    rng.chance(VOICE_PERCENT).then(|| rng.irand(0, 2) as usize)
+}
+
+/// Her clip as the staff swings (made before the gathering's draws): `irand(0, 1)`.
+pub fn swing_clip(rng: &mut Random) -> usize {
+    rng.irand(0, 1) as usize
+}
+
 /// The library after a gathering: every item gathered is known in full (a second gathering of it is no discovery, and the
 /// places stop favouring it: `gather-rasen2`, where the second comb drew its pick from the one item not gathered yet).
 pub fn learn(knowledge: &mut Vec<i32>, gathered: &[Gathered]) {
@@ -390,6 +405,32 @@ mod tests {
 
     fn entry(item: i32, weight: i32) -> Entry {
         Entry { list: 0, item, quality: (11, 20), potentials: (0, 1), levels: (1, 10), potential_level: (1, 3), weight, open: -1, close: -1, fixed: [(-1, (1, 1)); 3], effects: [-1; 4] }
+    }
+
+    #[test]
+    fn a_gathering_teaches_the_library_its_items() {
+        let (a, b) = (entry(106, 70), entry(128, 30));
+        let table = Tables { places: vec![Place { lists: [0; 5], count: (2, 2), open: -1, close: -1, field: 0 }], entries: vec![a, b], names: vec![], potentials: vec![], item_groups: vec![], images: vec![] };
+        let flag = |_: i32| true;
+        let mut known = vec![0; 200];
+        fn at<'a>(known: &'a [i32], flag: &'a dyn Fn(i32) -> bool) -> Context<'a> {
+            Context { difficulty: 1, rank: 0, knowledge: known, flag, more_items: 0, boost: Boost::default() }
+        }
+        let first = table.gather(&at(&known, &flag), &mut Random::after(1, 0), 0);
+        assert_eq!(first.len(), 2);
+        assert!(first.iter().all(|g| g.new), "both unknown to the library");
+        learn(&mut known, &first);
+        assert_eq!((known[106], known[128]), (KNOWN_IN_FULL, KNOWN_IN_FULL));
+        let again = table.gather(&at(&known, &flag), &mut Random::after(1, 0), 0);
+        assert!(again.iter().all(|g| !g.new), "known now");
+    }
+
+    #[test]
+    fn her_voice_is_a_chance_then_a_pick() {
+        let mut rng = Random::after(0, 0);
+        let spoke: Vec<usize> = (0..40).filter_map(|_| hand_clip(&mut rng)).collect();
+        assert!(spoke.iter().all(|&c| c < 3));
+        assert!(!spoke.is_empty() && spoke.len() < 40, "{spoke:?}");
     }
 
     #[test]

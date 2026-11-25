@@ -187,6 +187,8 @@ struct Rig {
     instance: u32,
     ground: Option<barrel_engine::walk::Ground>,
     walls: Option<barrel_engine::walk::Walls>,
+    /// The gimmicks' bodies among the walls, by `fixID`.
+    bodies: Vec<(u32, Vec<barrel_engine::walk::Wall>)>,
     player: barrel_ryza::player::Player,
     chara: barrel_ryza::chara::Chara,
     /// Her face's expression and her shut eyes (`barrel_ryza::face`).
@@ -1664,7 +1666,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         let joints = barrel_engine::skin::skin(&skeleton, &locals);
         // Her feet on the ground: the field's heightmap under her (the given height when there
         // is none, or she is off it).
-        let barrel_ryza::walk::Terrain { ground, walls, start: at } = barrel_ryza::walk::load_terrain(&install, &a.field, &files.area, &main, &objects, *at)?;
+        let barrel_ryza::walk::Terrain { ground, walls, bodies, start: at } = barrel_ryza::walk::load_terrain(&install, &a.field, &files.area, &main, &objects, *at, &gimmicks)?;
         let at = &at;
         eprintln!("Ryza stands at {at:?}");
         // Her settings from the character tables (`barrel_ryza::chara`): her model's scale, her
@@ -1685,7 +1687,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         }
         // Her cloth (hair, skirt): the pieces' solvers, fed her pose each frame.
         let cloth = cloth::ClothDriver::new(geometry, &skeleton, &scene.cloth_slots, instance, chara.local_gravity);
-        rig = Some(Rig { skeleton, anims, instance, ground, walls, player, chara, face, shut, cloth, joints: joints.clone() });
+        rig = Some(Rig { skeleton, anims, instance, ground, walls, bodies, player, chara, face, shut, cloth, joints: joints.clone() });
         textures.extend(rp.textures.iter());
         if let Some(r) = &ramp_pack {
             textures.extend(r.textures.first());

@@ -68,7 +68,8 @@ impl Pad {
 /// `walk INSTALL FIELD --pad FILE --from N --start X,Y,Z,YAW --camera YAW,PITCH,DIST --state OUT [--to N]`.
 pub fn run(args: &[&str]) -> Result<()> {
     let [root, field, rest @ ..] = args else { return Err("walk INSTALL FIELD --pad FILE --from N --start X,Y,Z,YAW --camera YAW,PITCH,DIST --state OUT [--to N]".into()) };
-    let (mut pad, mut from, mut to, mut start, mut camera, mut out, mut bare) = (None, 0u32, None, None, None, None, false);
+    let (mut pad, mut from, mut to, mut start, mut camera, mut out, mut bare, mut story) = (None, 0u32, None, None, None, None, false, String::new());
+    let mut gathered: Vec<(u32, u32)> = Vec::new();
     let numbers = |v: &str, n: usize| -> Result<Vec<f32>> {
         let v: Vec<f32> = v.split(',').map(|x| x.trim().parse::<f32>()).collect::<std::result::Result<_, _>>()?;
         if v.len() == n { Ok(v) } else { Err(format!("{v:?}: {n} numbers wanted").into()) }
@@ -84,6 +85,13 @@ pub fn run(args: &[&str]) -> Result<()> {
             "--camera" => camera = Some(numbers(value, 3)?),
             "--state" => out = Some(value),
             "--bare" => bare = value == "1",
+            "--after" => story = value.to_string(),
+            "--gathered" => {
+                for pair in value.split(',') {
+                    let (frame, id) = pair.split_once(':').ok_or("--gathered FRAME:ID,...")?;
+                    gathered.push((frame.parse()?, id.parse()?));
+                }
+            }
             _ => return Err(format!("walk: unknown {flag}").into()),
         }
     }
@@ -95,9 +103,15 @@ pub fn run(args: &[&str]) -> Result<()> {
 
     // The field, as `--ryza` play loads it.
     let install = barrel_ryza::install::Install::open(Path::new(root))?;
+    // The gimmicks standing at noon once the events of `--after` have played (their bodies are walls).
+    let story = barrel_ryza::story::Story::after(&story);
+    let gimmicks: Vec<_> = barrel_ryza::gimmick::read(&install.read(&format!("\\saves\\fieldmap\\gimmick\\gimmick_fieldmap_{}.xml", field.to_ascii_lowercase()))?)?
+        .into_iter()
+        .filter(|g| g.present(barrel_ryza::environment::Time::Noon, &story))
+        .collect();
     let files = install.field(field)?;
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
-    let barrel_ryza::walk::Terrain { ground, mut walls, start: at } = barrel_ryza::walk::load_terrain(&install, field, &files.area, &main, &objects, Vec3::new(start[0], start[1], start[2]))?;
+    let barrel_ryza::walk::Terrain { ground, mut walls, bodies, start: at } = barrel_ryza::walk::load_terrain(&install, field, &files.area, &main, &objects, Vec3::new(start[0], start[1], start[2]), &gimmicks)?;
     if bare {
         walls = None;
     }
@@ -110,12 +124,39 @@ pub fn run(args: &[&str]) -> Result<()> {
     let wrap = |degrees: f32| (degrees + 180.0).rem_euclid(360.0) - 180.0;
     let mut text = String::new();
     for frame in from..=to {
+        // A point gathered from has no body from then on.
+        for &(_, id) in gathered.iter().filter(|&&(at, _)| at == frame) {
+            for (_, gone) in bodies.iter().filter(|(b, _)| *b == id) {
+                if let Some(w) = walls.as_mut() {
+                    w.remove(gone);
+                }
+            }
+        }
         barrel_ryza::walk::step(&mut player, &mut cam, &pad.sticks(frame), 1.0 / 60.0, ground.as_ref(), walls.as_ref());
         let eye = cam.eye(player.at, cam.distance());
         let p = player.at;
         writeln!(text, "{frame} {:.2} {:.2} {:.2} {:.2} | {:.2} {:.2} {:.2} {:.2} {:.2}", p.x, p.y, p.z, wrap(player.turn.to_degrees()), eye.x, eye.y, eye.z, wrap(cam.yaw), cam.pitch)?;
     }
     std::fs::write(out, text)?;
+    Ok(())
+}
+
+/// `walk-walls INSTALL FIELD X Z RADIUS [--after EVENTS]`: the walls (field, models, gimmicks' bodies) within RADIUS of the point.
+pub fn walls(args: &[&str]) -> Result<()> {
+    let [root, field, x, z, r, rest @ ..] = args else { return Err("walk-walls INSTALL FIELD X Z RADIUS [--after EVENTS]".into()) };
+    let (x, z, r): (f32, f32, f32) = (x.parse()?, z.parse()?, r.parse()?);
+    let story = barrel_ryza::story::Story::after(rest.get(1).copied().unwrap_or(""));
+    let install = barrel_ryza::install::Install::open(Path::new(root))?;
+    let files = install.field(field)?;
+    let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
+    let gimmicks: Vec<_> = barrel_ryza::gimmick::read(&install.read(&format!("\\saves\\fieldmap\\gimmick\\gimmick_fieldmap_{}.xml", field.to_ascii_lowercase()))?)?
+        .into_iter()
+        .filter(|g| g.present(barrel_ryza::environment::Time::Noon, &story))
+        .collect();
+    let t = barrel_ryza::walk::load_terrain(&install, field, &files.area, &main, &objects, Vec3::ZERO, &gimmicks)?;
+    for w in t.walls.ok_or("no walls")?.within([x, z], r) {
+        println!("({:.1}, {:.1}) to ({:.1}, {:.1}) heights {:.1} to {:.1}{}", w.a[0], w.a[1], w.b[0], w.b[1], w.low, w.high, if w.outline.is_some() { " (a triangle)" } else { "" });
+    }
     Ok(())
 }
 
@@ -165,7 +206,7 @@ pub fn ground(args: &[&str]) -> Result<()> {
     let install = barrel_ryza::install::Install::open(Path::new(root))?;
     let files = install.field(field)?;
     let (main, objects) = (Elixir::parse(&files.main)?, Elixir::parse(&files.objects)?);
-    let t = barrel_ryza::walk::load_terrain(&install, field, &files.area, &main, &objects, Vec3::ZERO)?;
+    let t = barrel_ryza::walk::load_terrain(&install, field, &files.area, &main, &objects, Vec3::ZERO, &[])?;
     let g = t.ground.ok_or("no ground")?;
     for line in std::fs::read_to_string(state)?.lines() {
         let v: Vec<f32> = line.replace('|', " ").split_whitespace().filter_map(|w| w.parse().ok()).collect();
