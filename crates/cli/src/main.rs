@@ -48,6 +48,10 @@ usage:
                                in PAK archives: Sophie 2, the Ryza games)
   barrel-tool ryza-save-events INSTALL SAVE OUT EVENT...  a copy of a Ryza DX save (data.dat) with the story events
       named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves)
+  barrel-tool ryza-gather INSTALL STATE.bin PLACE [--save FILE] [--rank N] [--difficulty N] [--draws]  a gathering at a place
+      (FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND or without the prefix) from the game's random generator state
+      (a dump of its window; ryza-recomp's dumps/F.1.bin): each draw (`irand a b`, hex, `frand a b` -> value) and the items;
+      --draws prints only the calls (to diff against a hook log); --save gives the library's levels and the events played
   barrel-tool ryza-actions INSTALL EVENT  a Ryza DX event's actions as the script has them: `aACTION#INDEX word operands` in hex
   barrel-tool ryza-commands INSTALL EVENT [DRAWS]  a Ryza DX event's commands as Barrel's player takes them: `frame aACTION word operands...`
       in hex (frames at 60 a second from the event's start), for tools/cmddiff.py against the game's log;
@@ -276,6 +280,7 @@ fn main() -> ExitCode {
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
+        ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
         ["bonuses", file] => bonuses(Path::new(file), None),
         ["bonuses", file, exe] => bonuses(Path::new(file), Some(Path::new(exe))),
@@ -1773,6 +1778,51 @@ fn ryza_save(file: &Path, out: &Path) -> Result<()> {
 
 /// A copy of the save `file` with the story `events` marked as played, written to `out` (which
 /// must not exist: never the game's own saves). Checked by decoding it back.
+/// `ryza-gather`: one gathering at a place from a generator state (`barrel_ryza::gather`).
+fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Result<()> {
+    let (mut save, mut rank, mut difficulty, mut calls_only) = (None, 0usize, 1i32, false);
+    let mut it = rest.iter();
+    while let Some(&flag) = it.next() {
+        match flag {
+            "--save" => save = Some(PathBuf::from(it.next().ok_or("--save FILE")?)),
+            "--rank" => rank = it.next().ok_or("--rank N")?.parse()?,
+            "--difficulty" => difficulty = it.next().ok_or("--difficulty N")?.parse()?,
+            "--draws" => calls_only = true,
+            other => return Err(format!("ryza-gather: {other}?").into()),
+        }
+    }
+    let game = barrel_ryza::install::Install::open(install)?;
+    let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
+    let tables = barrel_ryza::gather::Tables::read(&exe, &game.read("\\saves\\item\\itemdata.xml")?, &game.read("\\saves\\item\\item_potential.xml")?)?;
+    let n = tables.place(place).ok_or_else(|| format!("no gathering place {place}"))?;
+    let mut rng = barrel_ryza::random::Random::from_dump(&read(state)?).ok_or("the generator dump is too short or its index is out of the window")?;
+    rng.record();
+    let (mut knowledge, mut played) = (Vec::new(), Vec::new());
+    if let Some(file) = &save {
+        let state = barrel_ryza::save::decode(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+        knowledge = barrel_ryza::save::knowledge(&state, "item").ok_or("the save has no item knowledge")?;
+        played = barrel_ryza::save::events_done(&state)?;
+    }
+    let flag = |f: i32| usize::try_from(f).is_ok_and(|f| played.contains(&f));
+    let ctx = barrel_ryza::gather::Context { difficulty, rank, knowledge: &knowledge, flag: &flag, more_items: 0, boost: Default::default() };
+    let start = rng.index();
+    let got = tables.gather(&ctx, &mut rng, n);
+    for d in rng.draws() {
+        if calls_only {
+            println!("{}", d.to_string().split(" @").next().unwrap_or_default());
+        } else {
+            println!("{d}");
+        }
+    }
+    if !calls_only {
+        println!("place {} ({n}); generator index {start:x} -> {:x}", tables.place_name(n).unwrap_or("?"), rng.index());
+        for g in &got {
+            println!("item {} quality {} potentials {:?} effects {:?}{}", g.item, g.quality, g.potentials, g.effects, if g.new { " (new discovery)" } else { "" });
+        }
+    }
+    Ok(())
+}
+
 fn ryza_save_events(install: &Path, file: &Path, out: &Path, events: &[&str]) -> Result<()> {
     if out.exists() {
         return Err(format!("{} exists: this writes new copies only", out.display()).into());

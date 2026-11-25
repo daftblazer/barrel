@@ -53,6 +53,8 @@ pub mod opening;
 pub mod boot;
 mod spinner;
 pub mod music;
+pub mod random;
+pub mod gather;
 pub mod sound;
 
 // The game's play (its program: `barrel-ryza`, and `barrel`, which picks the game).
