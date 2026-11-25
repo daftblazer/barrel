@@ -266,7 +266,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -1052,15 +1052,20 @@ enum Entries {
     GuideEffects,
     /// The synthesis's finished card's: A and "Next".
     Next,
+    /// The same card's while it comes in: A and "Fast Forward".
+    FastForward,
 }
 
 /// The synthesis's finished card's entry: A and "Next" (`str_menu_define`).
 const NEXT_ENTRIES: [(char, u32); 1] = [('\u{4da}', 4_194_315)];
 
-/// The finished card's plate is this much wider than its one entry needs (layout pixels: the capture's left edge at 1029 of 1280 on
-/// `synth-atelier` 3950, against 1141.7 for the words alone). STAND-IN: the cause is not found (the game's line may hold entries whose
-/// words are not drawn).
-const NEXT_PLATE_EXTRA: f32 = 112.67;
+/// The card's other line: A and "Fast Forward" (`str_menu_define`), up while the card comes in. The plate keeps the width of that line
+/// when the words change to "Next" (the capture's plate is the same on 3820 to 3950).
+const FAST_FORWARD_ENTRIES: [(char, u32); 1] = [('\u{4da}', 4_194_548)];
+
+/// The card's plate is this much wider than its line needs (layout pixels: the capture's left edge at 1029 of 1280, 3820 to 3950).
+/// STAND-IN: the cause is not found (the game's line may hold an entry whose words are not drawn: 40 pixels is a glyph and a space).
+const CARD_PLATE_EXTRA: f32 = 40.17;
 
 /// The pick's entries: the pad's cross and "Select Character", B and "Back", A and "Confirm".
 const PICK_ENTRIES: [(char, u32); 3] = [('\u{4e0}', 4_194_439), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
@@ -1292,11 +1297,17 @@ impl View {
         pen.finish().0
     }
 
-    /// The help bar of the synthesis's finished card, whole: A and "Next".
-    pub fn next_help(&self, screen: (u32, u32)) -> Vec<Quad> {
+    /// The help bar of the synthesis's finished card, whole: A and "Fast Forward" while the card comes in (`fast`), then A and "Next" on the
+    /// plate the first line made.
+    pub fn next_help(&self, screen: (u32, u32), fast: bool) -> Vec<Quad> {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
-        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra: NEXT_PLATE_EXTRA, entries: Entries::Next });
+        let (entries, extra) = if fast {
+            (Entries::FastForward, CARD_PLATE_EXTRA)
+        } else {
+            (Entries::Next, self.plate_full(&self.help_line(&FAST_FORWARD_ENTRIES), k) - self.plate_full(&self.help_line(&NEXT_ENTRIES), k) + CARD_PLATE_EXTRA)
+        };
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries });
         pen.finish().0
     }
 
@@ -1712,6 +1723,7 @@ impl View {
             Entries::Shelf => &SHELF_ENTRIES,
             Entries::Tools => &TOOLS_ENTRIES,
             Entries::Next => &NEXT_ENTRIES,
+            Entries::FastForward => &FAST_FORWARD_ENTRIES,
             Entries::GuideTop => &GUIDE_TOP_ENTRIES,
             Entries::GuideItems => &GUIDE_ITEMS_ENTRIES,
             Entries::GuideEffects => &GUIDE_EFFECTS_ENTRIES,

@@ -108,8 +108,8 @@ struct Args {
     hud_at: f32,
     /// The capture frame the field's arrival falls on (`--hud-arrival`, 0 in a run of its own): the area name's banner and the help bar run from it.
     hud_arrival: f32,
-    /// `--mix-sheet ITEM:COUNT`: the synthesis's finished card for an item and the number made (docs/ryza/open.md, "Synthesis (P6)").
-    mix_sheet: Option<(u16, u32)>,
+    /// `--mix-sheet ITEM:COUNT[:CLOCK:FRAMES]`: the synthesis's finished card for an item and the number made, CLOCK frames of the animation clock and FRAMES frames into its coming in (docs/ryza/open.md, "Synthesis (P6)").
+    mix_sheet: Option<(u16, u32, Option<(f32, f32)>)>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
     mix_complete: Option<(u32, u32, u32, f32)>,
     /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
@@ -334,8 +334,13 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--mix-sheet" => {
                 let v = value()?;
-                let (item, count) = v.split_once(':').ok_or("--mix-sheet ITEM:COUNT")?;
-                a.mix_sheet = Some((item.parse()?, count.parse()?));
+                let n: Vec<&str> = v.split(':').collect();
+                let (item, count, clock) = match n[..] {
+                    [item, count] => (item, count, None),
+                    [item, count, clock, frames] => (item, count, Some((clock.parse()?, frames.parse()?))),
+                    _ => return Err("--mix-sheet ITEM:COUNT[:CLOCK:FRAMES]".into()),
+                };
+                a.mix_sheet = Some((item.parse()?, count.parse()?, clock));
             }
             "--gather" => {
                 let v = value()?;
@@ -753,10 +758,14 @@ fn page_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
 #[derive(Clone, Copy)]
 enum MixShown {
     /// The item's card with the number made.
-    Card(u32),
+    Card(u32, Option<(f32, f32)>),
     /// The "Complete" screen's level panel: the level, the experience to the next and the experience gained.
     Complete(u32, u32, u32, f32),
 }
+
+/// The card's help bar says "Fast Forward" until its coming in has run this many frames of the animation clock, then "Next".
+/// STAND-IN: between the capture's 3930 (clock 123) and 3950 (steady).
+const CARD_COMES_IN: f32 = 125.0;
 
 /// The synthesis's finished card (`--mix-sheet`): the background and the still picture, the card of `item` with the `count` made, and
 /// the help bar, as three layers made in the order they draw.
@@ -777,13 +786,13 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
     // The card.
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &[fp::ShelfItem { image, category: None }])?;
     let (quads, additive, clips) = match shown {
-        MixShown::Card(count) => page.sheet_quads(&fp::SheetLook { item, image, count }, screen),
+        MixShown::Card(count, clock) => page.sheet_quads(&fp::SheetLook { item, image, count, clock: clock.map(|c| c.0), frames: clock.map_or(0.0, |c| c.1) }, screen),
         MixShown::Complete(level, next, gained, age) => page.complete_quads(&fp::CompleteLook { level, next, gained, age }, screen),
     };
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     // The help bar ("A Next") under the card, from the menu's own.
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
-    bar.set(gpu, &if matches!(shown, MixShown::Card(_)) { view.next_help(screen) } else { Vec::new() })?;
+    bar.set(gpu, &match shown { MixShown::Card(_, clock) => view.next_help(screen, clock.is_some_and(|c| c.0 < CARD_COMES_IN)), MixShown::Complete(..) => Vec::new() })?;
     Ok(vec![back, sheet, bar])
 }
 
@@ -2430,7 +2439,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         _ => None,
     };
     let mix_screen = match (a.mix_sheet, a.mix_complete) {
-        (Some((item, count)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count), (width, height))?),
+        (Some((item, count, clock)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
         (None, Some((level, next, gained, age))) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
         (None, None) => None,
     };

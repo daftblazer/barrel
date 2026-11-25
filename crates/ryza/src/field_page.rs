@@ -1092,6 +1092,36 @@ pub struct SheetLook {
     pub image: usize,
     /// Units made (the card's "To Make:" line).
     pub count: u32,
+    /// The animation clock of the card's coming in (`anm_finish`), in frames of 60 a second since it began; `None` for the card at rest.
+    pub clock: Option<f32>,
+    /// The frames since it began, by the frame count (the white-out's fade runs on that, not on the clock: the capture's clock ran
+    /// ahead of the frame count by 12 frames from its 3880 on).
+    pub frames: f32,
+}
+
+// The card's coming in (`anm_finish` of `uil_a21_mix_item_sheet.xml`; the curves are `uia_a21_mix.xml`'s, in frames of 60 a second).
+/// `mix_anm_finish_card_in`'s rise: the card starts 25 layout pixels low from frame 20 to 140, out cubic, the panel's copy at 2.5 times the speed.
+const CARD_RISE: f32 = 25.0;
+const PANEL_SPEED: f32 = 2.5;
+const CARD_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (20.0, 0.0), (60.0, 1.0)];
+/// `mix_anm_finish_whiteout`: the white over the card's whole picture, whole to frame 6, gone at 20.
+const WHITE_FADE: [(f32, f32); 3] = [(0.0, 1.0), (6.0, 1.0), (20.0, 0.0)];
+/// The full-screen white's fade (`anm_common_juvenile_fade_in` played backwards, `delay` 0.18 s: 10.8 frames, over 60, in cubic): the
+/// opacity left `frames` after the card began.
+fn whiteout_all(frames: f32) -> f32 {
+    (1.0 - ((frames - 10.8) / 60.0).clamp(0.0, 1.0)).powi(3)
+}
+const MIX05_SCALE: [(f32, f32); 3] = [(0.0, 2.0), (6.0, 2.0), (60.0, 20.0)];
+const MIX05_ALPHA: [(f32, f32); 3] = [(0.0, 1.0), (6.0, 1.0), (60.0, 0.0)];
+const MIX06_TURN: [(f32, f32); 2] = [(0.0, 0.0), (120.0, 9.0)];
+const MIX06_SCALE: [(f32, f32); 2] = [(0.0, 1.5), (120.0, 2.6)];
+const MIX06_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (40.0, 1.0), (120.0, 0.0)];
+const MIX09_SCALE: [(f32, f32); 4] = [(0.0, 0.2), (13.0, 2.0), (20.0, 4.0), (120.0, 10.0)];
+const MIX09_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (25.0, 1.0), (120.0, 0.0)];
+
+/// An out cubic ease of `u` (0 to 1): fast first.
+fn out_cubic(u: f32) -> f32 {
+    1.0 - (1.0 - u.clamp(0.0, 1.0)).powi(3)
 }
 
 /// The card's title is a `MainFont00` text of this size (layout pixels): its node names none.
@@ -1104,6 +1134,22 @@ impl Page {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        let t = look.clock;
+        // A node turned and scaled about its pivot (`pivot_pos`), as the effects' animations do.
+        let about = |e: &Element, turn: f32, scale: f32| -> Xf {
+            let (pivot, at) = (pair(e, "pivot_pos", [0.0; 2]), pair(e, "pos", [0.0; 2]));
+            let (sin, cos) = turn.to_radians().sin_cos();
+            let moved = [scale * (cos * pivot[0] - sin * pivot[1]), scale * (sin * pivot[0] + cos * pivot[1])];
+            root.node([at[0] + pivot[0] - moved[0], at[1] + pivot[1] - moved[1]], turn, [scale; 2])
+        };
+        // The effect under the card.
+        if let (Some(t), Some(e)) = (t, find(&self.mix_sheet, "a21_mix06")) {
+            w.image(e, about(e, keyed(&MIX06_TURN, t), keyed(&MIX06_SCALE, t)), &Over { alpha: Some(keyed(&MIX06_ALPHA, t)), ..Default::default() });
+        }
+        // The white-out over the whole screen (the layout's `whiteout_all`, 1282 by 722 from (-1, -1)).
+        if t.is_some() {
+            w.slid(Slide { alpha: whiteout_all(look.frames), dx: 0.0, dy: 0.0 }, |w| w.piece(root.node([-1.0, -1.0], 0.0, [1.0; 2]), [0.0; 2], [1282.0, 722.0], [0.0, 0.0, 0.125, 0.125], [1.0; 4], WHITE));
+        }
         if let Some(panel) = find(&self.mix_sheet, "panel") {
             let name = self.strings.get(&(NAME_BASE + u32::from(look.item))).cloned().unwrap_or_default();
             let count = look.count.to_string();
@@ -1116,7 +1162,27 @@ impl Page {
                     _ => Over::default(),
                 }
             };
-            w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+            // The card rises by the panel's animation (at 2.5 times the speed) and its own, and fades in by both.
+            let slide = match t {
+                Some(t) => {
+                    let rise = |clock: f32| CARD_RISE * (1.0 - out_cubic((clock - 20.0) / 120.0));
+                    let fade = |clock: f32| keyed(&CARD_ALPHA, clock);
+                    Slide { alpha: fade(t) * fade(t * PANEL_SPEED), dx: 0.0, dy: rise(t) + rise(t * PANEL_SPEED) }
+                }
+                None => Slide::NONE,
+            };
+            w.slid(slide, |w| w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+        }
+        // The effects over it: the white (1300 by 800 layout pixels), then the glows.
+        if let Some(t) = t {
+            let a = keyed(&WHITE_FADE, t);
+            w.slid(Slide { alpha: a, dx: 0.0, dy: 0.0 }, |w| w.piece(root.node([0.0; 2], 0.0, [1300.0, 800.0]), [0.0; 2], [1.0; 2], [0.0, 0.0, 0.125, 0.125], [1.0; 4], WHITE));
+            if let Some(e) = find(&self.mix_sheet, "a21_mix05") {
+                w.image(e, about(e, 0.0, keyed(&MIX05_SCALE, t)), &Over { alpha: Some(keyed(&MIX05_ALPHA, t)), ..Default::default() });
+            }
+            if let Some(e) = find(&self.mix_sheet, "a21_mix09") {
+                w.image(e, about(e, 0.0, keyed(&MIX09_SCALE, t)), &Over { alpha: Some(keyed(&MIX09_ALPHA, t)), ..Default::default() });
+            }
         }
         (w.out, w.additive, w.clips)
     }
