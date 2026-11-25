@@ -7,6 +7,8 @@
 //!   barrel-parity quads <trace dir> <frame> [index]    its 2D rectangles and text, as diffed
 //!   barrel-parity diff <trace dir> <frame> <barrel trace> <frame> [index]
 //!                                                      the game's 2D quads against Barrel's
+//!   barrel-parity diffs <trace dir> <a-b[/step]> <barrel trace> <first Barrel frame> [index]
+//!                                                      every frame of a range, one line each
 //!   barrel-parity draws <trace dir> <frame> [index] [--vars A,B] [--pass N] [--summary]
 //!                                                      a frame's draws by pass, with the
 //!                                                      constant buffers' values (3D)
@@ -854,6 +856,41 @@ fn align(trace: &Path, grange: &str, barrel: &Path, brange: &str, idx: Option<&s
     Ok(total)
 }
 
+/// Each game frame of `grange` against the Barrel frame at the same place from `bstart` (the
+/// game's frame `a + k` against Barrel's `bstart + k`), one line each with its mismatches; with
+/// `PARITY_LINES=1` the differing quads follow. Returns the total.
+fn diffs(trace: &Path, grange: &str, barrel: &Path, bstart: u64, idx: Option<&str>) -> Result<usize> {
+    let t = Trace { dir: trace.into() };
+    let s = Setup::new(idx)?;
+    let (ga, gb, gs) = parse_range(grange)?;
+    let wanted: Vec<u64> = (ga..=gb).step_by(gs as usize).collect();
+    let mut events = t.frames(&wanted)?;
+    let bframes: Vec<u64> = wanted.iter().map(|f| bstart + (f - ga)).collect();
+    let bq = barrel_frames(barrel, &bframes)?;
+    let verbose = std::env::var("PARITY_LINES").is_ok();
+    let mut total = 0;
+    for (f, b) in wanted.iter().zip(bq) {
+        let Some(ev) = events.remove(f) else { continue };
+        let (g, _) = s.game(game_quads_of(&t, ev)?.0);
+        let b = s.barrel(b);
+        let mut lines = Vec::new();
+        let bad = compare(&s, &g, &b, |l| {
+            if !l.starts_with("  same") {
+                lines.push(l.to_string());
+            }
+        });
+        println!("frame {f}: {bad} mismatches");
+        if verbose {
+            for l in lines {
+                println!("{l}");
+            }
+        }
+        total += bad;
+    }
+    println!("total {total} mismatches over {} frames", wanted.len());
+    Ok(total)
+}
+
 fn main() -> Result<()> {
     let a: Vec<String> = std::env::args().skip(1).collect();
     match a.first().map(String::as_str) {
@@ -862,6 +899,10 @@ fn main() -> Result<()> {
         Some("shader") if a.len() == 3 => shader(Path::new(&a[1]), &a[2]),
         Some("diff") if a.len() >= 5 => {
             let bad = diff(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str))?;
+            std::process::exit(if bad == 0 { 0 } else { 1 })
+        }
+        Some("diffs") if a.len() >= 5 => {
+            let bad = diffs(Path::new(&a[1]), &a[2], Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str))?;
             std::process::exit(if bad == 0 { 0 } else { 1 })
         }
         Some("align") if a.len() >= 5 => {

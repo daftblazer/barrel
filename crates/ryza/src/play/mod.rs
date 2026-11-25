@@ -588,6 +588,8 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         ("\\data\\x64\\res_cmn\\ui\\a21v2_various.g1t", 0),
         ("\\data\\x64\\res_en\\ui\\a21_field.g1t", 1),
         ("\\data\\x64\\res_cmn\\ui\\a21_common.g1t", 3),
+        ("\\data\\x64\\res_en\\ui\\a21_battle.g1t", 4),
+        ("\\data\\x64\\res_cmn\\ui\\a21v2_saveload.g1t", 0),
     ];
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -598,6 +600,10 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         anims: &install.read("\\saves\\ui_en\\uia_common.xml")?,
         help: &install.read("\\saves\\ui_en\\a21_button_help\\uil_a21_shade.xml")?,
         guide_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21_common.xml")?,
+        battle_styles: &install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_battle.xml")?,
+        autosave: &install.read("\\saves\\ui_cmn\\a21_saveload\\uil_a21_autosave.xml")?,
+        spinner_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_saveload.xml")?,
+        saveload_anims: &install.read("\\saves\\ui_en\\a21_saveload\\uia_a21_saveload.xml")?,
         minimap: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_fm_minimap.xml")?,
         time: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_time_display.xml")?,
         collect: &install.read("\\saves\\ui_en\\a21_field\\uil_a21_collect_item.xml")?,
@@ -607,7 +613,7 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         various_styles: &install.read("\\saves\\ui_cmn\\gen_styles\\uis_gen_a21v2_various.xml")?,
         strings: &install.read("\\saves\\text_en\\strcombineall.xml")?,
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
-        sizes: [size(2), size(3), size(4), size(5), size(6), size(7), size(8)],
+        sizes: [size(2), size(3), size(4), size(5), size(6), size(7), size(8), size(9), size(10)],
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..fh::TEXTURES])?;
     Ok((layer, hud))
@@ -3477,6 +3483,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 tick,
                 age: tick - a.hud_arrival,
                 place: barrel_ryza::field_hud::place_names(&a.field).filter(|_| !a.no_banner),
+                arrival: a.no_banner,
                 help: if let (Some(back), true) = (resumed, pump.is_none()) {
                     let mut bar = barrel_ryza::field_hud::HelpBar::returning();
                     // A button pressed in the field (the menu's keys after it closed) holds the bar back like the stick.

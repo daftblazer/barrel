@@ -17,6 +17,7 @@ use barrel_formats::table::{self, Element};
 use barrel_render::text::{Glyph, Quad, Spin};
 
 use crate::font::ATLAS_SIZE;
+use crate::spinner::Spinner;
 
 /// The textures a boot layer holds, in the order of `textures`'s quads: the title's own two
 /// (font, title atlas: `text::FONT`, `text::UI`) come first, then these.
@@ -31,7 +32,7 @@ pub const TEXTURES: usize = 8;
 
 const LAYOUT_HEIGHT: f32 = 720.0;
 /// A style's pixels per layout pixel (the 2160-line atlases).
-const ATLAS_PER_LAYOUT: f32 = 3.0;
+pub(crate) const ATLAS_PER_LAYOUT: f32 = 3.0;
 
 // STAND-IN: When the notice ends, the loading window comes and goes and the title starts are read off a capture's frame numbers; the real thing is the game's boot sequence moving on as each load finishes (its states 1, 6 and 7 wait on loading, not on a timer), and a button ending a logo early.
 // The schedule, in seconds from the notice's start, read from the capture (`title-cycle`,
@@ -42,7 +43,7 @@ const ATLAS_PER_LAYOUT: f32 = 3.0;
 // was).
 /// The capture frame the notice starts at (its pictures and pen match at frames 35 and 105).
 const CAPTURE_START: f32 = 12.0;
-const FPS: f32 = 60.0;
+pub(crate) const FPS: f32 = 60.0;
 /// The notice fades out from capture frame 118 over `anm_common_fade_out`'s 15 frames (frame
 /// 125) and is gone at 133.
 const NOTICE_FADE_OUT_AT: f32 = (118.0 - CAPTURE_START) / FPS;
@@ -120,7 +121,7 @@ pub fn saves_loading(t: f32) -> Option<i32> {
 /// reader this keeps a key that repeats the one before's frame: that is a jump (the pen's
 /// move), the value then the later key's.
 #[derive(Clone, Debug)]
-struct Track {
+pub(crate) struct Track {
     keys: Vec<(f32, [f32; 4])>,
     easing: Easing,
 }
@@ -133,7 +134,7 @@ enum Easing {
 }
 
 impl Track {
-    fn read(anims: &Element, name: &str, attr: &str) -> Result<Track, String> {
+    pub(crate) fn read(anims: &Element, name: &str, attr: &str) -> Result<Track, String> {
         let anim = anims.children.iter().find(|e| e.name == "anim" && e.attr("name") == Some(name)).ok_or(format!("no animation {name}"))?;
         let c = anim.children.iter().find(|e| e.name == "curve" && e.attr("attr") == Some(attr)).ok_or(format!("{name} has no {attr}"))?;
         let easing = match c.attr("interpolate") {
@@ -161,12 +162,12 @@ impl Track {
         Ok(Track { keys, easing })
     }
 
-    fn duration(&self) -> f32 {
+    pub(crate) fn duration(&self) -> f32 {
         self.keys.last().unwrap().0
     }
 
     /// The value `t` seconds in (held at the ends).
-    fn at(&self, t: f32) -> [f32; 4] {
+    pub(crate) fn at(&self, t: f32) -> [f32; 4] {
         let (first, last) = (self.keys[0], *self.keys.last().unwrap());
         if t <= first.0 {
             return first.1;
@@ -186,17 +187,17 @@ impl Track {
     }
 }
 
-fn numbers(e: &Element, attr: &str) -> Vec<f32> {
+pub(crate) fn numbers(e: &Element, attr: &str) -> Vec<f32> {
     e.attr(attr).unwrap_or("").split(',').filter_map(|v| v.trim().parse().ok()).collect()
 }
 
-fn pair(e: &Element, attr: &str, default: [f32; 2]) -> [f32; 2] {
+pub(crate) fn pair(e: &Element, attr: &str, default: [f32; 2]) -> [f32; 2] {
     let v = numbers(e, attr);
     [v.first().copied().unwrap_or(default[0]), v.get(1).copied().unwrap_or(default[1])]
 }
 
 /// The node called `name` with the positions above it added up.
-fn find<'a>(e: &'a Element, name: &str, at: [f32; 2]) -> Option<(&'a Element, [f32; 2])> {
+pub(crate) fn find<'a>(e: &'a Element, name: &str, at: [f32; 2]) -> Option<(&'a Element, [f32; 2])> {
     let here = pair(e, "pos", [0.0; 2]);
     let at = [at[0] + here[0], at[1] + here[1]];
     if e.attr("name") == Some(name) {
@@ -208,12 +209,12 @@ fn find<'a>(e: &'a Element, name: &str, at: [f32; 2]) -> Option<(&'a Element, [f
 /// A style: its pictures (left, top, width, height in the 2160-line atlas) and, for a nine-slice
 /// (`prim_type="wrap"`), its edge margins (left, top, right, bottom).
 #[derive(Clone, Debug)]
-struct Style {
-    pictures: Vec<[f32; 4]>,
-    margins: Option<[f32; 4]>,
+pub(crate) struct Style {
+    pub(crate) pictures: Vec<[f32; 4]>,
+    pub(crate) margins: Option<[f32; 4]>,
 }
 
-fn style(styles: &Element, name: &str) -> Result<Style, String> {
+pub(crate) fn style(styles: &Element, name: &str) -> Result<Style, String> {
     let image = |e: &Element| -> Option<[f32; 4]> { numbers(e, "uvwh").try_into().ok() };
     styles
         .children
@@ -280,16 +281,6 @@ fn read_letters(line: &Element, ctrl: &Element, icon_at: [f32; 2], line_at: [f32
     Ok(letters)
 }
 
-/// An orb of the autosave window's spinner.
-#[derive(Clone, Debug)]
-struct Orb {
-    /// The centre in the layout, and the turn in degrees.
-    center: [f32; 2],
-    rot: f32,
-    /// Which of the eight glow curves lights it.
-    glow: usize,
-}
-
 pub struct Boot {
     glyphs: HashMap<char, Glyph>,
     /// The atlases in pixels as the styles count them: letters, pictures, window, spinner, font.
@@ -319,14 +310,7 @@ pub struct Boot {
     text_wrap: f32,
     text_gap: f32,
     sentence: String,
-    orbs: Vec<Orb>,
-    orb_size: f32,
-    orb_pictures: Vec<[f32; 4]>,
-    group_at: [f32; 2],
-    group_pivot: [f32; 2],
-    orb_scale: f32,
-    orb_speed: f32,
-    glows: Vec<Track>,
+    spinner: Spinner,
     slide_color: Track,
     slide_pos: Track,
     fade_out: Track,
@@ -419,22 +403,6 @@ impl Boot {
         let (text, _) = find(window, "text", [0.0; 2]).ok_or("no window text")?;
         let [tx, ty] = pair(text, "pos", [0.0; 2]);
         let tc = numbers(text, "color");
-        let (group, group_at) = find(&note, "loading_1", [0.0; 2]).ok_or("no loading_1")?;
-        let orb_ctrl_at = |image: &Element| -> Option<usize> {
-            let anim = image.children.iter().find(|c| c.name == "anim_ctrl")?.children.first()?.attr("anim")?.to_string();
-            anim.rsplit('_').next()?.parse::<usize>().ok().map(|n| n - 1)
-        };
-        let orb_style = style(&spinner_styles, "gen_a21_cmn_al_001_orb")?;
-        let mut orbs = Vec::new();
-        for o in group.children.iter().filter(|c| c.attr("name").is_some_and(|n| n.starts_with("circle_base"))) {
-            let [x, y] = pair(o, "pos", [0.0; 2]);
-            let rot = numbers(o, "rot").get(2).copied().unwrap_or(0.0);
-            orbs.push(Orb { center: [x, y], rot, glow: orb_ctrl_at(o).ok_or("an orb has no glow")? });
-        }
-        let orb_size = orb_style.pictures[0][2] / ATLAS_PER_LAYOUT;
-        for o in &mut orbs {
-            o.center = [o.center[0] + orb_size / 2.0, o.center[1] + orb_size / 2.0];
-        }
         let sentence_no = (STR_UI_BASE + SENTENCE).to_string();
         let sentence = strings
             .children
@@ -443,10 +411,10 @@ impl Boot {
             .and_then(|s| s.attr("Text"))
             .ok_or("the autosave sentence is not in str_ui.xml")?
             .to_string();
-        let glows = (1..=8).map(|n| Track::read(&anims, &format!("anm_loading_icon_eff_{n}"), "color")).collect::<Result<Vec<_>, _>>()?;
         let pen_speed = pen_ctrl.attr("speed").and_then(|s| s.trim().parse().ok()).unwrap_or(1.0);
         let half = |(w, h): (u32, u32)| (w as f32 * 2.0, h as f32 * 2.0);
         let s = src.sizes;
+        let spinner = Spinner::read(&note, &spinner_styles, &anims, half(s[3]), SPINNER)?;
         Ok(Boot {
             glyphs: src.glyphs,
             atlas: [half(s[0]), half(s[1]), half(s[2]), half(s[3]), (s[4].0 as f32, s[4].1 as f32)],
@@ -472,17 +440,7 @@ impl Boot {
             text_wrap: text.attr("line_char_length").and_then(|v| v.trim().parse().ok()).ok_or("window text has no line_char_length")?,
             text_gap: text.attr("line_space").and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
             sentence,
-            orbs,
-            orb_size,
-            orb_pictures: orb_style.pictures.clone(),
-            group_at,
-            group_pivot: pair(group, "pivot_pos", [0.0; 2]),
-            orb_scale: pair(group, "scale", [1.0; 2])[0],
-            orb_speed: {
-                let c = group.children.iter().find_map(|o| o.children.iter().find(|c| c.name == "anim_ctrl"));
-                c.and_then(|c| c.attr("speed")).and_then(|s| s.trim().parse().ok()).unwrap_or(1.0)
-            },
-            glows,
+            spinner,
             slide_color: Track::read(&common, "anm_common_slide_in_bottom", "color")?,
             slide_pos: Track::read(&common, "anm_common_slide_in_bottom", "pos")?,
             fade_out: Track::read(&common, "anm_common_fade_out", "color")?,
@@ -656,40 +614,14 @@ impl Boot {
         }
         let (ox, oy) = (self.window_at[0], self.window_at[1] + slide);
         let mut out = Vec::new();
-        // The nine slices: each edge at its margin, the middle repeated and cropped to fit.
-        let [ml, mt, mr, mb] = self.window_style.margins.unwrap_or([0.0; 4]);
-        let [u, v, uw, uh] = self.window_style.pictures[0];
-        let [w, h] = self.window_size;
-        let cols = [(0.0, ml, u, ml), (ml, uw - ml - mr, u + ml, uw - ml - mr), (uw - mr, mr, u + uw - mr, mr)];
-        let rows = [(0.0, mt, v, mt), (mt, uh - mt - mb, v + mt, uh - mt - mb), (uh - mb, mb, v + uh - mb, mb)];
-        let spans = |extent: f32, edges: [(f32, f32, f32, f32); 3]| -> Vec<(f32, f32, f32, f32)> {
-            // (layout offset, layout length, uv start, uv length)
-            let (a, b, c) = (edges[0], edges[1], edges[2]);
-            let mut v = vec![(0.0, a.1 / ATLAS_PER_LAYOUT, a.2, a.3)];
-            let room = extent - (a.1 + c.1) / ATLAS_PER_LAYOUT;
-            let tile = b.1 / ATLAS_PER_LAYOUT;
-            let mut at = a.1 / ATLAS_PER_LAYOUT;
-            let mut left = room;
-            while left > 0.001 {
-                let len = tile.min(left);
-                v.push((at, len, b.2, b.3 * len / tile));
-                at += len;
-                left -= len;
-            }
-            v.push((at, c.1 / ATLAS_PER_LAYOUT, c.2, c.3));
-            v
-        };
-        let (xs, ys) = (spans(w, cols), spans(h, rows));
         let color = [1.0, 1.0, 1.0, alpha];
-        for r in &ys {
-            for c in &xs {
-                let (x, y) = (left + (ox + c.0) * k, (oy + r.0) * k);
-                out.push(self.quad(2, WINDOW, [c.2, r.2, c.3, r.3], [x, y, x + c.1 * k, y + r.1 * k], color, None));
-            }
+        for (uvwh, [px, py, pw, ph]) in nine_slice(self.window_style.pictures[0], self.window_style.margins.unwrap_or([0.0; 4]), self.window_size) {
+            let (x, y) = (left + (ox + px) * k, (oy + py) * k);
+            out.push(self.quad(2, WINDOW, uvwh, [x, y, x + pw * k, y + ph * k], color, None));
         }
         out.extend(self.sentence_quads(ox, oy, k, left, alpha));
         let spinner = if t < SPINNER_OUT { 1.0 } else { self.fade_out.at((t - SPINNER_OUT) * SPINNER_OUT_SPEED)[3] / 255.0 };
-        out.extend(self.orb_quads(since, k, left, byte(alpha), byte(spinner), slide));
+        out.extend(self.spinner.quads(since, k, left, byte(alpha) * byte(spinner) / 255, slide));
         out
     }
 
@@ -729,30 +661,42 @@ impl Boot {
         let _ = self.text_gap;
         out
     }
+}
 
-    /// The spinner: eight orbs about the group's pivot, each with its glow over it (a glow
-    /// that is clear draws nothing).
-    fn orb_quads(&self, since: f32, k: f32, left: f32, window: u32, spinner: u32, slide: f32) -> Vec<Quad> {
-        let mut out = Vec::new();
-        let ticks = (since * FPS).round();
-        let (pw, ph) = (self.orb_size * self.orb_scale * k, self.orb_size * self.orb_scale * k);
-        // Opacities are bytes multiplied down the node tree, each product truncated.
-        let base = window * spinner / 255;
-        for o in &self.orbs {
-            // The group scales about its pivot: a point p lands at origin + pivot + (p - pivot) * scale.
-            let at = |i: usize| self.group_at[i] + self.group_pivot[i] + (o.center[i] - self.group_pivot[i]) * self.orb_scale;
-            let (cx, cy) = (left + at(0) * k, (at(1) + slide) * k);
-            let rect = [cx - pw / 2.0, cy - ph / 2.0, cx + pw / 2.0, cy + ph / 2.0];
-            let spin = (o.rot != 0.0).then(|| Spin::About { pivot: [cx, cy], angle: o.rot.to_radians() });
-            out.push(self.quad(3, SPINNER, self.orb_pictures[0], rect, [1.0, 1.0, 1.0, base as f32 / 255.0], spin));
-            let glow = &self.glows[o.glow];
-            let g = glow.at(loop_time(ticks, glow.duration(), self.orb_speed))[3].floor() as u32 * base / 255;
-            if g > 0 {
-                out.push(self.quad(3, SPINNER, self.orb_pictures[1], rect, [1.0, 1.0, 1.0, g as f32 / 255.0], spin));
-            }
+/// The pieces of a stretched ("wrap") picture `size` layout pixels across: each edge at its
+/// margin (left, top, right, bottom, in atlas pixels) and the middle repeated and cropped to
+/// fit, rows then columns. Each piece is its picture's place in the atlas (left, top, width,
+/// height) and its place in the node (offset and size in layout pixels).
+pub(crate) fn nine_slice(picture: [f32; 4], margins: [f32; 4], size: [f32; 2]) -> Vec<([f32; 4], [f32; 4])> {
+    let [ml, mt, mr, mb] = margins;
+    let [u, v, uw, uh] = picture;
+    let cols = [(0.0, ml, u, ml), (ml, uw - ml - mr, u + ml, uw - ml - mr), (uw - mr, mr, u + uw - mr, mr)];
+    let rows = [(0.0, mt, v, mt), (mt, uh - mt - mb, v + mt, uh - mt - mb), (uh - mb, mb, v + uh - mb, mb)];
+    let spans = |extent: f32, edges: [(f32, f32, f32, f32); 3]| -> Vec<(f32, f32, f32, f32)> {
+        // (layout offset, layout length, uv start, uv length)
+        let (a, b, c) = (edges[0], edges[1], edges[2]);
+        let mut v = vec![(0.0, a.1 / ATLAS_PER_LAYOUT, a.2, a.3)];
+        let room = extent - (a.1 + c.1) / ATLAS_PER_LAYOUT;
+        let tile = b.1 / ATLAS_PER_LAYOUT;
+        let mut at = a.1 / ATLAS_PER_LAYOUT;
+        let mut left = room;
+        while left > 0.001 {
+            let len = tile.min(left);
+            v.push((at, len, b.2, b.3 * len / tile));
+            at += len;
+            left -= len;
         }
-        out
+        v.push((at, c.1 / ATLAS_PER_LAYOUT, c.2, c.3));
+        v
+    };
+    let (xs, ys) = (spans(size[0], cols), spans(size[1], rows));
+    let mut out = Vec::new();
+    for r in &ys {
+        for c in &xs {
+            out.push(([c.2, r.2, c.3, r.3], [c.0, r.0, c.1, r.1]));
+        }
     }
+    out
 }
 
 /// An opacity as the byte the game holds it in (truncated).

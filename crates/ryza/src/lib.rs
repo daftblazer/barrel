@@ -51,6 +51,7 @@ pub mod title_menu;
 pub mod new_game;
 pub mod opening;
 pub mod boot;
+mod spinner;
 pub mod music;
 pub mod sound;
 

@@ -19,6 +19,9 @@ use crate::font::ATLAS_SIZE;
 use crate::load_view::{inside, style, Style, TEXT_TOP};
 use crate::title::{curve, find, numbers, pair, Curve, LAYOUT_HEIGHT};
 
+mod arrival;
+use arrival::Arrival;
+
 /// The textures of the HUD's layer, in this order.
 pub const FONT01: usize = 0;
 pub const FONT00: usize = 1;
@@ -31,8 +34,11 @@ pub const VARIOUS: usize = 6;
 pub const GLOW: usize = 7;
 /// The help bar's plate (`a21_common.g1t#3`).
 pub const GUIDE: usize = 8;
+/// The marquee's mask (`a21_battle.g1t#4`) and the autosave mark's orbs (`a21v2_saveload.g1t#0`).
+pub const BATTLE: usize = 9;
+pub const SAVELOAD: usize = 10;
 /// How many textures the layer has.
-pub const TEXTURES: usize = 9;
+pub const TEXTURES: usize = 11;
 
 /// The styles' pixels count three to a layout pixel (`load_view::ATLAS_PER_LAYOUT`).
 const PER_LAYOUT: f32 = 3.0;
@@ -87,6 +93,11 @@ const HELP_FIRST: [usize; 2] = [2, 5];
 const BACK_GROW_FRAMES: f32 = 6.4;
 const BACK_GROW_LEAD: f32 = 0.4;
 const BACK_IDLE_LATER: f32 = 1.0;
+/// The bar after the opening: its fade starts this many frames after the field's first (`opening-key4`: 14865 on 14862),
+/// its plate has grown this many frames by then and takes this many frames in all.
+const OPENING_BAR_LATE: f32 = 3.0;
+const OPENING_GROW_LEAD: f32 = 5.03;
+const OPENING_GROW_FRAMES: f32 = 12.03;
 /// The plate's shortest width in layout pixels (376.5 px of the capture at 1.5 px a layout pixel).
 const HELP_PLATE_MIN: f32 = 376.5 / 1.5;
 
@@ -120,20 +131,24 @@ pub struct HelpBar {
     alpha: f32,
     /// Frames since the bar first showed (its plate grows on the first appearance only).
     shown: f32,
-    /// The bar as it returns from the menu (`HelpBar::returning`): its plate grows by its own rule.
-    back: bool,
+    /// A bar that shows its full line at once and grows its plate by its own rule, the frames
+    /// before the fade the growth has run and the frames it takes (the menu's return, the
+    /// arrival after the opening); `None` for the first showing's short line and slow grow.
+    quick: Option<(f32, f32)>,
 }
 
 impl HelpBar {
     /// The bar at a field's arrival.
     pub fn arriving() -> HelpBar {
-        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0, back: false }
+        HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0, quick: None }
     }
 
-    /// The bar at the arrival after the opening: no rest to wait for, it fades in from the first frame (`opening-key3` 14865).
-    // STAND-IN: that the bar needs no rest here is read off the key's first HUD frame (14865, 3 frames in: the short plate); the game's own count at a new game's arrival is not read.
+    /// The bar at the arrival after the opening: no rest to wait for, it fades in from the third frame (`opening-key4`: the
+    /// first plate on 14865, the field's first frame 14862) with its full line, and its plate grows linearly over 12 frames
+    /// from 5 frames before the fade's first (half grown on it, whole on 14871).
+    // STAND-IN: that the bar needs no rest here, and the plate's grow, are read off the key's frames 14865 to 14871; the game's own count at a new game's arrival is not read.
     pub fn arriving_at_once() -> HelpBar {
-        HelpBar { idle: HELP_IDLE, ..HelpBar::arriving() }
+        HelpBar { idle: HELP_IDLE - OPENING_BAR_LATE, quick: Some((OPENING_GROW_LEAD, OPENING_GROW_FRAMES)), ..HelpBar::arriving() }
     }
 
     /// The bar as the field comes back from the menu: it fades in a frame later than at an
@@ -141,7 +156,7 @@ impl HelpBar {
     /// from 0.4 frames before the fade (`field-menu` 2575 to 2585: opacity 2/15 and the plate 0.375 of
     /// the way on 2575, the whole plate on 2580).
     pub fn returning() -> HelpBar {
-        HelpBar { idle: HELP_IDLE_AT_ARRIVAL - BACK_IDLE_LATER, back: true, ..HelpBar::arriving() }
+        HelpBar { idle: HELP_IDLE_AT_ARRIVAL - BACK_IDLE_LATER, quick: Some((BACK_GROW_LEAD, BACK_GROW_FRAMES)), ..HelpBar::arriving() }
     }
 
     /// Moves on `frames` frames (60 a second), the move stick out of its dead zone or not.
@@ -161,13 +176,13 @@ impl HelpBar {
 
     /// Whether the bar still shows its first, short line (the first frames of its first showing).
     fn first_line(&self) -> bool {
-        !self.back && self.shown < HELP_GROW_FROM
+        self.quick.is_none() && self.shown < HELP_GROW_FROM
     }
 
     /// How far the plate has grown from its shortest to its full width, 0 to 1.
     fn grow(&self) -> f32 {
-        if self.back {
-            return ((self.shown + BACK_GROW_LEAD) / BACK_GROW_FRAMES).clamp(0.0, 1.0);
+        if let Some((lead, frames)) = self.quick {
+            return ((self.shown + lead) / frames).clamp(0.0, 1.0);
         }
         ((self.shown - HELP_GROW_FROM) / HELP_GROW_FRAMES).clamp(0.0, 1.0)
     }
@@ -217,6 +232,9 @@ pub struct State {
     pub place: Option<[u32; 2]>,
     /// The help bar.
     pub help: HelpBar,
+    /// Whether this is the arrival after the opening, with its popups (the story marquee and the
+    /// autosave mark; `age` runs their clocks).
+    pub arrival: bool,
 }
 
 /// What the minimap marks, as places in the field (game units, x then z).
@@ -245,6 +263,12 @@ pub struct Sources<'a> {
     pub anims: &'a [u8],
     pub help: &'a [u8],
     pub guide_styles: &'a [u8],
+    /// `uis_gen_a21_battle.xml` (the marquee's mask), `uil_a21_autosave.xml` (the autosave mark),
+    /// `uis_gen_a21v2_saveload.xml` (its orbs) and `uia_a21_saveload.xml` (their glows).
+    pub battle_styles: &'a [u8],
+    pub autosave: &'a [u8],
+    pub spinner_styles: &'a [u8],
+    pub saveload_anims: &'a [u8],
     pub glyphs: [HashMap<char, Glyph>; 2],
     /// Each texture's size in pixels, in the layer's order after the two fonts.
     pub sizes: [(u32, u32); TEXTURES - 2],
@@ -298,6 +322,8 @@ pub struct Hud {
     help_at: [f32; 2],
     help_text: Label,
     help_left: f32,
+    // The arrival's popups.
+    arrival: Option<Arrival>,
 }
 
 fn node<'a>(layout: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -350,6 +376,7 @@ impl Hud {
                     || (MAP_NAMES..MAP_NAMES + NAMES).contains(n)
                     || (MENU_WORDS..MENU_WORDS + MENU_WORDS_SPAN).contains(n)
                     || HELP_ENTRIES.iter().any(|(_, w)| w == n)
+                    || [arrival::ADDED_LINE, arrival::STORY_TITLE].contains(n)
             })
             .collect();
         let places = table::parse(src.places).map_err(|e| format!("uil_a21_fm01: {e}"))?;
@@ -418,9 +445,11 @@ impl Hud {
         let (_, left_side) = inside(help_bg, "left_side", [0.0; 2]).ok_or("uil_a21_shade: no left_side")?;
         let (help_bg_node, _) = node(&help_layout, "bg")?;
         let (help_text, help_text_at) = inside(help_bg_node, "text", [0.0; 2]).ok_or("uil_a21_shade: no bg/text")?;
+        let atlases = src.sizes.map(|(w, h)| (w as f32 * 2.0, h as f32 * 2.0));
+        let arrival = Arrival::read(&src, &places, &field, &atlases)?;
         Ok(Hud {
             glyphs: src.glyphs,
-            atlases: src.sizes.map(|(w, h)| (w as f32 * 2.0, h as f32 * 2.0)),
+            atlases,
             strings,
             grid: (picture(&field, &style_of(grid_e)?)?, grid_at),
             mask: (picture(&field, &style_of(mask_e)?)?, mask_at, scale_of(mask_e)),
@@ -459,6 +488,7 @@ impl Hud {
             help_at,
             help_text: label(help_text, help_text_at),
             help_left: left_side[0],
+            arrival: Some(arrival),
         })
     }
 
@@ -486,6 +516,12 @@ impl Hud {
         let left = (screen.0 as f32 - 1280.0 * k) * 0.5;
         let mut pen = Pen { hud: self, k, left, out: Vec::new() };
         let white = [1.0; 4];
+        let mut clips = Vec::new();
+
+        // The story marquee of the arrival after the opening, under everything else.
+        if state.arrival {
+            self.marquee(&mut pen, state.age, &mut clips, self.word(arrival::STORY_TITLE));
+        }
 
         // The area name's banner on arrival: the area's plate and name, then the map's.
         if let Some(names) = state.place {
@@ -517,7 +553,7 @@ impl Hud {
             pen.centered(FIELD, self.folk_icon, beside(at), 1.0, white);
         }
         pen.arrow(self.arrow, center, state.turn, spin.unwrap_or(0.0));
-        let mut clips = vec![Clip { mask: map_mask, quads: map_mask + 1..pen.out.len() }];
+        clips.push(Clip { mask: map_mask, quads: map_mask + 1..pen.out.len() });
         pen.picture(FIELD, self.gmd.0, self.gmd.1, 1.0, white);
         // The frame turns about its own middle, the north mark about the frame's.
         pen.picture(FIELD, self.frame.0, self.frame.1, 1.0, white);
@@ -592,6 +628,9 @@ impl Hud {
         pen.text(&self.time, self.time_origin, &shown.to_string(), white);
         if state.help.alpha() > 0.0 {
             self.help_bar(&mut pen, &state.help);
+        }
+        if state.arrival {
+            self.autosave_mark(&mut pen, state.age);
         }
         (pen.out, clips, glow)
     }
