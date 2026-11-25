@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn a_wall_stops_her() {
-        let wall = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: 300.0, outline: None };
+        let wall = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: 300.0, outline: None, thick: 0.0 };
         let walls = Walls::from_walls(vec![wall], 1000.0);
         let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
         run(&mut p, [0.0, 1.0], 2.0, Some(&walls));
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn she_steps_over_a_low_wall() {
-        let kerb = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: STEP_UP * 0.5, outline: None };
+        let kerb = barrel_engine::walk::Wall { a: [-500.0, 200.0], b: [500.0, 200.0], low: -100.0, high: STEP_UP * 0.5, outline: None, thick: 0.0 };
         let walls = Walls::from_walls(vec![kerb], 1000.0);
         let mut p = Player::new(Vec3::ZERO, 0.0, &LENGTHS);
         run(&mut p, [0.0, 1.0], 2.0, Some(&walls));
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn she_stops_at_a_wall_and_stands_a_frame_before_she_slides() {
-        let wall = barrel_engine::walk::Wall { a: [-5000.0, 200.0], b: [5000.0, 200.0], low: -100.0, high: 300.0, outline: None };
+        let wall = barrel_engine::walk::Wall { a: [-5000.0, 200.0], b: [5000.0, 200.0], low: -100.0, high: 300.0, outline: None, thick: 0.0 };
         let walls = Walls::from_walls(vec![wall], 1000.0);
         let mut p = Player::new(Vec3::new(0.0, 0.0, 100.0), 0.0, &LENGTHS);
         let lean = [0.6, 0.8];
@@ -404,7 +404,7 @@ mod tests {
             vertices: vec![[-1000.0, -100.0, -1000.0], [20000.0, 2000.0, -1000.0], [-1000.0, -100.0, 1000.0], [20000.0, 2000.0, 1000.0]],
         };
         let ground = Ground::new(None, &ramp, barrel_engine::walk::DEFAULT_SLOPE);
-        let wall = barrel_engine::walk::Wall { a: [-5000.0, 200.0], b: [50000.0, 200.0], low: -100.0, high: 3000.0, outline: None };
+        let wall = barrel_engine::walk::Wall { a: [-5000.0, 200.0], b: [50000.0, 200.0], low: -100.0, high: 3000.0, outline: None, thick: 0.0 };
         let walls = Walls::from_walls(vec![wall], 1000.0);
         let y0 = ground.height(0.0, 100.0, 0.0, 1.0).unwrap();
         let mut p = Player::new(Vec3::new(0.0, y0, 100.0), 0.0, &LENGTHS);

@@ -120,8 +120,7 @@ fn shape(d: &[u8]) -> Option<Collision> {
     let v = |k: usize| Some(Vec3::new(f(k)?, f(k + 1)?, f(k + 2)?));
     match *d.get(16)? {
         0 if d.len() >= 17 + 80 => {
-            let (c, axes, half) = (v(0)?, [v(4)?, v(8)?, v(12)?], v(16)?);
-            Some(prism(c, axes[1] * half.y, &[axes[0] * half.x + axes[2] * half.z, axes[0] * half.x - axes[2] * half.z, -axes[0] * half.x - axes[2] * half.z, -axes[0] * half.x + axes[2] * half.z]))
+            let (c, axes, half) = (v(0)?, [v(4)?, v(8)?, v(12)?], v(16)?);            Some(prism(c, axes[1] * half.y, &[axes[0] * half.x + axes[2] * half.z, axes[0] * half.x - axes[2] * half.z, -axes[0] * half.x - axes[2] * half.z, -axes[0] * half.x + axes[2] * half.z]))
         }
         3 if d.len() >= 17 + 40 => {
             let (c, axis, length, radius) = (v(0)?, v(4)?.normalize_or_zero(), f(8)?, f(9)?);
@@ -181,6 +180,15 @@ fn hull(d: &[u8]) -> Option<Collision> {
         }
         triangles.push(t);
     }
+    // A hull is a wall for her, not a floor: she does not stand on it (the stall she makes on the placed stairs' hull at 32690, 30068 is
+    // not the game's: `gather-rasen2` 2960 to 2972 she runs on past it), so only its steep triangles stay.
+    // STAND-IN: that no hull is a floor is read off that one run (`A21-S09-STAIR-03`, the only hull she crossed); the game's own use of a hull
+    // (a trigger, the camera's) is not read.
+    let steep = barrel_engine::walk::DEFAULT_SLOPE.to_radians().cos();
+    triangles.retain(|t| {
+        let [a, b, c] = t.map(|i| Vec3::from(vertices[i as usize]));
+        (b - a).cross(c - a).normalize_or_zero().y.abs() <= steep
+    });
     let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
     for v in &vertices {
         for a in 0..3 {
@@ -188,7 +196,7 @@ fn hull(d: &[u8]) -> Option<Collision> {
             hi[a] = hi[a].max(v[a]);
         }
     }
-    let node = g1co::Node { max: hi, min: lo, kind: 0, link: 65535, count: count as u32, first: 0 };
+    let node = g1co::Node { max: hi, min: lo, kind: 0, link: 65535, count: triangles.len() as u32, first: 0 };
     Some(Collision { nodes: vec![node], triangles, vertices })
 }
 
@@ -296,7 +304,8 @@ mod tests {
             c[0x50 + 2 * k..0x52 + 2 * k].copy_from_slice(&i.to_le_bytes());
         }
         c.resize(0x60 + 48, 0);
-        for (k, p) in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]].iter().enumerate() {
+        // An upright triangle: a hull is walls only (a floor triangle goes: `a_hull_is_not_a_floor`).
+        for (k, p) in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]].iter().enumerate() {
             for (a, v) in p.iter().enumerate() {
                 let o = 0x60 + 16 * k + 4 * a;
                 c[o..o + 4].copy_from_slice(&v.to_le_bytes());
@@ -307,6 +316,30 @@ mod tests {
         let h = super::hull(&d).unwrap();
         assert_eq!(h.triangles, vec![[0, 1, 2]]);
         assert_eq!(h.vertices[1], [11.0, 20.0, 30.0]);
+    }
+
+    #[test]
+    fn a_hull_is_not_a_floor() {
+        let mut c = vec![0u8; 0x80];
+        c[..4].copy_from_slice(b"HLP_");
+        for (o, v) in [(16usize, 1u32), (20, 0x50), (24, 3)] {
+            c[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        c[28..30].copy_from_slice(&0x60u16.to_le_bytes());
+        for (k, i) in [0u16, 1, 2].iter().enumerate() {
+            c[0x50 + 2 * k..0x52 + 2 * k].copy_from_slice(&i.to_le_bytes());
+        }
+        c.resize(0x60 + 48, 0);
+        // A triangle lying flat.
+        for (k, p) in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]].iter().enumerate() {
+            for (a, v) in p.iter().enumerate() {
+                let o = 0x60 + 16 * k + 4 * a;
+                c[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        let mut d = b"OC1G2\0\0\0\0\0\x01\x02\0\0\0\0".to_vec();
+        d.extend(c);
+        assert!(super::hull(&d).unwrap().triangles.is_empty());
     }
 
     #[test]

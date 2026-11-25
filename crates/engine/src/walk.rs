@@ -20,6 +20,8 @@ pub struct Wall {
     /// stair's rail, spans only its own slope's heights at each point). None: `low` to `high`
     /// all along.
     pub outline: Option<[[f32; 2]; 3]>,
+    /// How far from the segment the wall stands: 0 for a flat wall, a body's radius for a post (a cylinder, its segment one point).
+    pub thick: f32,
 }
 
 impl Wall {
@@ -78,7 +80,8 @@ impl Walls {
     pub fn from_walls(walls: Vec<Wall>, leaf: f32) -> Walls {
         let mut cells: std::collections::BTreeMap<(i32, i32), Vec<Wall>> = Default::default();
         for w in walls {
-            let (lo, hi) = ([w.a[0].min(w.b[0]), w.a[1].min(w.b[1])], [w.a[0].max(w.b[0]), w.a[1].max(w.b[1])]);
+            // A post stands its thickness out from its place: the leaves it reaches into hold it too.
+            let (lo, hi) = ([w.a[0].min(w.b[0]) - w.thick, w.a[1].min(w.b[1]) - w.thick], [w.a[0].max(w.b[0]) + w.thick, w.a[1].max(w.b[1]) + w.thick]);
             for cx in (lo[0] / leaf).floor() as i32..=(hi[0] / leaf).floor() as i32 {
                 for cz in (lo[1] / leaf).floor() as i32..=(hi[1] / leaf).floor() as i32 {
                     cells.entry((cx, cz)).or_default().push(w);
@@ -101,7 +104,7 @@ impl Walls {
             if at[0] + radius < lo[0] || at[0] - radius > hi[0] || at[1] + radius < lo[1] || at[1] - radius > hi[1] {
                 continue;
             }
-            out.extend(walls.iter().filter(|w| closest(at, w.a, w.b).0.iter().zip(at).map(|(c, p)| (c - p).powi(2)).sum::<f32>() <= radius * radius));
+            out.extend(walls.iter().filter(|w| closest(at, w.a, w.b).0.iter().zip(at).map(|(c, p)| (c - p).powi(2)).sum::<f32>() <= (radius + w.thick).powi(2)));
         }
         out
     }
@@ -189,8 +192,12 @@ impl Walls {
                 }
                 let (dx, dz) = (p[0] - q[0], p[1] - q[1]);
                 let d = (dx * dx + dz * dz).sqrt();
-                if d < radius && d > 1e-4 {
-                    let push = (radius - d) / d;
+                // Her top is a hemisphere: a wall that starts within the cap's height reaches only as far as the cap does there.
+                let into_cap = low - (y + height - radius);
+                let round = if into_cap > 0.0 { (radius * radius - into_cap * into_cap).max(0.0).sqrt() } else { radius };
+                let reach = round + w.thick;
+                if d < reach && d > 1e-4 {
+                    let push = (reach - d) / d;
                     p = [p[0] + dx * push, p[1] + dz * push];
                     moved = true;
                 }
@@ -389,7 +396,7 @@ fn wall(v: [[f32; 3]; 3], max_slope: f32) -> Option<Wall> {
     let (ab, len) = ([b[0] - a[0], b[1] - a[1]], span(a, b));
     let along = |p: [f32; 2]| if len > 0.0 { ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / len } else { 0.0 };
     let outline = [0, 1, 2].map(|i| [along(flat[i]), ys[i]]);
-    Some(Wall { a, b, low: ys.iter().copied().fold(f32::MAX, f32::min), high: ys.iter().copied().fold(f32::MIN, f32::max), outline: Some(outline) })
+    Some(Wall { a, b, low: ys.iter().copied().fold(f32::MAX, f32::min), high: ys.iter().copied().fold(f32::MIN, f32::max), outline: Some(outline), thick: 0.0 })
 }
 
 /// The point of segment a-b nearest p, and how far along it that is (0 at a, 1 at b).
@@ -406,7 +413,7 @@ mod tests {
 
     #[test]
     fn a_body_taken_out_leaves_the_other_walls() {
-        let wall = |x: f32| Wall { a: [x, 0.0], b: [x, 100.0], low: 0.0, high: 100.0, outline: None };
+        let wall = |x: f32| Wall { a: [x, 0.0], b: [x, 100.0], low: 0.0, high: 100.0, outline: None, thick: 0.0 };
         let mut walls = Walls::from_walls(vec![wall(10.0), wall(5000.0), wall(5100.0)], 2000.0);
         assert_eq!(walls.within([10.0, 50.0], 20.0).len(), 1);
         walls.remove(&[wall(10.0), wall(5000.0)]);
@@ -430,7 +437,7 @@ mod tests {
 
     #[test]
     fn a_line_through_a_wall_hits_it() {
-        let w = super::Walls::from_walls(vec![super::Wall { a: [-100.0, 50.0], b: [100.0, 50.0], low: 0.0, high: 200.0, outline: None }], 1000.0);
+        let w = super::Walls::from_walls(vec![super::Wall { a: [-100.0, 50.0], b: [100.0, 50.0], low: 0.0, high: 200.0, outline: None, thick: 0.0 }], 1000.0);
         assert_eq!(w.first_hit([0.0, 100.0, 0.0], [0.0, 100.0, 100.0]), Some(0.5));
         // Over its top, or beside it: no.
         assert_eq!(w.first_hit([0.0, 300.0, 0.0], [0.0, 300.0, 100.0]), None);
@@ -451,6 +458,33 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn a_post_is_a_circle_she_slides_round() {
+        // A post of thickness 60 at the origin: she (radius 28) walks at it from the west and slides along the circle of 88.
+        let post = Wall { a: [0.0, 0.0], b: [0.0, 0.0], low: -100.0, high: 500.0, outline: None, thick: 60.0 };
+        let walls = Walls::from_walls(vec![post], 2000.0);
+        let mut p = [-200.0, 20.0];
+        for _ in 0..14 {
+            p = walls.step(p, [10.0, 0.0], 0.0, 150.0, 28.0);
+        }
+        let far = (p[0] * p[0] + p[1] * p[1]).sqrt();
+        // On the circle, pushed round to the side she came in on (north), not through.
+        assert!((far - 88.0).abs() < 0.5 && p[1] > 20.0, "{p:?} {far}");
+    }
+
+    #[test]
+    fn a_wall_that_starts_in_her_head_cap_reaches_less() {
+        // Her top is a hemisphere: a wall whose bottom is 10 into it (150 tall, radius 28) is not touched 26 away, but is 20 away.
+        let wall = Wall { a: [0.0, -500.0], b: [0.0, 500.0], low: 140.0, high: 400.0, outline: None, thick: 0.0 };
+        let walls = Walls::from_walls(vec![wall], 2000.0);
+        assert_eq!(walls.step([26.0, 0.0], [0.0, 0.0], 0.0, 150.0, 28.0), [26.0, 0.0]);
+        let p = walls.step([20.0, 0.0], [0.0, 0.0], 0.0, 150.0, 28.0);
+        assert!(p[0] > 20.0, "{p:?}");
+        // A wall from her knee up takes the whole radius.
+        let low = Wall { low: 50.0, ..wall };
+        assert!(Walls::from_walls(vec![low], 2000.0).step([26.0, 0.0], [0.0, 0.0], 0.0, 150.0, 28.0)[0] > 26.0);
+    }
 
     #[test]
     fn a_wall_stops_a_walk_into_it() {
