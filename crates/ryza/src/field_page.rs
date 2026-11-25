@@ -1119,6 +1119,14 @@ const MIX06_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (40.0, 1.0), (120.0, 0.0)];
 const MIX09_SCALE: [(f32, f32); 4] = [(0.0, 0.2), (13.0, 2.0), (20.0, 4.0), (120.0, 10.0)];
 const MIX09_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (25.0, 1.0), (120.0, 0.0)];
 
+/// A node turned and scaled about its pivot (`pivot_pos`, in its own pixels), placed at its `pos` in `root`, as the mix effects' animations do.
+fn about(root: &Xf, e: &Element, turn: f32, scale: [f32; 2]) -> Xf {
+    let (pivot, at) = (pair(e, "pivot_pos", [0.0; 2]), pair(e, "pos", [0.0; 2]));
+    let (sin, cos) = turn.to_radians().sin_cos();
+    let moved = [scale[0] * cos * pivot[0] - scale[1] * sin * pivot[1], scale[0] * sin * pivot[0] + scale[1] * cos * pivot[1]];
+    root.node([at[0] + pivot[0] - moved[0], at[1] + pivot[1] - moved[1]], turn, scale)
+}
+
 /// An out cubic ease of `u` (0 to 1): fast first.
 fn out_cubic(u: f32) -> f32 {
     1.0 - (1.0 - u.clamp(0.0, 1.0)).powi(3)
@@ -1135,16 +1143,9 @@ impl Page {
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let t = look.clock;
-        // A node turned and scaled about its pivot (`pivot_pos`), as the effects' animations do.
-        let about = |e: &Element, turn: f32, scale: f32| -> Xf {
-            let (pivot, at) = (pair(e, "pivot_pos", [0.0; 2]), pair(e, "pos", [0.0; 2]));
-            let (sin, cos) = turn.to_radians().sin_cos();
-            let moved = [scale * (cos * pivot[0] - sin * pivot[1]), scale * (sin * pivot[0] + cos * pivot[1])];
-            root.node([at[0] + pivot[0] - moved[0], at[1] + pivot[1] - moved[1]], turn, [scale; 2])
-        };
         // The effect under the card.
         if let (Some(t), Some(e)) = (t, find(&self.mix_sheet, "a21_mix06")) {
-            w.image(e, about(e, keyed(&MIX06_TURN, t), keyed(&MIX06_SCALE, t)), &Over { alpha: Some(keyed(&MIX06_ALPHA, t)), ..Default::default() });
+            w.image(e, about(&root, e, keyed(&MIX06_TURN, t), [keyed(&MIX06_SCALE, t); 2]), &Over { alpha: Some(keyed(&MIX06_ALPHA, t)), ..Default::default() });
         }
         // The white-out over the whole screen (the layout's `whiteout_all`, 1282 by 722 from (-1, -1)).
         if t.is_some() {
@@ -1178,10 +1179,10 @@ impl Page {
             let a = keyed(&WHITE_FADE, t);
             w.slid(Slide { alpha: a, dx: 0.0, dy: 0.0 }, |w| w.piece(root.node([0.0; 2], 0.0, [1300.0, 800.0]), [0.0; 2], [1.0; 2], [0.0, 0.0, 0.125, 0.125], [1.0; 4], WHITE));
             if let Some(e) = find(&self.mix_sheet, "a21_mix05") {
-                w.image(e, about(e, 0.0, keyed(&MIX05_SCALE, t)), &Over { alpha: Some(keyed(&MIX05_ALPHA, t)), ..Default::default() });
+                w.image(e, about(&root, e, 0.0, [keyed(&MIX05_SCALE, t); 2]), &Over { alpha: Some(keyed(&MIX05_ALPHA, t)), ..Default::default() });
             }
             if let Some(e) = find(&self.mix_sheet, "a21_mix09") {
-                w.image(e, about(e, 0.0, keyed(&MIX09_SCALE, t)), &Over { alpha: Some(keyed(&MIX09_ALPHA, t)), ..Default::default() });
+                w.image(e, about(&root, e, 0.0, [keyed(&MIX09_SCALE, t); 2]), &Over { alpha: Some(keyed(&MIX09_ALPHA, t)), ..Default::default() });
             }
         }
         (w.out, w.additive, w.clips)
@@ -1251,22 +1252,15 @@ impl Page {
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // The effects under the card and over it, then the level panel, then the plate (the layout's order).
         let age = look.age;
-        let about = |e: &Element, size: [f32; 2], scale: [f32; 2]| -> Xf {
-            // (a node scaled about its pivot: `pivot_pos` in the node's own pixels)
-            let pivot = pair(e, "pivot_pos", [0.0; 2]);
-            let at = pair(e, "pos", [0.0; 2]);
-            let _ = size;
-            root.node([at[0] + pivot[0] - scale[0] * pivot[0], at[1] + pivot[1] - scale[1] * pivot[1]], 0.0, scale)
-        };
         if let Some(e) = find(&self.mix_sheet, "a21_mix07") {
             let a = keyed(&E07_ALPHA, age);
             let s = keyed(&E07_SCALE, age);
-            w.image(e, about(e, [0.0; 2], [s, s]), &Over { alpha: Some(a), ..Default::default() });
+            w.image(e, about(&root, e, 0.0, [s, s]), &Over { alpha: Some(a), ..Default::default() });
         }
         if let Some(e) = find(&self.mix_sheet, "a21_mix09") {
             let a = keyed(&E09_ALPHA, age);
             let scale = [keyed(&E09_SCALE_X, age), keyed(&E09_SCALE_Y, age)];
-            w.image(e, about(e, [0.0; 2], scale), &Over { alpha: Some(a), ..Default::default() });
+            w.image(e, about(&root, e, 0.0, scale), &Over { alpha: Some(a), ..Default::default() });
         }
         self.level_panel(&mut w, &root, look, Slide::NONE);
         // The "Level UP!" plate: its picture and its words rise together, a glow of the words grows over them.
