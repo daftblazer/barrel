@@ -430,6 +430,10 @@ const MARK_FAR: f32 = 1000.0;
 /// The UI's own camera looks with a vertical field of view of 45 degrees whatever the scene's: the balloon's width in the capture is
 /// its 316 style pixels, three to a layout pixel, times the node's one half (52.67 units), over the focal length of 45 degrees.
 const MARK_FOV: f32 = 45.0;
+/// How far from the eye an icon is still there.
+// STAND-IN: the capture's door shows from 1,244 units off (`gather-rasen2` 3130) and not from 2,710 (`hud-walk` 2750, in front of her); the
+// game's own limit (its list of the gimmicks near her) is not read, and 2,000 is taken between them.
+const MARK_RANGE: f32 = 2000.0;
 
 /// Where the icon over the gimmick at `door` (game units) is in the view `vp` (render space, x mirrored) with the eye at `eye`,
 /// or `None` where the origin is behind the eye.
@@ -443,6 +447,9 @@ pub fn world_mark(vp: &glam::Mat4, eye: glam::Vec3, door: [f32; 3], screen: (u32
     let at = [(c.x / c.w * 0.5 + 0.5) * w, (c.y / c.w * 0.5 + 0.5) * h];
     let per_unit = h * 0.5 / (MARK_FOV.to_radians() * 0.5).tan() / c.w;
     let far = (eye - render).length();
+    if far > MARK_RANGE {
+        return None;
+    }
     let near = if far >= MARK_FAR { 1.0 } else { 0.1 + 0.9 * far / MARK_FAR };
     Some(WorldMark { at, per_unit, near })
 }
@@ -1217,6 +1224,63 @@ mod tests {
     fn only_rasenboden_has_its_names_read() {
         assert_eq!(place_names(MAP_FIELD), Some([2_228_225, 917_510]));
         assert_eq!(place_names("s01_i_attic"), None);
+    }
+
+    /// A view as the renderer builds it: right-handed, looking along +z in render space, y down on the screen.
+    fn looking_along_z(eye: glam::Vec3) -> glam::Mat4 {
+        let flip = glam::Mat4::from_scale(glam::Vec3::new(1.0, -1.0, 1.0));
+        flip * glam::Mat4::perspective_rh(45f32.to_radians(), 16.0 / 9.0, 10.0, 100_000.0) * glam::Mat4::look_at_rh(eye, eye + glam::Vec3::Z, glam::Vec3::Y)
+    }
+
+    #[test]
+    fn an_icon_floats_fifty_units_over_its_gimmick_and_shrinks_within_a_thousand() {
+        let eye = glam::Vec3::ZERO;
+        let vp = looking_along_z(eye);
+        // A door straight ahead, 50 under the eye's height: its lifted origin is the screen's middle; the scene's x is mirrored.
+        let far = world_mark(&vp, eye, [0.0, -50.0, 1500.0], (1920, 1080)).unwrap();
+        assert!((far.at[0] - 960.0).abs() < 0.01 && (far.at[1] - 540.0).abs() < 0.01, "{far:?}");
+        assert_eq!(far.near, 1.0);
+        // A world unit measures the 45 degree focal length (540 / tan 22.5 degrees) over the depth.
+        assert!((far.per_unit - 540.0 / (22.5f32.to_radians().tan() * 1500.0)).abs() < 1e-4);
+        let near = world_mark(&vp, eye, [0.0, 0.0, 500.0], (1920, 1080)).unwrap();
+        assert!((near.near - (0.1 + 0.9 * 0.5)).abs() < 1e-5);
+        // Behind the eye, and past the range: none.
+        assert_eq!(world_mark(&vp, eye, [0.0, 0.0, -500.0], (1920, 1080)), None);
+        assert_eq!(world_mark(&vp, eye, [0.0, 0.0, 2500.0], (1920, 1080)), None);
+    }
+
+    #[test]
+    fn the_tool_rings_glow_pulses_with_the_glows_loop_in_bytes() {
+        // Off to frame 5, half up at 7.5, 128 of 255 at 10 with its scale 1, then down to nothing at 70 with its scale 1.1.
+        assert_eq!(ring_pulse(5.0, 0.0), (0.0, 1.0));
+        assert!((ring_pulse(10.0, 0.0).0 - 128.0 / 255.0).abs() < 1e-6 && ring_pulse(10.0, 0.0).1 == 1.0);
+        let (alpha, scale) = ring_pulse(40.0, 0.0);
+        assert!((alpha - 64.0 / 255.0).abs() < 1e-6 && (scale - (1.0 + 0.1 * 0.875)).abs() < 1e-5, "{alpha} {scale}");
+        // The loop is 71 frames: 71 is its start again.
+        assert_eq!(ring_pulse(71.0 + 40.0, 0.0), ring_pulse(40.0, 0.0));
+    }
+
+    #[test]
+    fn a_line_that_lost_its_hint_has_the_plate_tween_from_the_old_width_on_the_next_showing() {
+        // Shown with the hint, faded out, shown again after a swing: the showing begins from the line it last had.
+        let mut bar = HelpBar::arriving();
+        for _ in 0..200 {
+            bar.step_swung(false, 1.0, false);
+        }
+        assert!(bar.alpha() > 0.0 && bar.hint_last);
+        // The stick fades it out with its hint; she swings while it is gone; it fades in again.
+        for _ in 0..20 {
+            bar.step_swung(true, 1.0, false);
+        }
+        assert_eq!(bar.alpha(), 0.0);
+        for _ in 0..5 {
+            bar.step_swung(true, 1.0, true);
+        }
+        for _ in 0..124 {
+            bar.step_swung(false, 1.0, true);
+        }
+        assert!(bar.alpha() > 0.0 && bar.hint_from && !bar.hint_last, "the old line had the hint, the new has not");
+        assert!(bar.lit >= 1.0 && bar.lit < BACK_GROW_FRAMES);
     }
 
     #[test]

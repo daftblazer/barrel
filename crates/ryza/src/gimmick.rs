@@ -213,6 +213,12 @@ mod tests {
     }
 
     #[test]
+    fn a_door_leads_into_a_building() {
+        assert!(leads_inside("S02_I_LIVINGROOM"));
+        assert!(!leads_inside("S08_T_BODEN") && !leads_inside("S13_T_SECRETBASE_02") && !leads_inside(""));
+    }
+
+    #[test]
     fn exits_by_type() {
         let xml = r#"<Root><Property fixID="1" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_MAP_CHANGE_INFO" position="1,2,3"/><Property fixID="9" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX" position="4.5,0.5,2" startEvent="EVENT_X"><Parameter><Value>FIELDMAP_S08_T_BODEN</Value><Value>79.84</Value></Parameter></Property></Root>"#;
         let e = exits(xml.as_bytes()).unwrap();

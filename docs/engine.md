@@ -614,10 +614,11 @@ has all of them, and the window index (`Random::index`), the game's own number i
 
 Barrel seeds from the clock too. `BARREL_RANDOM_STATE=FILE` (a dump of the game's window, ryza-recomp's
 `dumps/F.1.bin`) starts a run from the game's state instead, for the lockstep checks only
-(`docs/ryza/parity.md`, "gather"). Free play draws on its own from 2040 on (`frand(0, 15)` every
-20 to 60 frames from `0x14008e290`, some field timer); Barrel does not make those draws yet, so
-its index runs behind the game's after the first gathering: each lockstep replay starts from the game's dump of the frame
-before it (`gather-rasen2`: 2500 for the comb, 3165 for the staff).
+(`docs/ryza/parity.md`, "gather"). Free play draws on its own from 2040 on: the ambient particles' emitters (`0x14008e0f0`: two timers each of
+thirty emitters, `frand(0, 15)` for a timer's next length at `0x14008e290`, a spawn's spread from `0x14008e3cd` to `0x14008e489`) every 20 to 60
+frames. Their timers' bases and visibility are not read, so `barrel_ryza::free_play` makes those draws from a schedule of the capture's
+(`tools/free_play.py` writes it from the hook log) and a window makes none. `barrel-tool ryza-lockstep` runs a whole replay's draws (the two
+combs' gatherings, her clips, the staff, the free play) from the one dump of 2040 and diffs them with the hook log: `gather3-lockstep`.
 
 ## Movies
 

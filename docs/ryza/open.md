@@ -2882,3 +2882,69 @@ the chance's 30; the swing action's 60 frames; the keyboard's X; the body's 3.2 
 - The other tool points, the second and later items' discovery logs, the item notices' third slot (never captured), the voice clips'
   hashes 1 and 2, the real chance and the library's level for an item after a gathering (10 here: any value above 2 behaves alike in the
   captures).
+
+
+**Part 3 (2026-11-25, answer key `gather-rasen2`).** The leftovers of part 2: the marker, the ring, the pulse, the edge glyph, the bar after 3450,
+the walk's stall and the free play's draws. Rows `gather3-*` and the changed `gather2-staff-ui-*` (docs/ryza/parity.md).
+
+**Built.**
+- *The "staff point's marker" is a door's icon.* The quad `a21_field.g1t#0` (58 by 47 pixels at 3130, with `a21_icon.g1t#0`'s picture inside it) is
+  not over the box: it is over Ryza's house door, the `FIELDMAP_CHANGE_EX` row (fixID 13) to `S02_I_LIVINGROOM` at (324.95, 62.12, 299.51) m, 8 m from
+  her at 3130, and the game draws it from 2960 on (the frame the door came on screen: before it the door is behind the camera) wherever the door is in
+  view (solved from the quads of 2960 to 3130 and the draws' `mW2P`: one fixed world point, 50 units over the row's place). It is the layout's
+  `fm_icon_gimmick` (`uil_a21_fm_advertise01.xml`): a balloon (`gen_a21v2_field01_mini_balloon`, 316 style pixels, `a21_field.g1t#0`) with the gimmick's
+  picture in it (`gen_a21_icon01_gimmick` 13, tint 236, 225, 212), a node the UI places in the world: its origin at the gimmick plus 50 units up, projected
+  with the scene's camera, the balloon's size the layout's (316 / 3 layout pixels times the node's one half = 52.67 units) over the UI's own focal length
+  (a 45 degree field: the scene's 3D matrices have the cosine of the pitch in their `M[5]`, which cost an hour), the balloon scaled about its middle by
+  `0.1 + 0.9 d / 1000` for the eye's distance d to the gimmick's place under 1000 and 1 beyond (`0x14049d6ca` to `0x14049d734`, `0x1404c7850`; the
+  update `0x14049d360` runs the list of the icons, `0x1404c77a0` places one). The executable's `0x1411efbb8` maps the icon kinds 10 to 21 to the
+  gimmick pictures 8, 13, 14, 12, 7, 9, 27, 5, 24, 15, 28, 28 (the door's is 13). Barrel (`field_hud::world_mark`, `State::marks`, `Markers::doors`): the exits to
+  an interior (`S02_I_...`), drawn within 2,000 units of the eye; `--camera-yaw`, `--camera-pitch`, `--camera-length` and `--camera-target` give a replay the
+  capture's camera (the follow camera's pull-in against the ground differs here: 380 units of the capture's against Barrel's 227).
+- *The tool disc's ring and its glow.* While a staff point is in reach (the prompt's `near`) and until the notice (press + 35) the disc has `ok_corsol`
+  (`gen_a21_field01_equip_corsol03`, the disc's size) and over it its copy `ok_corsol_eff` (`corsol02`, added, 0 to 128 of alpha as the minimap's
+  `anm_a21_fm_minimap_equip_icon` has it and scaled 1 to 1.1 by an ease-out) and the ring again. The pulse is the glows' loop (`glow_pulse`): 71 frames.
+- *The glows' clock.* The loops of the destination's glow and the ring run 71 frames, 72 where the game's animation clock lost a frame (its loops started
+  2367, 2438, 2510 (72), 2582 (72), 2653 ... 3079, then 3151 and 3223 (72 each): the capture's slow frames, not a rule). `State::anim` is the clock less
+  those frames, `--hud-slips 2450,2550,3185,3195` lists them for this capture. With them the staff rows count every quad (3130 to 3440 and 3200,
+  3210: 0; the rows keep no exclusion).
+- *The log before the prompt.* The game's quads of one texture run the discovery log's, the prompt's, the notices': on 3200 and 3210 (the log and the prompt
+  both up) Barrel had the prompt first and the diff's sequence match lost the prompt's quads. The gathering's popups now draw the log first
+  (`field_hud::gather`). The edge glyph of 3200 was the notice's text: it is 0.2 of a frame (2 layout pixels) ahead of its plate on the slide, which brings the
+  first glyph's right edge over x = 0 where the game keeps it (`TEXT_AHEAD`).
+- *The bar after 3450.* The line has no sixth entry (the X button's `\u{4dc}`, the staff's hint) once she has swung the staff, and its plate tweens
+  from the old line's width (7 entries) to the new over 6.4 frames (`gather-rasen2` 3450: 0.625 of the way four frames into the fade). The fade's first
+  step is 3447 as 2591's was (121 frames after the swing's action ended, 3326; the rows' spans end at 3325, the pad's two frames of lag
+  counted in). `HelpBar::step_swung`, `State::swung`; the rows 3450, 3460 and 3490 count 0.
+- *The walk.* Three findings, all from the dumps (positions at 2004, 2010, 2470, 2960, 3000 within 2.2, 1.0, 5.5, 8.0, 8.0 units; part 2 had 2.3, 6.5,
+  5.0, 6.7 and 27):
+  the gimmicks' bodies are circles, not polygons (her x along the first honeycomb's slide, 33354.0 to 33354.8 over z 30022 to 30041, is a circle of 91.3
+  round the comb's centre; `Wall::thick`, a wall of no length standing a radius out: a post); her top is a hemisphere to the walls (a wall that starts
+  within the cap's height reaches only as far as the cap does there: the tilted trunk `A21-COMMON-TREE-ELM-03_ccap4` starts 77 above the ground and
+  her path skims it at 28, which stopped her two frames at 2423 where the game does not); a hull (`_cplh`) is walls only, not a floor (Barrel
+  stalled 10 frames at (32690, 30068) on the placed stairs' hull where she runs on). Shared: `engine::walk` (`Wall::thick`, the cap);
+  Escha's rows 17/17.
+- *The free play's draws.* `free_play` (`barrel_ryza::free_play`, `tools/free_play.py`): the emitters of `0x14008e0f0` hold two timers each of thirty
+  emitters, count them down by the frame, and a timer that runs out draws `frand(0, 15)` (its next length), the spawn after it `frand(-250, 250)` twice,
+  `frand(0, 3)`, `frand(0, 1)`, `frand(0, 0.1)` and five `frand(0, 0)` that draw nothing; a frame that runs out several draws their timers first (up to
+  five). `barrel-tool ryza-lockstep INSTALL 2040.1.bin SCRIPT HOOKS FROM TO` runs a whole replay's draws from the one dump: the two combs' gatherings
+  (7 and 12 calls), her voice chance and clips, the staff's swings and gathering and the free play between, against the hook log's calls: 102
+  draws, 0 differ from 2041 to 3500, and the generator's index equal to the game's dumps at 2380 (0x1c5), 2500 (0x1d3), 3165 and 3400
+  (`gather3-lockstep`; `tools/lockstep_script.py` writes the script). 
+
+**STAND-INs** (named in the code with their sources): the door's lift (50), the range (2,000, between the 1,244 the capture draws and the 2,710 it does
+not), which exits get an icon (the ones to an interior); the ring's end (press + 35, the notice) and phase; the slips of the animation clock; the
+notice text's 0.2 frame; that the hint goes with the first swing; the post's `BODY_SKIN` 3.2 (the slide's circle is 91.3 for a body of 60 and her 28); that no hull
+is a floor; the free play's schedule is the capture's (the emitters' bases, visibility and state are not read), so a window, with no schedule, makes
+none and keeps its own clock-seeded state.
+
+**Left.**
+- The walk from 3000 on: `gather2-walk` 3082, 3100, 3127 and 3159 are 76, 76, 75 and 75 off (`gather3-walk-3000`: 8.0). The game slows 7 frames at about
+  (32365, 30055), where she meets the signpost `A21-S06-POST` (a box 93 by 71 by 1117 turned 19.6 degrees at (32304, 30119), `_cbox` with a placement offset
+  of (2.7, 87.7, 5.2)): the game's east face is where Barrel's is (within 0.4 unit) but runs 20 units further south than Barrel's box ends, and Barrel
+  rounds the corner earlier. A box 1.45 times as long along its z (or a centre moved 20 along it) gives 11 to 16 at 3082, though a few units either way
+  of that gives 30 to 80: the slide round that corner is too sensitive to fit without the game's own shape (a capsule swept against the box?).
+- Which gimmicks get an icon (the `0x1411efbb8` table's kinds against the types: a notice board, a shop, a gathering place, a call), its fade and how the
+  game picks the nearest (only one door of the captures); the icon's alpha was 1 in every frame captured.
+- The staff's ring: that it follows the prompt rather than the swing's reach, and its end (3190 shows it, 3200 does not).
+- The free play's own schedule (timers, bases, visibility).

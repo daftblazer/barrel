@@ -2542,6 +2542,11 @@ sometimes `objScale`, `objRot`, `startEvent`, `endEvent`, `startTZ`, `endTZ`.
   turn's direction and `objRot` are not checked against a capture).
 - The `FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX` rows are the field's exits, with or without a
   model; the minimap marks them (`gimmick::exits`). Each `MAP_CHANGE_INFO` sits beside one.
+- A gimmick can float an icon over it (`uil_a21_fm_advertise01.xml`'s `fm_icon_gimmick`: a balloon, `gen_a21v2_field01_mini_balloon` of
+  `a21_field.g1t#0`, with the gimmick's picture, `gen_a21_icon01_gimmick`, in it). The game's list of them (`0x14049d360`) places each
+  50 units over its gimmick and scales it by the eye's distance (`0.1 + 0.9 d / 1000` under 1000); `0x1411efbb8` maps the icon kinds 10 to
+  21 to the pictures 8, 13, 14, 12, 7, 9, 27, 5, 24, 15, 28, 28. Rasenboden's `FIELDMAP_CHANGE_EX` to `S02_I_LIVINGROOM` (fixID 13) shows 13,
+  the door's (`barrel_ryza::field_hud::world_mark`; docs/ryza/open.md, "Gathering (P6)" part 3).
 - `startEvent` and `endEvent` are a story span ("Ryza DX: story spans" below): the row is
   there within it (the game's `0x1403eccb1`, `0x1403f09d1`). Rasenboden's grapes, flowers,
   bushes, crates, honeycombs and sea urchins all start at `EVENT_MM01_111`, the field's other
