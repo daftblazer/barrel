@@ -112,8 +112,8 @@ struct Args {
     mix_sheet: Option<(u16, u32, Option<(f32, f32)>)>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
     mix_complete: Option<(u32, u32, u32, f32)>,
-    /// `--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING]`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows), LEAVING frames after A sent it out.
-    mix_result: Option<(u16, u16, Vec<u16>, Option<f32>)>,
+    /// `--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING[:ENTERING]]`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows), LEAVING frames after A sent it out.
+    mix_result: Option<(u16, u16, Vec<u16>, Option<f32>, Option<f32>)>,
     /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
     hud_stick: Vec<(f32, f32)>,
     /// `--hud-slips F,..`: the capture frames at which the game's animation clock lost a frame (its looping glows run 1 frame behind from each).
@@ -327,13 +327,14 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--mix-result" => {
                 let v = value()?;
                 let n: Vec<&str> = v.split(':').collect();
-                let (item, quality, effects, leaving) = match n[..] {
-                    [item, quality, effects] => (item, quality, effects, None),
-                    [item, quality, effects, leaving] => (item, quality, effects, Some(leaving.parse()?)),
-                    _ => return Err("--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING]".into()),
+                let (item, quality, effects, leaving, entering) = match n[..] {
+                    [item, quality, effects] => (item, quality, effects, None, None),
+                    [item, quality, effects, leaving] => (item, quality, effects, Some(leaving.parse()?), None),
+                    [item, quality, effects, "", entering] => (item, quality, effects, None, Some(entering.parse()?)),
+                    _ => return Err("--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING[:ENTERING]]".into()),
                 };
                 let effects = effects.split(',').filter(|e| !e.is_empty()).map(str::parse).collect::<std::result::Result<Vec<u16>, _>>()?;
-                a.mix_result = Some((item.parse()?, quality.parse()?, effects, leaving));
+                a.mix_result = Some((item.parse()?, quality.parse()?, effects, leaving, entering));
             }
             "--mix-complete" => {
                 let v = value()?;
@@ -775,7 +776,7 @@ enum MixShown {
     /// The "Complete" screen's level panel: the level, the experience to the next and the experience gained.
     Complete(u32, u32, u32, f32),
     /// The made item's card: its quality and effects.
-    Result(u16, Vec<u16>, Option<f32>),
+    Result(u16, Vec<u16>, Option<f32>, Option<f32>),
 }
 
 /// The card's help bar says "Fast Forward" until its coming in has run its 140 frames (`mix_anm_finish_card_in`'s last key), then "Next"
@@ -806,22 +807,22 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
     // The card.
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &[fp::ShelfItem { image, category: items.row(item).and_then(|r| r.category) }])?;
     let (quads, additive, clips) = match shown.clone() {
-        MixShown::Card(count, clock) => page.sheet_quads(&fp::SheetLook { item, image, count, clock: clock.map(|c| c.0), frames: clock.map_or(0.0, |c| c.1) }, screen),
+        MixShown::Card(count, clock) => page.sheet_quads(&fp::SheetLook { item, image, count, clock: clock.map(|c| c.0), frames: clock.map_or(0.0, |c| c.1), out: None }, screen),
         MixShown::Complete(level, next, gained, age) => page.complete_quads(&fp::CompleteLook { level, next, gained, age }, screen),
-        MixShown::Result(quality, ref effects, leaving) => {
+        MixShown::Result(quality, ref effects, leaving, entering) => {
             let mut effect = [0xffff; 4];
             effect[..effects.len().min(4)].copy_from_slice(&effects[..effects.len().min(4)]);
             let unit = barrel_ryza::save::Worn { item, quality, level: 0, effects: effect, potentials: [290; 3], potential_levels: [0; 3], slots: 0 };
             let mut card = items.card(&unit, &[], image);
             // STAND-IN: the rank letter of quality 49 is C in the capture (`synth-atelier` 4060), where `item_info`'s steps give D.
             card.rank = card.rank.saturating_sub(1);
-            page.result_quads(&card, leaving.map(|l| (l, fp::CompleteLook { level: 2, next: 3, gained: 0, age: 0.0 })), screen)
+            page.result_quads(&card, leaving.map(|l| (l, fp::CompleteLook { level: 2, next: 3, gained: 0, age: 0.0 })), entering.map(|e| (e, fp::SheetLook { item, image, count: 4, clock: None, frames: 0.0, out: None })), screen)
         }
     };
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     // The help bar ("A Next") under the card, from the menu's own.
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
-    bar.set(gpu, &match shown.clone() { MixShown::Card(_, clock) => view.next_help(screen, clock.is_some_and(|c| c.0 < CARD_COMES_IN)), MixShown::Result(_, _, leaving) if leaving.is_some_and(|l| l >= BAR_GONE_AFTER) => Vec::new(),
+    bar.set(gpu, &match shown.clone() { MixShown::Card(_, clock) => view.next_help(screen, clock.is_some_and(|c| c.0 < CARD_COMES_IN)), MixShown::Result(_, _, leaving, _) if leaving.is_some_and(|l| l >= BAR_GONE_AFTER) => Vec::new(),
         MixShown::Result(..) => view.next_help(screen, false), MixShown::Complete(..) => Vec::new() })?;
     Ok(vec![back, sheet, bar])
 }
@@ -2471,7 +2472,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mix_screen = match (a.mix_sheet, a.mix_complete, a.mix_result.clone()) {
         (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
         (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
-        (None, None, Some((item, quality, effects, leaving))) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Result(quality, effects, leaving), (width, height))?),
+        (None, None, Some((item, quality, effects, leaving, entering))) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Result(quality, effects, leaving, entering), (width, height))?),
         (None, None, None) => None,
     };
     let mut showing_page = false;

@@ -1085,6 +1085,7 @@ impl Page {
 const STALL_EVERY: f32 = 161.7;
 
 /// What the synthesis's finished item card shows (`uil_a21_mix_item_sheet.xml`): the item, its picture and the number made.
+#[derive(Clone, Copy)]
 pub struct SheetLook {
     /// The item's number (its name is the string `NAME_BASE + item`).
     pub item: u16,
@@ -1097,12 +1098,16 @@ pub struct SheetLook {
     /// The frames since it began, by the frame count (the white-out's fade runs on that, not on the clock: the capture's clock ran
     /// ahead of the frame count by 12 frames from its 3880 on).
     pub frames: f32,
+    /// The frames since the card began to go out (`mix_anm_finish_card_out`: it rises 30 layout pixels by in cubic and fades out in 20).
+    pub out: Option<f32>,
 }
 
 // The card's coming in (`anm_finish` of `uil_a21_mix_item_sheet.xml`; the curves are `uia_a21_mix.xml`'s, in frames of 60 a second).
 /// `mix_anm_finish_card_in`'s rise: the card starts 25 layout pixels low from frame 20 to 140, out cubic, the panel's copy at 2.5 times the speed.
 const CARD_RISE: f32 = 25.0;
 const PANEL_SPEED: f32 = 2.5;
+const CARD_OUT_FRAMES: f32 = 20.0;
+const CARD_OUT_RISE: f32 = 30.0;
 const CARD_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (20.0, 0.0), (60.0, 1.0)];
 /// `mix_anm_finish_whiteout`: the white over the card's whole picture, whole to frame 6, gone at 20.
 const WHITE_FADE: [(f32, f32); 3] = [(0.0, 1.0), (6.0, 1.0), (20.0, 0.0)];
@@ -1170,7 +1175,14 @@ impl Page {
                     let fade = |clock: f32| keyed(&CARD_ALPHA, clock);
                     Slide { alpha: fade(t) * fade(t * PANEL_SPEED), dx: 0.0, dy: rise(t) + rise(t * PANEL_SPEED) }
                 }
-                None => Slide::NONE,
+                None => match look.out {
+                    Some(out) if out >= CARD_OUT_FRAMES => return (w.out, w.additive, w.clips),
+                    Some(out) => {
+                        let u = (out / CARD_OUT_FRAMES).clamp(0.0, 1.0);
+                        Slide { alpha: 1.0 - u, dx: 0.0, dy: -CARD_OUT_RISE * u * u * u }
+                    }
+                    None => Slide::NONE,
+                },
             };
             w.slid(slide, |w| w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
         }
@@ -1285,17 +1297,30 @@ impl Page {
     /// The "Complete" screen's item card, as the Container page's (the made item's `card`: a `normal_item` card at its place), and the
     /// title plate, on a `screen` of pixels.
     /// `leaving`: the frames since A, which sends the card out to the right (the slide in played backwards) and brings the level panel in.
-    pub fn result_quads(&self, card: &Card, leaving: Option<(f32, CompleteLook)>, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+    pub fn result_quads(&self, card: &Card, leaving: Option<(f32, CompleteLook)>, entering: Option<(f32, SheetLook)>, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
-        let slide = leaving.as_ref().map_or(Slide::NONE, |(out, _)| Slide::in_from(SLIDE_FRAMES - out.max(0.0), [40.0, 0.0]));
+        let slide = match (&leaving, entering) {
+            (Some((out, _)), _) => Slide::in_from(SLIDE_FRAMES - out.max(0.0), [40.0, 0.0]),
+            // (the card comes in a frame after the plate and the finished card's going)
+            (None, Some((age, _))) => Slide::in_from(age - 1.0, [40.0, 0.0]),
+            (None, None) => Slide::NONE,
+        };
         w.slid(slide, |w| self.item_card(w, &root, "normal_item", None, card, &[]));
+        // The finished card goes out above it, and the title plate comes in.
+        if let Some((age, sheet)) = entering {
+            let (quads, additive, clips) = self.sheet_quads(&SheetLook { out: Some(age), clock: None, ..sheet }, screen);
+            let base = w.out.len();
+            w.out.extend(quads);
+            w.additive.extend(additive.into_iter().map(|i| i + base));
+            debug_assert!(clips.is_empty());
+        }
         // The level panel slides in over the 30 frames the card goes out in.
         if let Some((out, look)) = &leaving {
             self.level_panel(&mut w, &root, look, Slide::in_from(*out, [40.0, 0.0]));
         }
-        self.caption_plate(&mut w, &root, COMPLETE_TITLE, Slide::NONE);
+        self.caption_plate(&mut w, &root, COMPLETE_TITLE, entering.map_or(Slide::NONE, |(age, _)| Slide::in_from(age, [0.0, -30.0])));
         (w.out, w.additive, w.clips)
     }
 }
