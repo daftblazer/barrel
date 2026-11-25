@@ -1025,7 +1025,7 @@ opening's last `q5` put her (slot 0: 33488, 5951, 31691, yaw -327 degrees = 33).
   text in one row 7/3 pixels higher than the block rule gives a lone row, STAND-IN), the hints (the event log, fast forward and
   auto-play: `Hint::NoSkip`), the button's icon in the text (`<KEY_ASSIGN_FIELD_PHOTO_MODE>`, the font's icon 4f4, white),
   the help page (`picture_file`: ids from 163 read as `help_h_<id - 88>`, STAND-IN from the one page the key shows), the fades.
-- **Free play** (`opening-free-play-*`: 15255 on, every captured frame 15255 to 23995 is 0 in 2D: 134 quads): `--opening --opening-at F`
+- **Free play** (`opening-free-play-*`: 15255 on; every captured frame from 15255 to 23995, 875 of them, is 0 in 2D: 134 quads): `--opening --opening-at F`
   with F from `opening::FREE_PLAY` (14862) is the field with the HUD from her start (`opening::player_start`, `free_play`): the
   story at "the opening has played" (the minimap's marker and its glow), the basket 200 (a new game's; a save's is its own), the
   hour 10, no area banner, the help bar fading in at once (`HelpBar::arriving_at_once`, STAND-IN), the glow's loop phase from the
@@ -1036,6 +1036,13 @@ opening's last `q5` put her (slot 0: 33488, 5951, 31691, yaw -327 degrees = 33).
   window or with `BARREL_EVENT_PRESSES` the scripted presses give the rows above; the window path (no env var) needs the real time.
   Checked with `BARREL_PAD_SCRIPT` and `BARREL_WINDOW_SHOT` (see the report): New Game -> opening -> help page -> free play in one
   window.
+  Window checks (`--opening --window --size 1280x720`, `BARREL_PAD_SCRIPT` with A every 120 frames from 535): the run logged every
+  button (`opening: button N at stage T s`, 107 of them, two seconds apart), went on to `opening: over at 221.12 s` (the schedule's
+  221.03 plus a frame) and into the free play in the same window (`BARREL_WINDOW_SHOT` of the free play: Ryza at her start, the HUD,
+  basket 200, the help bar); the telops and a line at window frames 300 and 1500 are the opening's; the help page's box, picture
+  and hints show in a window shot with `BARREL_EVENT_PRESSES` and `--opening-at 14100` (an `--opening-at` far into the event makes
+  the first frame catch up and the window's clock jumps ahead by the time that takes: a test aid only). `BARREL_WINDOW_SHOT` frames
+  past about 10,000 of the opening run were not written (not understood).
 
 Left (STAND-INs named in the code):
 
@@ -1049,8 +1056,10 @@ Left (STAND-INs named in the code):
   the offset seems to grow by about a frame per line from the fourth (13 to 16 measured at 10-frame steps; the first line's arrow
   stands unturned at 13995). A capture of every frame is wanted.
 - **The line changes** (14275, 14305, 14365: 3 or 4 mismatches, the arrow and one more quad) and 13995 (4: the arrow stands unturned).
-- **3D** of the help event and free play: her place and the camera are the field's default from `--ryza` (the key's camera at 15255 is
-  the free camera's behind her); `diff3d` not run in this part.
+- **3D of free play** (`diff3d` at 15255): 806 game draws, 861 Barrel's, 778 matched; her bones (`pc00a`) are within 2.7 of the
+  key's; the view-projection is 1.04 off (the game's free camera behind her: `--ryza` gives the field's default); the townsfolk
+  (`npc22a`, `npc22b`, `npc27a` and others) are 1,800 to 4,500 units off in a few bones and one object 42,000 off (a new game's
+  people stand elsewhere than the story-state default puts them: `standing_npcs` with the opening done); not fixed.
 - 12265's text opacity and 13145's fade a frame late (part 2) are not touched.
 
 ## Loops that take 50 or 51 frames
