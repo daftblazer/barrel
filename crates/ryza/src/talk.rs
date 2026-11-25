@@ -73,6 +73,9 @@ const TUTORIAL_WRAP: f32 = 750.0;
 const TUTORIAL_PEN: f32 = 598.5;
 const TUTORIAL_CENTRE: f32 = 892.5;
 const TUTORIAL_PITCH: f32 = 36.0;
+/// The clocks of a line count whole frames from its start by rounding; a start half way between two frames (the stage's float
+/// sums leave a few at .5) would flip with the sum's last bits (the arrow skipped a tick at 14491), so it rounds up as one.
+const HALF_FRAME_NUDGE: f32 = 0.01;
 /// The arrow clock of a tutorial's lines (`engine::stage::Stage::tutorial_clock`): a closed line's fade out (30 frames) adds as many to it and a handed-over box costs 1 (`opening-key4` 13141 to 13442: run A and B at 0).
 pub const TUTORIAL_CLOCK: (u32, u32) = (30, 1);
 /// Where the letters' tops sit in the font's cell (the bracket's `y_offset`), in font units.
@@ -85,8 +88,9 @@ const TUTORIAL_SHADOW_SIDE: f32 = 38.4;
 const TUTORIAL_SHADOW_TURN: f32 = 49.4;
 const TUTORIAL_SHADOW_ALPHA: f32 = 60.0 / 255.0;
 const TUTORIAL_FADE: f32 = 30.0;
-// STAND-IN: the hints come in between 27 and 37 frames into a tutorial line (capture frames 13165 and 13175); 30 is a guess.
-const TUTORIAL_HINT_AFTER: f32 = 30.0;
+// STAND-IN: the hints' plate comes 31 frames into a tutorial line (`opening-key4`, every frame: 13169 for the line of 13138, 13358, 13507, 13906 ...).
+const TUTORIAL_HINT_AFTER: f32 = 31.0;
+const HINT_FADE_FRAMES: f32 = 15.0;
 
 /// A tutorial text without its markup, and where each colour starts (`<#RRGGBB>`, `<CLNR>` back to the plain colour), by character.
 fn markup(text: &str) -> (String, Vec<(usize, [f32; 3])>) {
@@ -264,7 +268,7 @@ pub struct Talk {
 /// How far a line has come in and gone out at stage time `now` (the frame drawn is the stage's tick a frame on from the command's):
 /// its opacity, or none once it has faded out.
 fn opacity(line: &Line, now: f32) -> Option<f32> {
-    let ticks = |since: f32| ((now - since) * 60.0).round() - 1.0;
+    let ticks = |since: f32| ((now - since) * 60.0 + HALF_FRAME_NUDGE).round() - 1.0;
     // (nothing is drawn for the first frames: capture frame 8395, two frames into a line, has none)
     if ticks(line.since) < FIRST_DRAWN && !line.joined {
         return None;
@@ -373,7 +377,7 @@ impl Talk {
     /// arrow's shadow and arrow, and the hints. It comes in over 30 frames along an ease-out cubic (the arrow sliding up
     /// 45 pixels with it) and goes out over 30 along an ease-in cubic.
     pub fn tutorial_quads(&self, line: &Line, now: f32, hint: Hint, screen: (u32, u32)) -> Vec<Quad> {
-        let ticks = |since: f32| ((now - since) * 60.0).round() - 1.0;
+        let ticks = |since: f32| ((now - since) * 60.0 + HALF_FRAME_NUDGE).round() - 1.0;
         let k_in = ticks(line.since);
         if k_in < FIRST_DRAWN && !line.joined {
             return Vec::new();
@@ -419,7 +423,7 @@ impl Talk {
         let ticks_run = (line.shown_before + k_in as u32).saturating_sub(stalled);
         let turn = crate::title_menu::loop_shown(ticks_run as i32, 4.0) * 90.0;
         if std::env::var_os("TALK_DEBUG").is_some() {
-            eprintln!("tutorial: since {} before {} ticks {ticks_run} turn {turn}", line.since, line.shown_before);
+            eprintln!("tutorial: since {} before {} ticks {ticks_run} turn {turn} k_in {k_in} stalled {stalled} handed {:?} now {now}", line.since, line.shown_before, line.handed_at);
         }
         let [cx, cy, half] = TUTORIAL_ARROW;
         let pivot = to([cx, cy, cx, cy]);
@@ -432,8 +436,11 @@ impl Talk {
         }
         out.push(Quad { turn: false, spin: None, rect: still, uv: ARROW_UV[2], color: [1.0, 1.0, 1.0, alpha], texture: self.textures.balloon });
         // the hints come in once the line has
-        if (k_in >= TUTORIAL_HINT_AFTER || line.joined) && line.closing.is_none() {
-            out.extend(self.hint_quads(hint, 1.0, &fixed));
+        // (the plate stays through the frame of the press: `opening-key4` 13294, 13414, 13654)
+        if (k_in >= TUTORIAL_HINT_AFTER || line.joined) && line.closing.is_none_or(|c| (now - c) * 60.0 < 1.0) {
+            // A system line standing alone (no picture under it) brings its hints in over 15 frames (`opening-key4` 13906 to 13920).
+            let alpha = if line.speaker < 0 && !line.picture { ((k_in - (TUTORIAL_HINT_AFTER - 1.0)) / HINT_FADE_FRAMES).clamp(0.0, 1.0) } else { 1.0 };
+            out.extend(self.hint_quads(hint, alpha, &fixed));
         }
         out
     }
@@ -486,7 +493,7 @@ impl Talk {
             self.glyph_quads(&name, (pen, TEXT_TOP), TEXT_SCALE, [NAME_COLOR, NAME_COLOR, NAME_COLOR, alpha], &to, &mut out);
         }
         // The arrow: its clock runs over the lines that stood before and this one's ticks.
-        let ticks = line.shown_before + (((now - line.since) * 60.0).round() as u32).saturating_sub(1);
+        let ticks = line.shown_before + (((now - line.since) * 60.0 + HALF_FRAME_NUDGE).round() as u32).saturating_sub(1);
         let turn = crate::title_menu::loop_shown(ticks as i32, 4.0) * 90.0;
         if std::env::var_os("TALK_DEBUG").is_some() {
             eprintln!("talk: since {} before {} ticks {ticks} turn {turn}", line.since, line.shown_before);
@@ -501,7 +508,7 @@ impl Talk {
         }
         out.push(Quad { turn: false, spin: None, rect: still, uv: ARROW_UV[2], color: [1.0, 1.0, 1.0, alpha], texture: self.textures.balloon });
         // The hints come in after a moment and go when the button goes down.
-        let since = ((now - line.since) * 60.0).round() - 1.0;
+        let since = ((now - line.since) * 60.0 + HALF_FRAME_NUDGE).round() - 1.0;
         // (the hints fade in once, with the first line; after it they stand at once, at the same moment: capture frames 8645/8655 and 8285/8295 hold it between 12 and 16)
         let hint_alpha = if line.joined { 1.0 } else if line.shown_before == 0 { ((since - HINT_AFTER) / FADE).clamp(0.0, 1.0) } else { f32::from(u8::from(since >= HINT_AFTER)) };
         let hint = hint.filter(|_| line.closing.is_none() && hint_alpha * 255.0 >= 1.0);
@@ -540,7 +547,7 @@ mod tests {
 
     #[test]
     fn a_line_fades_in_and_out_over_fifteen_frames() {
-        let line = Line { speaker: 0, name: None, text: String::new(), until: None, since: 1.0, closing: None, shown_before: 0, joined: false, handed_over: false, more_follows: false, tutorial: false, handed_at: None };
+        let line = Line { speaker: 0, name: None, text: String::new(), until: None, since: 1.0, closing: None, shown_before: 0, joined: false, handed_over: false, more_follows: false, tutorial: false, handed_at: None, picture: false };
         // the frame drawn a tick after the command's: 7 frames on it is 8 ticks, 7/15
         assert_eq!(opacity(&line, 1.0 + 8.0 / 60.0), Some(7.0 / 15.0));
         assert_eq!(opacity(&line, 1.0 + 40.0 / 60.0), Some(1.0));

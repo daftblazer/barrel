@@ -397,6 +397,8 @@ pub struct Line {
     pub tutorial: bool,
     /// The stage time the button handed the box on to the next line at (a handed-over line only).
     pub handed_at: Option<f32>,
+    /// A tutorial picture was up when it came ([`Stage::tutorial_up`]).
+    pub picture: bool,
 }
 
 impl Stage {
@@ -485,7 +487,7 @@ impl Stage {
                     p.shown_before + own
                 });
                 let joined = self.line.as_ref().is_some_and(|p| p.handed_over);
-                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before, joined, handed_over: false, more_follows: false, tutorial, handed_at: None });
+                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before, joined, handed_over: false, more_follows: false, tutorial, handed_at: None, picture: self.tutorial_up });
                 for (&n, b) in self.characters.iter_mut() {
                     let speaking = i64::from(n) == i64::from(*speaker);
                     b.talking = speaking;

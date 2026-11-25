@@ -622,6 +622,10 @@ pub fn fade_hold(seconds: f32) -> f32 {
     frames / 60.0
 }
 
+// STAND-IN: the tutorial picture 0x1a (`u76`'s third operand; the key's 13447) is the one that holds the next wait no frame (13447 to 13476: 29 frames); the room tutorial's 0x1b and the help page 0xa3 hold it one. The room tutorial's frame is
+// the one a fade a frame short before it (12953 to 13017: 64 frames where the rule gives 63) leaves unexplained.
+const NO_HOLD_PICTURE: u32 = 0x1a;
+
 /// A frame, the amount an inline action's first wait and its starter's return fall short (see
 /// [`Player::inline_actions`]).
 const INLINE_SHORT: f32 = 1.0 / 60.0;
@@ -759,6 +763,11 @@ impl<'a> Player<'a> {
         // the starter's commands are taken out of time order here (opening: 8513).
         self.finishing_waits = true;
         self
+    }
+
+    // STAND-IN: an action that changes the field (`q4`) holds its waits and its starter's return their whole length (the opening's 13779: a wait of 0.1 s holds 5 frames, as against 4 for the other inline actions' first waits); the real thing is the game's own field load.
+    fn changes_field(&self, action: usize) -> bool {
+        self.actions[action].iter().any(|k| matches!(k.word & !UNMAPPED, FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM))
     }
 
     /// How long a wait of `seconds` holds a thread; `short` takes a frame off an inline action's first.
@@ -1189,7 +1198,7 @@ impl<'a> Player<'a> {
                         _ => low,
                     };
                     out.push(Timed { time: now, action, step: Step::Wait { seconds } });
-                    let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true));
+                    let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true) && !self.changes_field(action));
                     threads[t].0 += held;
                     event_clock[t] += held;
                     continue;
@@ -1236,7 +1245,7 @@ impl<'a> Player<'a> {
                 tutorial = c.operands.first() == Some(&1);
                 // STAND-IN: the wait after the help page's picture comes up holds 30 frames where a half second holds 29 (`opening-key3` 14080 to 14110);
                 // a frame is added after a shown picture (Ryza's events only; the room tutorial's picture has no wait after it to compare).
-                if tutorial && self.counted_waits {
+                if tutorial && self.counted_waits && c.operands.get(2) != Some(&NO_HOLD_PICTURE) {
                     threads[t].0 += 1.0 / 60.0;
                     event_clock[t] += 1.0 / 60.0;
                 }
@@ -1259,7 +1268,7 @@ impl<'a> Player<'a> {
             let last_line = steps.iter().rposition(|s| matches!(s, Step::Message { .. }));
             for (step_at, s) in steps.drain(..).enumerate() {
                 if let Step::Wait { seconds } = s {
-                    let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true));
+                    let held = self.held(seconds, caller[t].is_some() && !std::mem::replace(&mut shortened[t], true) && !self.changes_field(action));
                     threads[t].0 += held;
                     event_clock[t] += held;
                 }

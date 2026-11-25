@@ -343,6 +343,11 @@ pub fn advance(play: &mut Playback, seconds: f32) {
     while play.stage.time + barrel_engine::stage::FRAME * 0.5 < seconds {
         play.tick();
     }
+    // The stage's clock adds a 32-bit frame time each tick and its sums drift (a line's start falls on .8, .7, ... .5 of a frame as
+    // the opening goes on and the 13,000th frame takes two ticks at once): the clock is the frame's own moment.
+    if (play.stage.time - seconds).abs() < barrel_engine::stage::FRAME * 0.5 {
+        play.stage.time = seconds;
+    }
 }
 
 /// A posed character's submeshes added to the scene as `name`, with their toon-ramp rows
