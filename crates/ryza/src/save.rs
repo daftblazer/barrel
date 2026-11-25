@@ -24,6 +24,34 @@ pub fn decode(file: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(state)
 }
 
+/// A save file for `state`, coded as the game codes one (the inverse of [`decode`]): the 0x100
+/// plain bytes of `header` (a save's own, what the load screen shows), then the state with its
+/// trailing zero bytes dropped, substituted, gamma-packed and sealed with the game's keys.
+/// `seed` stands for the game's own (any value reads back). For answer keys only: Barrel never
+/// writes the original's saves; this writes copies.
+pub fn encode(header: &[u8], state: &[u8], seed: u32) -> Vec<u8> {
+    use barrel_formats::save_code::{gamma, seal, substitute};
+    let len = state.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    let mut file = header[..HEADER].to_vec();
+    file.extend(seal(&gamma(&substitute(&state[..len])), seed, &KEYS));
+    file
+}
+
+/// Marks the story events numbered `done` (their places in the `EVENT_*` enum, as
+/// [`events_done`] gives them) as played in a decoded state.
+pub fn set_events_done(state: &mut [u8], done: &[usize]) -> Result<(), Error> {
+    let d = find(state, &["event", "execFlag"]).ok_or(Error::Corrupt("save: no event flags"))?;
+    let at = d.as_ptr() as usize - state.as_ptr() as usize;
+    let count = u32::from_be_bytes(d.get(..4).ok_or(Error::Corrupt("save: no event count"))?.try_into().unwrap()) as usize;
+    for &i in done {
+        if i >= count {
+            return Err(Error::Corrupt("save: an event past the flags"));
+        }
+        state[at + 4 + i] = 1;
+    }
+    Ok(())
+}
+
 /// The record `name` among the records of `d` (each a little-endian u32 size counting itself,
 /// a NUL-terminated name and its contents): its contents.
 fn record<'a>(mut d: &'a [u8], name: &str) -> Option<&'a [u8]> {

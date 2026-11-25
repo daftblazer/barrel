@@ -46,6 +46,8 @@ usage:
   barrel-tool ebm-scan DIR          read every message file under DIR
   barrel-tool opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
                                in PAK archives: Sophie 2, the Ryza games)
+  barrel-tool ryza-save-events INSTALL SAVE OUT EVENT...  a copy of a Ryza DX save (data.dat) with the story events
+      named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves)
   barrel-tool ryza-actions INSTALL EVENT  a Ryza DX event's actions as the script has them: `aACTION#INDEX word operands` in hex
   barrel-tool ryza-commands INSTALL EVENT [DRAWS]  a Ryza DX event's commands as Barrel's player takes them: `frame aACTION word operands...`
       in hex (frames at 60 a second from the event's start), for tools/cmddiff.py against the game's log;
@@ -274,6 +276,7 @@ fn main() -> ExitCode {
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
+        ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
         ["bonuses", file] => bonuses(Path::new(file), None),
         ["bonuses", file, exe] => bonuses(Path::new(file), Some(Path::new(exe))),
         ["days", install, n] => days(Path::new(install), n, false, None),
@@ -1765,6 +1768,34 @@ fn ryza_save(file: &Path, out: &Path) -> Result<()> {
     let state = barrel_ryza::save::decode(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
     std::fs::write(out, &state)?;
     println!("{} bytes of state", state.len());
+    Ok(())
+}
+
+/// A copy of the save `file` with the story `events` marked as played, written to `out` (which
+/// must not exist: never the game's own saves). Checked by decoding it back.
+fn ryza_save_events(install: &Path, file: &Path, out: &Path, events: &[&str]) -> Result<()> {
+    if out.exists() {
+        return Err(format!("{} exists: this writes new copies only", out.display()).into());
+    }
+    let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let (names, first) = pe.enum_names("EVENT_AA01_010").ok_or("the executable does not name the story's events")?;
+    let data = read(file)?;
+    let mut state = barrel_ryza::save::decode(&data).map_err(|e| format!("{}: {e}", file.display()))?;
+    let mut done = Vec::new();
+    for e in events {
+        let i = names.iter().position(|n| n == e).ok_or_else(|| format!("no event {e}"))?;
+        done.push(i.checked_sub(first).ok_or_else(|| format!("{e} is not a story event"))?);
+    }
+    barrel_ryza::save::set_events_done(&mut state, &done)?;
+    let coded = barrel_ryza::save::encode(&data, &state, 0);
+    let back = barrel_ryza::save::decode(&coded)?;
+    let len = state.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    if back[..len] != state[..len] || back[len..].iter().any(|&b| b != 0) {
+        return Err("the coded copy does not decode back to the state".into());
+    }
+    std::fs::write(out, &coded)?;
+    println!("{} events marked, {} bytes", done.len(), coded.len());
     Ok(())
 }
 
