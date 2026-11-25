@@ -12,6 +12,7 @@ run has at that frame.
 | Player | a dump | her feet at `0x141b7a590` (three floats, game units: 100 a metre) and her facing at `0x141b7a5a0` (a unit vector x, y, z; yaw = atan2(x, z)), a static copy the game updates every frame (`DUMP_AT="a-b;0x141b7a580+0x40"`). Copies in metres at `0x141a66228` and `0x141ac283c` (not followed). The capture's mean bone translation (`barrel-parity state`) agrees to the motion's sway |
 | Event and step | the command log | a scenario with `HOOKS=scenarios/hooks/commands.hooks`, then `tools/cmdlog.py`: every command each runner takes and its frames; the event's own runner's `w1 N` words are its step marks |
 | Field | the command log and file reads | the `q` runner's loads (`q5` a character, `q4`/`q9` a map) and `barrel-tool pak-reads` on a run with `RYZA_TRACE_FILES` |
+| Random generator | a dump, the hook log | the `std::mt19937` at `0x141b74600` (a u32 index, then the 1,248-word window and one word: 5,000 bytes), `DUMP_AT="1890-2100;...;0x141b74600+0x1388"`; every draw is hooked by `scenarios/hooks/rng-all.hooks` (`irand`, `frand`, `rand15` with the index before it; integers in hex); `barrel-tool ryza-gather` starts from the dump (docs/engine.md, "Ryza DX: the random generator") |
 | Input | the scenario | its `PAD` lines: the run has no other |
 | Frame time | fixed | 1/60 s on the virtual clock (`docs/ryza/open.md`, "The answer key's runs repeat exactly") |
 

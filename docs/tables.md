@@ -2797,3 +2797,23 @@ Shown on the page: the normal attack (no AP), then each active skill learnt by t
 level. Checked against the capture (Ryza at level 3): "Ryza Special" and "Summoning Star" (3 AP). STAND-IN: the tactics level is read as 1
 (the save's own is not read); the section's place for a character other than Ryza and a row past the first dozen are the same rule,
 not tried.
+
+## Ryza DX: gathering places (the executable's `.rdata`)
+
+What a gathering point gives is not in the archives: the game's own tables, built into its static
+data, copied to the gathering manager (`0x1404b00e0`) and read by `0x1404b2520` and its neighbours
+(`barrel_ryza::gather`, docs/ryza/open.md, "Gathering (P6)"). A point's gimmick row
+(`gimmick_fieldmap_<field>.xml`, `ITEM_D_MULTIPLE`, `<Value>FIELDMAP_COLLECT_PLACE_...`) names a place; the
+place's number is its position in the executable's name array (1,834 names from
+`FIELDMAP_COLLECT_PLACE_S11_T_PORT_GRASS_ROD`; `Pe::enum_names`).
+
+| Table | Where | Row |
+|---|---|---|
+| places | `0x141164260`, 1,834 rows | 12 i32: the list of each of five story ranks, the item count from and to, the opening and the closing event flag (`-1` none), the field map's number, then two not read |
+| entries | `0x141179a40`, 3,419 rows | 27 i32: the list, the item, the quality range, 0, the random potentials' count range, the level range they come from, the level a random potential gets (range), the weight, two event flags, three fixed potentials (numbers, then their level ranges' lows and highs), four fixed effects |
+| kinds' groups | jump table of `0x140520d10` | `ITEM_KIND_*` in order: material 8, mix 0, attack 1, heal 2, debuff 3, buff 4, field 9, important and book none, weapon 5, armour 6, accessory 7, expendable none, core 10; the groups name `item_potential.xml`'s columns `mix` ... `etc` |
+
+An event flag is the number of an entry of the game's event flag array (`0x141abfaf0`; the entry is on when its
+opening flag is set and its closing flag is not: `0x1405a2c20`). The honeycomb point's list 538 has two entries: item
+106 (weight 70) and item 128 (30), quality 11 to 20, 0 or 1 random potentials of the grade 1 to 10 band, level 1 to 3.
+

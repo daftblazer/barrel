@@ -214,6 +214,16 @@ impl Random {
         }
     }
 
+    /// A chance of `percent` in 100 (`0x1406ae500`): whether a draw mod 100 is below it; 0 or less is never and 100 or
+    /// more always, with no draw.
+    pub fn chance(&mut self, percent: i32) -> bool {
+        match percent {
+            ..=0 => false,
+            100.. => true,
+            _ => (self.rand15() as i32) % 100 < percent,
+        }
+    }
+
     /// A float from 0 to 1 (`0x1406ae410`).
     pub fn fraction(&mut self) -> f32 {
         self.unit()
@@ -293,6 +303,9 @@ mod tests {
         assert_eq!(scaled, ((31786.0f64 / 32767.0) as f32) * 8.0);
         let around = r.around(2.0);
         assert_eq!(around, ((4851.0f64 / 32767.0) as f32) * 4.0 - (2.0 + 1e-4));
+        assert!(!r.chance(0) && r.chance(100), "no draw at 0 or 100");
+        assert_eq!(r.index(), 0x1ba + 7);
+        assert_eq!(r.chance(50), 27631 % 100 < 50);
     }
 
     #[test]

@@ -192,8 +192,7 @@ impl Tables {
         self.entries.iter().filter(move |e| e.list == list)
     }
 
-    /// Whether `item` may take a potential at all, and the potentials it may take: the ones
-    /// gathering gives that fit its kind.
+    /// Whether `potential` fits `item`'s kind (an item past the library's table takes any).
     fn fits(&self, potential: &Potential, item: i32) -> bool {
         if item > LIBRARY_ITEMS {
             return true;
