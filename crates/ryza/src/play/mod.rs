@@ -1472,7 +1472,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         Ok(Some(match &following_event {
             Some(next) => barrel_ryza::opening::schedule(&install, e, next, [&opening_messages, &following_messages], buttons, &given, event_clock, 3600.0)?,
             None => {
-                let (steps, taken) = barrel_ryza::event::schedule_drawn_taken_with(e, &given, event_clock, 3600.0, None, barrel_ryza::event::Talk { messages: &opening_messages, buttons, fade_late: 0.0 })?;
+                let (steps, taken) = barrel_ryza::event::schedule_drawn_taken_with(e, &given, event_clock, 3600.0, None, barrel_ryza::event::Talk { messages: &opening_messages, buttons, fade_late: 0.0, terrain: None })?;
                 (steps, taken, f32::INFINITY)
             }
         }))

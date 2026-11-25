@@ -3544,7 +3544,7 @@ fn ryza_commands(root: &Path, event: &str, draws: &str) -> Result<()> {
     // BARREL_EVENT_PRESSES=FIRST:STEP:LAST@START plays the lines with the button pressed at those capture frames.
     let name = path.rsplit('\\').next().and_then(|n| n.strip_prefix("event_")).and_then(|n| n.strip_suffix(".ebd")).unwrap_or(event);
     let messages = barrel_ryza::event::messages(&install, name).unwrap_or_default();
-    let talk = barrel_ryza::event::Talk { messages: &messages, buttons: barrel_ryza::event::buttons_from_env(), fade_late: 0.0 };
+    let talk = barrel_ryza::event::Talk { messages: &messages, buttons: barrel_ryza::event::buttons_from_env(), fade_late: 0.0, terrain: (event == barrel_ryza::opening::EVENT).then(|| barrel_ryza::opening::terrain(&install)) };
     for (time, action, words) in barrel_ryza::event::commands(&e, &given, 600.0, Some(barrel_ryza::event::motion_lengths(&install)), talk)? {
         let words: Vec<String> = words.iter().map(|w| format!("{w:x}")).collect();
         println!("{} a{action} {}", (time * 60.0).round() as i64, words.join(" "));
@@ -4139,6 +4139,10 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
             Step::Face { action, character, toward } => {
                 let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
                 println!("{action:3} {who} faces {}", describe_position(&toward));
+            }
+            Step::FaceOver { action, character, toward, seconds, .. } => {
+                let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);
+                println!("{action:3} {who} faces {} over {seconds:.2} s", describe_position(&toward));
             }
             Step::CopyFacing { action, character, from } => {
                 let who = names.get(character as usize).map_or_else(|| character.to_string(), Clone::clone);

@@ -22,7 +22,22 @@ pub struct Talk<'a> {
     pub buttons: Option<barrel_engine::event::Buttons>,
     /// Frames the event's fades hold it longer than the opening's rule ([`barrel_engine::event::Player::fade_late`]).
     pub fade_late: f32,
+    /// The field's terrain, for the walks that land on it (`s9`, [`barrel_engine::event::CHARA_WALK_RYZA`]).
+    pub terrain: Option<Terrain<'a>>,
 }
+
+/// The height of the terrain at a field point (`x`, `z`), when there is one ([`Talk::terrain`]).
+#[derive(Clone, Copy)]
+pub struct Terrain<'a>(pub &'a dyn Fn(f32, f32) -> Option<f32>);
+
+impl std::fmt::Debug for Terrain<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Terrain")
+    }
+}
+
+/// Ryza's own word for the walk whose y the game logs as the terrain's ([`barrel_engine::event::CHARA_WALK_RYZA`]); `s3`'s operands stay as written.
+const WALK_WORD: u32 = 0x7300_0009;
 
 /// The game's closing time of a line after the button, in frames: the line's fade out and a few
 /// more before the next command (`u17`'s end on 17 frames after the press, the next command a
@@ -132,6 +147,11 @@ pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, 
         None => player,
     }
     .fade_late(talk.fade_late);
+    let terrain = talk.terrain;
+    let player = match terrain {
+        Some(t) => player.terrain(Box::new(move |x, z| (t.0)(x, z))),
+        None => player,
+    };
     let (steps, taken) = match lengths {
         Some(l) => player.motion_length(l).schedule_traced(),
         None => player.schedule_traced(),
@@ -140,7 +160,14 @@ pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, 
         .into_iter()
         .filter_map(|(time, action, at)| {
             let c = scripts.get(action)?.get(at)?;
-            Some((time, action, std::iter::once(c.word).chain(c.operands.iter().copied()).collect()))
+            let mut words: Vec<u32> = std::iter::once(c.word).chain(c.operands.iter().copied()).collect();
+            // The walk's y as the game logs it: the terrain's height there ([`barrel_engine::event::walk_height`]).
+            if c.word == WALK_WORD && words.len() > 7 && words[2] == 0 {
+                let f = |v: u32| v as i32 as f32;
+                let height = barrel_engine::event::walk_height(terrain.and_then(|t| (t.0)(f(words[5]), f(words[7]))), f(words[6]));
+                words[6] = height as i32 as u32;
+            }
+            Some((time, action, words))
         })
         .collect();
     Ok((steps, taken))

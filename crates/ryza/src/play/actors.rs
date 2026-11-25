@@ -472,7 +472,7 @@ mod tests {
 
     #[test]
     fn motions_are_collected_by_slot() {
-        let motion = |character, motion| Timed { time: 0.0, action: 0, step: Step::Motion { action: 0, character, motion, blend: 0.0, looping: false, division: None } };
+        let motion = |character, motion| Timed { time: 0.0, action: 0, step: Step::Motion { action: 0, character, motion, blend: 0.0, looping: false, division: None, keep: false } };
         let steps = [motion(0, 120), motion(2, 2190), motion(0, 92511), motion(0, 120)];
         let by = motions_of(&steps);
         assert_eq!(by[&0].iter().copied().collect::<Vec<_>>(), [120, 92511]);

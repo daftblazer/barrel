@@ -9,6 +9,21 @@ use barrel_formats::ebd::Ebd;
 /// The event the title's New Game starts.
 pub const EVENT: &str = "mm00_010";
 
+static GROUND: std::sync::OnceLock<Option<barrel_engine::walk::Ground>> = std::sync::OnceLock::new();
+
+fn terrain_height(x: f32, z: f32) -> Option<f32> {
+    GROUND.get()?.as_ref()?.terrain(x, z)
+}
+
+/// The opening's field's terrain (its heightmap, loaded once) for the walks of its events ([`Talk::terrain`]).
+pub fn terrain(install: &crate::install::Install) -> crate::event::Terrain<'static> {
+    GROUND.get_or_init(|| {
+        let f = install.field(crate::field_hud::MAP_FIELD).ok()?;
+        crate::walk::heightmap_ground(&barrel_formats::elixir::Elixir::parse(&f.main).ok()?, &f.area)
+    });
+    crate::event::Terrain(&terrain_height)
+}
+
 /// The capture frame the event's first command runs on: the button's frame (1535) and
 /// [`new_game::OPENING_AFTER`].
 pub const START: i32 = 1535 + new_game::OPENING_AFTER;
@@ -41,7 +56,7 @@ pub fn schedule<'a>(
     clock: u32,
     until: f32,
 ) -> Result<(Vec<Timed<'a>>, Vec<Taken>, f32), String> {
-    let talk = |m, b, late| Talk { messages: m, buttons: b, fade_late: late };
+    let talk = |m, b, late| Talk { messages: m, buttons: b, fade_late: late, terrain: Some(terrain(install)) };
     let (mut steps, mut taken) = event::schedule_drawn_taken_with(opening, given, clock, until, Some(event::motion_lengths(install)), talk(messages[0], buttons.clone(), 0.0))?;
     // the opening is over when its last command's wait is (it ends on a fade of half a second)
     let last = taken.iter().map(|t| t.0).fold(0.0f32, f32::max);

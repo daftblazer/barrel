@@ -716,6 +716,12 @@ pub static RYZA_SAME_AS_ESCHA: &[(u32, u32)] = &[
     (0x74000007, 0x74000006),
     (0x74000008, 0x74000007),
     (0x7400001a, 0x74ee0001),
+    // the characters' walks: `s5` `{character, position, 1, 0, speed, 0, 0, 0}` and `s9` (the same, the game puts the terrain's height in y: `CHARA_WALK_RYZA`) are Escha's `s18`; `s8` waits for one
+    (0x73000003, 0x73ee0007),
+    (0x73000005, 0x73000012),
+    (0x73000011, 0x73ee0008),
+    (0x73000009, 0x73ee0006),
+    (0x73000008, 0x73000015),
     (0x73000028, 0x73ee0004),
     (0x73000026, 0x73ee0002),
     (0x73000027, 0x73ee0003),

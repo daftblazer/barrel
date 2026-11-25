@@ -113,6 +113,27 @@ pub const CHARA_MOTION_SPEED: u32 = 0x7300_0009;
 /// How long a character's motion (a division of it, when given) plays and whether it loops:
 /// what [`Player::schedule`] needs for `s6`. The player knows no clips; whoever does supplies it.
 pub type MotionLength<'a> = Box<dyn Fn(u32, u32, Option<u32>) -> Option<(f32, bool)> + 'a>;
+
+/// The terrain's height at a field point `(x, z)`, when it has one there: what Ryza's walks ([`CHARA_WALK_RYZA`]) land on.
+pub type TerrainHeight<'a> = Box<dyn Fn(f32, f32) -> Option<f32> + 'a>;
+
+/// Ryza's `s9` (0x73000009, read here as the engine's own word): a walk, `s18`'s form with the speed in its operands
+/// (`{character, position (6), extra, 0, speed, 0, 0, 0}`), but its y is not a height: the game puts the terrain's
+/// height at the point there when the walk starts (`opening-key3`: the 13 walks of the opening log `floor(terrain)`,
+/// and the one with y -29 logs the terrain 29 above, 4993 where the terrain is 4964.1), then moves her in a straight
+/// line. Without a terrain the y stays as written ([`walk_height`]).
+pub const CHARA_WALK_RYZA: u32 = 0x73ee_0006;
+
+/// Ryza's `s3` (0x73000003, read here as the engine's own word): `{character, 0, 0, 0, x, y, z}` puts the character at the point
+/// on the terrain, `y` above it (the opening's room scenes place with y 0: the character stands on the ground; the walk at 4526
+/// places with -29 after an `s2` at the terrain less 29, where she stands).
+pub const CHARA_PLACE_GROUND_RYZA: u32 = 0x73ee_0007;
+
+/// A walk's y ([`CHARA_WALK_RYZA`]): the terrain's height at the point less the written y, whole units; the written y
+/// when there is no terrain there (STAND-IN for the sign of the offset: one walk in the opening has one, -29).
+pub fn walk_height(terrain: Option<f32>, written: f32) -> f32 {
+    terrain.map_or(written, |t| (t - written).floor())
+}
 /// `q4` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{character, 0, 0, 0, x, y, z, 0, angle, ...}` (14
 /// operands): adds the character there, facing `angle` degrees.
 pub const FIELD_CHARA_ADD: u32 = 0x7100_0004;
@@ -339,6 +360,9 @@ pub const CHARA_ROT_COPY_TARGET_ALL: u32 = 0x7300_0055;
 pub const CHARA_ROT_MOVE: u32 = 0x7300_001a;
 /// `s29` (`ECT_CHARA_ROT_MOVE_WAIT`): `{character}`: waits for its timed turn (`s26`) to end.
 pub const CHARA_ROT_MOVE_WAIT: u32 = 0x7300_001d;
+/// Ryza's `s17` (`ECT_CHARA_ROT_MOVE_SET_TARGET`, 0x73000011, read here as the engine's own word): `{character, position (6),
+/// hundredths, curve}`: the character turns to face the position over the time ([`Step::FaceOver`]).
+pub const CHARA_FACE_OVER_RYZA: u32 = 0x73ee_0008;
 /// `s21` (`ECT_CHARA_MOVE_PRE_WAIT`): `{character, hundredths}`: waits until the character's
 /// move has that long or less left (the mover's +0x30 against its time left, +0x28;
 /// `0x1402f20d0`, checked in `0x1402f2894`).
@@ -412,6 +436,9 @@ pub enum Step<'a> {
     WaitForCharacter { character: u32 },
     /// A character pauses its own commands (`s3`) while the event goes on.
     CharacterWait { action: usize, character: u32, seconds: f32 },
+    /// A character turns to face a position over `seconds` along `curve` (`s27`, `ECT_CHARA_ROT_MOVE_SET_TARGET`, Ryza's
+    /// `s17`: `{character, position, hundredths, curve}`); at once when `seconds` is 0.
+    FaceOver { action: usize, character: u32, toward: crate::camera::Position, seconds: f32, curve: u32 },
     /// A character is put at a point in field units (`s4`).
     Place { action: usize, character: u32, position: [f32; 3] },
     /// A character is put at an offset from another (`s4` with kind 8, `{character, 8, of, 1,
@@ -427,8 +454,9 @@ pub enum Step<'a> {
     /// `s10` loops the whole clip (`0x1402036d0` with -1, -1 clears the play range); `s5`
     /// (`ECT_CHARA_MOTION_SET`, `{character, motion, division, blend}`) and `s11`
     /// (`ECT_CHARA_MOTION_SET_AUTO_LOOP`, `{character, motion, division, flag, blend}`) play
-    /// one of its divisions (`barrel_formats::chara_div`), which says whether it loops.
-    Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, division: Option<u32> },
+    /// one of its divisions (`barrel_formats::chara_div`), which says whether it loops. `keep`: Ryza's `s40` leaves the
+    /// same looping motion going where it is (`opening-key3`'s second walk).
+    Motion { action: usize, character: u32, motion: u32, blend: f32, looping: bool, division: Option<u32>, keep: bool },
     /// The motion a character plays moves to another division (`s13`).
     MotionDivision { action: usize, character: u32, division: u32 },
     /// The character's motion plays at `speed` (1 its own) from now (`s9`).
@@ -572,6 +600,8 @@ pub struct Player<'a> {
     buttons: Option<Buttons>,
     /// The motions' lengths for `s6`; without them `s6` takes no time.
     motion_length: Option<MotionLength<'a>>,
+    /// The terrain under the field, for the walks that land on it ([`CHARA_WALK_RYZA`]).
+    terrain: Option<TerrainHeight<'a>>,
     /// The variable slots `t2/0x30` binds (slot number, 10000 and up, to a `Chara.xml` row):
     /// commands may name a character by its slot.
     slots: HashMap<u32, u32>,
@@ -677,7 +707,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, buttons: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, fade_late: 0.0, chance: None, until: None })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, buttons: None, motion_length: None, terrain: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, fade_late: 0.0, chance: None, until: None })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -817,6 +847,12 @@ impl<'a> Player<'a> {
         self
     }
 
+    /// The field's terrain, for [`CHARA_WALK_RYZA`]'s landing height.
+    pub fn terrain(mut self, height: TerrainHeight<'a>) -> Self {
+        self.terrain = Some(height);
+        self
+    }
+
     /// Where a jump command (`u5` to `u10`) in `action` sends it: the index of the
     /// label's command.
     fn jump(&self, action: usize, c: ebd::Command<'a>) -> Option<usize> {
@@ -898,24 +934,29 @@ impl<'a> Player<'a> {
             (CHARA_POS_SET, [character, _, _, _, x, y, z, ..]) => {
                 out.push(Step::Place { action, character: self.slot(*character), position: [f(*x), f(*y), f(*z)] })
             }
+            (CHARA_PLACE_GROUND_RYZA, [character, _, _, _, x, y, z, ..]) => {
+                let (x, z) = (f(*x), f(*z));
+                let y = self.terrain.as_ref().and_then(|h| h(x, z)).map_or(f(*y), |t| t + f(*y));
+                out.push(Step::Place { action, character: self.slot(*character), position: [x, y, z] })
+            }
             (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
                 let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: None });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: None, keep: false });
             }
             (CHARA_MOTION_LOOP_RYZA, [_, 0, ..]) => {}
             (CHARA_MOTION_LOOP_RYZA, [character, motion, division, rest @ ..]) => {
                 let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division) });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division), keep: true });
             }
             (CHARA_MOTION_RANGE, [character, from, to, ..]) => {
                 out.push(Step::MotionRange { action, character: self.slot(*character), from: f(*from) / 6000.0, to: f(*to) / 6000.0 });
             }
             (CHARA_MOTION_SET, [character, motion, division, hundredths, ..]) => {
                 let blend = f(*hundredths) / 100.0;
-                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: false, division: Some(*division) });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: false, division: Some(*division), keep: false });
             }
             (CHARA_MOTION_ONCE_RYZA, [character, motion, ..]) => {
-                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend: 0.0, looping: false, division: None })
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend: 0.0, looping: false, division: None, keep: false })
             }
             (CHARA_MOTION_DIVISION, [character, division, ..]) => out.push(Step::MotionDivision { action, character: self.slot(*character), division: *division }),
             (CHARA_MOTION_SPEED | CHARA_MOTION_SPEED_RYZA, [character, percent, ..]) if self.motion_speeds || c.word == CHARA_MOTION_SPEED_RYZA => {
@@ -924,7 +965,7 @@ impl<'a> Player<'a> {
             }
             (CHARA_MOTION_AUTO_LOOP, [character, motion, division, rest @ ..]) => {
                 let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
-                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division) });
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division), keep: false });
             }
             (FIELD_CHANGE | FIELD_CHANGE_KEEP_BGM, [map, ..]) => out.push(Step::FieldChange { action, map: *map }),
             (FIELD_CHARA_DELETE, [character, ..]) => out.push(Step::Remove { action, character: self.slot(*character) }),
@@ -1037,9 +1078,24 @@ impl<'a> Player<'a> {
                 let (toward, _) = crate::camera::Position::read(rest).unwrap();
                 out.push(Step::Face { action, character: self.slot(*character), toward: self.slot_position(toward) })
             }
+            (CHARA_FACE_OVER_RYZA, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
+                let (toward, rest) = crate::camera::Position::read(rest).unwrap();
+                let seconds = rest.first().map_or(0.0, |&h| h as i32 as f32 / 100.0);
+                let curve = rest.get(1).copied().unwrap_or(0);
+                out.push(Step::FaceOver { action, character: self.slot(*character), toward: self.slot_position(toward), seconds, curve })
+            }
             (CHARA_ROT_COPY_TARGET | CHARA_ROT_COPY_TARGET_ALL, [character, rest @ ..]) if crate::camera::Position::read(rest).is_some() => {
                 let (from, _) = crate::camera::Position::read(rest).unwrap();
                 out.push(Step::CopyFacing { action, character: self.slot(*character), from: self.slot_position(from) })
+            }
+            (CHARA_WALK_RYZA, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
+                let (extra, mut movement) = crate::camera::Move::read_with_extra(rest).unwrap();
+                let mut to = self.slot_position(*movement.to_mut());
+                if to.anchor == crate::camera::Anchor::World {
+                    to.offset[1] = walk_height(self.terrain.as_ref().and_then(|h| h(to.offset[0], to.offset[2])), to.offset[1]);
+                }
+                *movement.to_mut() = to;
+                out.push(Step::CharacterMove { action, character: self.slot(*character), extra, movement })
             }
             (CHARA_MOVE, [character, rest @ ..]) if crate::camera::Move::read_with_extra(rest).is_some() => {
                 let (extra, movement) = crate::camera::Move::read_with_extra(rest).unwrap();

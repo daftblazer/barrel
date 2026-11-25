@@ -261,15 +261,20 @@ pub struct Terrain {
     pub start: Vec3,
 }
 
+/// A field's heightmap alone as a ground (`<AREA>.khm`).
+pub fn heightmap_ground(main: &Elixir, area: &str) -> Option<Ground> {
+    barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
+        .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
+        .and_then(|b| barrel_formats::khm::parse(b).ok())
+        .map(Ground::of_heightmap)
+}
+
 /// A field's ground and walls as she walks on them: the heightmap (`<AREA>.khm`), the field's
 /// own walls (`<field>_le.koc`), the placed models' collision meshes (`solids`) as more walls
 /// and floors (added after the start is stood on the heightmap, so she does not start on a
 /// tree's top) and the field's own shapes (`<AREA>_coll.bin`). `at` is where she starts.
 pub fn load_terrain(install: &Install, field: &str, area: &str, main: &Elixir, objects: &Elixir, at: Vec3) -> Result<Terrain, Box<dyn std::error::Error>> {
-    let mut ground = barrel_engine::field::named(main, &format!("{}.khm", area.to_ascii_uppercase()))
-        .or_else(|| main.entries.iter().find(|e| e.name.to_ascii_lowercase().ends_with(".khm")).map(|e| main.data(e)))
-        .and_then(|b| barrel_formats::khm::parse(b).ok())
-        .map(Ground::of_heightmap);
+    let mut ground = heightmap_ground(main, area);
     let walls = install
         .read(&format!("\\data\\x64\\field\\{0}\\{0}_le.koc", field.to_ascii_lowercase()))
         .ok()

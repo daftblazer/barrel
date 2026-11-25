@@ -463,7 +463,8 @@ impl Stage {
                 Some(p) => self.apply(&Step::Place { action: 0, character: *character, position: p }),
                 None => self.unresolved += 1,
             },
-            Step::Motion { character, motion, looping, blend, division, .. } => match self.characters.get_mut(character) {
+            Step::Motion { character, motion, looping, blend, division, keep, .. } => match self.characters.get_mut(character) {
+                Some(b) if *keep && b.motion.is_some_and(|p| p.motion == *motion && p.looping && p.division == *division) => {}
                 Some(b) => b.motion = Some(Playing::new(*motion, self.time, *looping, blend.max(0.0), *division)),
                 None => self.unresolved += 1,
             },
@@ -571,6 +572,24 @@ impl Stage {
                 };
                 let (dx, dz) = (at[0] - b.position[0], at[2] - b.position[2]);
                 b.facing = if dx == 0.0 && dz == 0.0 { 0.0 } else { dx.atan2(dz) };
+            }
+            Step::FaceOver { character, toward, seconds, curve, .. } => {
+                let Some(at) = self.resolve(toward) else {
+                    self.unresolved += 1;
+                    return;
+                };
+                let Some(b) = self.characters.get_mut(character) else {
+                    self.unresolved += 1;
+                    return;
+                };
+                let (dx, dz) = (at[0] - b.position[0], at[2] - b.position[2]);
+                let yaw = if dx == 0.0 && dz == 0.0 { b.facing } else { dx.atan2(dz) };
+                if *seconds > 0.0 {
+                    b.turn = Some((b.facing, short_way(b.facing, yaw), *seconds, 0.0, *curve));
+                } else {
+                    b.facing += short_way(b.facing, yaw);
+                    b.turn = None;
+                }
             }
             Step::CopyFacing { character, from, .. } => {
                 let Some((_, yaw)) = self.resolve_anchored(from) else {
