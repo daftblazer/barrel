@@ -3003,9 +3003,12 @@ frames 2250 to 4900, her and the generator every frame, pictures every 50. Items
   hundredth of a pixel).
 - **The made item** (seen on 4020 to 4060, not derived): Red Supplement, quality 49 with the rank letter C, item level 1, element value 2 with fire lit, one
   effect "Synth Quality +5" (the first of the recipe's four `ITEM_EFF_CREATE_QUALITY_*`, string 6882614), no traits, category "(Supplement)"; four units.
-  The container's qualities (35, 42, 38 for the flowers, 40 for the water) do not give 49 by an average, so the quality rule is not found; the first-listed
-  rule of `mix::make` is unverified too (the Add Materials list showed its first Health Flower at quality 42, the one the container has second, so the
-  game's list is sorted, not in the container's order).
+  What the screens say about how it comes about (3050 and 3300): the list shows the units in the container's order (the second Health Flower, quality 42,
+  is the cursor's after the first, 35, was placed; the first Clean Water listed is the container's first, 40), so `mix::make`'s first-listed rule fits the
+  three flowers (35, 42, 38) and the water (40); the ring's own effects are listed as "Synth Quality +5 / +7 / +10 / +12" for one to four fire elements and the
+  water's ring "Quality +10 / +15 / +20 / +25" for one to four ice; the panel read 38 with the cursor on the 42 flower after the 35 one was placed
+  (35 and 42 average 38.5). A mean of the four units (38.75) plus the water ring's first +10 is 48.75, which rounds to 49: a fit of one point, not a rule (the
+  preview's 38.5 read 38: another rounding), so the quality, the effects and the traits are not derived.
 - **The animation clock hitches**: the card's coming in runs on a clock that ran 12 frames ahead of the frame count from the capture's 3880 on (the
   glows' alpha and scale, and the card's rise by two curves, 2.5 times faster for the panel's copy, fit frame by frame only with those 12 frames; the
   full-screen white-out, an other anim, does not have them: its 0.18 s delay counts the frames). The rows give the clock as an input (`--mix-sheet

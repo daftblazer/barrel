@@ -52,7 +52,7 @@ usage:
       `record/list@OFFSET=HEX`: bytes written at OFFSET in a list record (item/m_unitContainer@396=...: a unit)
   barrel-tool ryza-save-tree INSTALL SAVE  a Ryza DX save's records (name and size, nested) and the story events it has played
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
-  barrel-tool ryza-mix INSTALL STATE.bin SAVE RECIPE [--steps FILE] [--draws]  a synthesis from a save: the units its rows take, what it makes, and the draws of a steps file from the generator's dump
+  barrel-tool ryza-mix INSTALL STATE.bin SAVE RECIPE [--steps FILE] [--draws] [--units]  a synthesis from a save: the units its rows take, what it makes, and the draws of a steps file from the generator's dump
   barrel-tool ryza-lockstep INSTALL STATE.bin SCRIPT HOOKS.LOG FROM TO [--save FILE]  a run's draws (gatherings, her clips, free play) from the generator's dump against the game's hook log
       SCRIPT lines: `FRAME gather PLACE`, `FRAME clip` (a hand's voice chance), `FRAME swing` (the staff's clip), `FRAME free TIMERS SPAWN` (`tools/free_play.py`),
       `FRAME index HEX` (the generator's index there, from the game's dump); prints `N draws, M differ` and each index that is off
@@ -1943,12 +1943,13 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
 /// `ryza-mix`: a synthesis of `recipe` (its number in `itemrecipedata.xml`, or its `ITEM_MIX_*` tag) from a save's container, and the
 /// draws of a steps file (`FRAME draw irand A B | frand A B | r640 N | r680 N | rand15` lines; `barrel_ryza::mix::Step`) from a dump of the generator.
 fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&str]) -> Result<()> {
-    let (mut steps, mut calls_only) = (None, false);
+    let (mut steps, mut calls_only, mut units) = (None, false, false);
     let mut it = rest.iter();
     while let Some(&flag) = it.next() {
         match flag {
             "--steps" => steps = Some(PathBuf::from(it.next().ok_or("--steps FILE")?)),
             "--draws" => calls_only = true,
+            "--units" => units = true,
             other => return Err(format!("ryza-mix: {other}?").into()),
         }
     }
@@ -1961,6 +1962,11 @@ fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&st
     let r = tables.recipes.get(n).ok_or_else(|| format!("no recipe {n}"))?;
     let data = barrel_ryza::save::decode(&read(save)?).map_err(|e| format!("{}: {e}", save.display()))?;
     let (container, _) = barrel_ryza::save::container(&data).ok_or("the save has no container")?;
+    if units {
+        for (i, w) in container.iter().enumerate() {
+            println!("unit {i}: item {} quality {} level {} effects {:?} potentials {:?}", w.item, w.quality, w.level, w.effects.iter().filter(|&&e| e != 0xffff).collect::<Vec<_>>(), w.potentials.iter().zip(&w.potential_levels).filter(|(p, _)| **p < 290).collect::<Vec<_>>());
+        }
+    }
     if !calls_only {
         let known = barrel_ryza::save::knowledge(&data, "recipe").and_then(|k| k.get(n).copied()).unwrap_or(0);
         println!("recipe {n} {} (knowledge {known}): {} units, {} hours", r.tag, r.make, r.hours);
