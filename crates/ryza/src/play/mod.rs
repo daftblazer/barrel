@@ -783,7 +783,10 @@ enum MixShown {
 /// (the capture's 3940, clock 133, still says "Fast Forward"; 3950, 143, "Next").
 const CARD_COMES_IN: f32 = 140.0;
 
-/// The made item's card sends its \"A Next\" bar away by this many frames after A. STAND-IN: between the capture's 4070 (10 frames: the bar is
+/// The units the finished card shows going out (the capture's recipe makes 4: `MakeNum`).
+const MADE_UNITS: u32 = 4;
+
+/// The made item's card sends its "A Next" bar away by this many frames after A. STAND-IN: between the capture's 4070 (10 frames: the bar is
 /// there) and 4080 (20: it is gone).
 const BAR_GONE_AFTER: f32 = 15.0;
 
@@ -816,7 +819,7 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
             let mut card = items.card(&unit, &[], image);
             // STAND-IN: the rank letter of quality 49 is C in the capture (`synth-atelier` 4060), where `item_info`'s steps give D.
             card.rank = card.rank.saturating_sub(1);
-            page.result_quads(&card, leaving.map(|l| (l, fp::CompleteLook { level: 2, next: 3, gained: 0, age: 0.0 })), entering.map(|e| (e, fp::SheetLook { item, image, count: 4, clock: None, frames: 0.0, out: None })), screen)
+            page.result_quads(&card, leaving.map(|l| (l, fp::CompleteLook { level: 2, next: 3, gained: 0, age: 0.0 })), entering.map(|e| (e, fp::SheetLook { item, image, count: MADE_UNITS, clock: None, frames: 0.0, out: None })), screen)
         }
     };
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;

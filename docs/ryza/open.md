@@ -3035,5 +3035,14 @@ Left.
   camera, so the balloons over the room's three gimmicks, the prompt and the arrival plate "Ryza's Room" are not compared).
 - Select Recipe (with the tutorial pages) and Add Materials (loops, the material list, the quality bar, the ring graph): about 520 to 920 quads a
   frame, most of them the ring graph's pieces and the lists' text; not started. The quality, effects and traits of the result and the experience rule.
+- What Select Recipe and Add Materials are made of (for the next part): the files the key read at 2303 (`barrel-tool pak-reads`): the layouts
+  `ui_en/a21_mix/uil_a21_mix_caption`, `_recipe` (44 KB), `_field` (32 KB: the ring graph) with `ui_cmn/a21_mix/uia_a21_mix`, `uia_a21_mix_field`,
+  `uil_a21_mix_background`, `_blackout`, `_lecture`, `_scale`, `ui_en/a21_cabinet/uil_a21_cabinet_mix` with its `_cell` and `uil_a21_item_tab_mix` (the list
+  and its tabs: the Container page's grid), `a21_item_info/uil_a21_item_info*` (the item card), `library/uil_library_clip`, at 2860 `_simple_item_info` and
+  `_gem`, at 3535 `_item_sheet`; the textures `a21_bg09` and `a21_bg01`, `a21_monster_l_000`, `a21_category_image_003/012/013/027`, `sys_alpha_gradation`;
+  `mix_effect.xml` (the effect's particles). The tutorial pages at 2336 are `uil_a21_balloon_frame_20x03`. The res_ quads of the sampled frames: 2310 418
+  (221 `mainfont01` glyphs, 120 `mainfont00`, 40 `a21_mix`, 13 `a21v2_saveload` (the autosave spinner, up all through the key), 6 `a21_window`), 2800 524 (245,
+  104, `a21_mix#2` 90 and `#1` 35, 10 `#0`, 7 `a21_common#3`, 6 `a21_window`, 4 `sys_alpha_gradation`), 3500 about 780 and 3000 917: the ring graph's
+  pieces and its texts are most of them.
 - The card's coming in before 3830 (3820 is the Add Materials screen going) and 4260 to 4300 (Complete out, the room's HUD back: the help bar of the lists fades, "AM 0", the moon).
 - Sounds in a window (no screens to cue them) and the 4600 `irand(0, 1)` (`0x1400e4b73`: her idle clip pick, `rand15` after it is the chance).
