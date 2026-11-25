@@ -1387,7 +1387,13 @@ impl<'a> Player<'a> {
                     Step::Command { word: CHARA_MOVE_PRE_WAIT, operands: [character, rest @ ..], .. } => {
                         let before = rest.first().map_or(0.0, |&h| h as i32 as f32 / 100.0);
                         if let Some(&end) = move_end.get(character) {
-                            threads[t].0 = threads[t].0.max(end - before);
+                            let mut until = end - before;
+                            // Ryza DX's queues count in whole frames: the wait ends on the first frame the move has `before` or less left
+                            // (the opening's 6250 move of 2.134 s with a 0.3 s pre-wait: 111 frames, 6361).
+                            if self.counted_waits {
+                                until = ((until * 60.0 - 1e-3).ceil() / 60.0).max(until);
+                            }
+                            threads[t].0 = threads[t].0.max(until);
                         }
                     }
                     Step::Command { word: CHARA_ROT_MOVE_WAIT, operands: [character, ..], .. } => {
@@ -1406,10 +1412,19 @@ impl<'a> Player<'a> {
                                 Some((from, to)) if to > from => to - from,
                                 _ => length,
                             };
-                            (!loops).then_some(playing.rate_from + (whole - playing.played).max(0.0) / playing.speed)
+                            (!loops).then_some((playing.rate_from + (whole - playing.played).max(0.0) / playing.speed, playing.range.is_some()))
                         });
-                        if let Some(end) = end {
+                        if let Some((end, ranged)) = end {
+                            // Ryza DX's queues count whole frames: the wait ends on the first frame at or past the clip's end (the
+                            // key's 2.8 s at speed 1.5 and the like: 68 frames for 67.33; a clip of a whole number of frames takes it).
+                            // STAND-IN: a motion's own range (`s38`) takes a frame more (the opening's 10193: 120 frames of range, 121 held); the float
+                            // rounding that makes 12485's whole clip of 61 frames hold 62 is not read either.
+                            let end = if self.counted_waits { ((end * 60.0 - 1e-3).ceil() / 60.0).max(end) + if ranged { 1.0 / 60.0 } else { 0.0 } } else { end };
                             threads[t].0 = threads[t].0.max(end);
+                            // The queue has already waited: a later `s1` is no longer its first (12547: 240 frames after an `s36`).
+                            if self.counted_waits {
+                                queue_waited[t] = true;
+                            }
                         }
                     }
                     _ => {}

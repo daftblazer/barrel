@@ -76,6 +76,7 @@ for g in groups:
         common = offs.most_common(1)[0][0]
         off = [(x, y) for x, y in pairs if abs(x[0] - y[0] - common) > 1]
         print('  timing: game - Barrel = %d frames for %d of %d pairs; %d off it' % (common, len(pairs) - len(off), len(pairs), len(off)))
+        print('  exact: %d of %d pairs at that offset to the frame' % (sum(1 for x, y in pairs if x[0] - y[0] == common), len(pairs)))
         for x, y in off if every else off[:8]:
             print('    game %d, Barrel %d (%+d): %s' % (x[0], y[0], x[0] - y[0] - common, name(x[1])))
 print('total: game %d, Barrel %d, paired %d' % tuple(total))
