@@ -44,6 +44,36 @@ pub const GATHER_TAKE: u32 = 0x985d_64e8;
 pub const NEW_DISCOVERY: u32 = 0xffd0_422c;
 /// Frames after the press each of them is asked for.
 pub const GATHER_SOUND_AT: [i64; 3] = [40, 85, 88];
+/// What she says when a gathering begins (`gather-rasen2`: a chance of `GATHER_VOICE_PERCENT` in 100 on the frame after the
+/// gathering's draws, then `irand(0, 2)` picks the clip). Voice clips have no table: only the first clip's hash is known.
+// STAND-IN: the percentage is between 28 and 31 (a draw of 27 spoke on 2502, one of 31 did not on `gather-rasen` 2042);
+// the other two clips' hashes were not drawn.
+pub const GATHER_VOICE_PERCENT: i32 = 30;
+pub const GATHER_VOICES: [Option<u32>; 3] = [Some(0xdf33_fd76), None, None];
+/// The staff's swing (X on a point or not): her clip (`irand(0, 1)` picks it), `SE_PTC_001_KLAUDIA_001`, `SE_FLD_003_WAND01`,
+/// frames after the press (`gather-rasen2`: X at 3160, the clip on 3166, the sounds on 3177 and 3179).
+pub const SWING_VOICES: [u32; 2] = [0xffc8_b3d0, 0x59a4_1e11];
+pub const SWING_SOUNDS: [(i64, u32); 2] = [(17, 0x03b1_031e), (19, 0xb1ba_fbe5)];
+pub const SWING_VOICE_AT: i64 = 6;
+/// A staff gathering's pick-up: `SE_FLD_044_BARREL` (the point's own sound: a box), then the same two as by hand, 26, 32
+/// and 35 frames after the press (3186, 3192 and 3195).
+pub const STAFF_TAKE: [(i64, u32); 3] = [(26, 0x9dbf_c51d), (32, GATHER_TAKE), (35, NEW_DISCOVERY)];
+
+/// The sounds of a gathering whose button went down at `press`: by hand (A) or with the staff (X), the clip she said (if the
+/// pick has a known hash) and whether an item was new.
+pub fn gather_cues(press: i64, staff: bool, voice: Option<u32>, new: bool) -> Vec<Cue> {
+    let mut out = Vec::new();
+    if staff {
+        out.extend(voice.map(|v| Cue::voice(press + SWING_VOICE_AT, v)));
+        out.extend(SWING_SOUNDS.iter().map(|&(at, hash)| Cue::effect(press + at, hash)));
+        out.extend(STAFF_TAKE.iter().filter(|&&(_, hash)| hash != NEW_DISCOVERY || new).map(|&(at, hash)| Cue::effect(press + at, hash)));
+    } else {
+        out.extend(voice.map(|v| Cue::voice(press + 2, v)));
+        let takes = [(GATHER_REACH, GATHER_SOUND_AT[0]), (GATHER_TAKE, GATHER_SOUND_AT[1]), (NEW_DISCOVERY, GATHER_SOUND_AT[2])];
+        out.extend(takes.iter().filter(|&&(hash, _)| hash != NEW_DISCOVERY || new).map(|&(hash, at)| Cue::effect(press + at, hash)));
+    }
+    out
+}
 
 /// Frames from the load's stop to the field's music (the answer key: the stop at game frame
 /// 1725, the music at 1751).

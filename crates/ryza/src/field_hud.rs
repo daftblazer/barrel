@@ -23,7 +23,7 @@ mod arrival;
 mod gather;
 use arrival::Arrival;
 pub use arrival::SOUND_AT as MARQUEE_SOUND_AT;
-pub use gather::{Found, Gathering};
+pub use gather::{Found, Gathering, HAND_NOTICE_AT, STAFF_LEAVE_AT, STAFF_NOTICE_AT};
 use gather::Popups;
 
 /// The textures of the HUD's layer, in this order.
@@ -406,7 +406,7 @@ impl Hud {
                     || (MAP_NAMES..MAP_NAMES + NAMES).contains(n)
                     || (MENU_WORDS..MENU_WORDS + MENU_WORDS_SPAN).contains(n)
                     || HELP_ENTRIES.iter().any(|(_, w)| w == n)
-                    || [arrival::ADDED_LINE, arrival::STORY_TITLE, gather::PROMPT_WORD].contains(n)
+                    || [arrival::ADDED_LINE, arrival::STORY_TITLE, gather::PROMPT_WORD, gather::SWING_WORD].contains(n)
                     || (crate::item_info::NAME_BASE..crate::item_info::NAME_BASE + 1000).contains(n)
             })
             .collect();

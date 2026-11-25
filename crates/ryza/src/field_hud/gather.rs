@@ -18,6 +18,10 @@ const ROOT_SHIFT: f32 = -2.0;
 // STAND-IN: the capture shows "Check" on a hand-gathering point; which string the game takes for
 // the point's type is not read.
 pub(super) const PROMPT_WORD: u32 = 4_718_593;
+/// The staff point's prompt: "Swing" (the next of the list of gimmick actions) with the X button's glyph (`\u{4dc}`, the one
+/// the Swing option's help line carries: `STR_UI` 4194341).
+pub(super) const SWING_WORD: u32 = 4_718_596;
+const X_BUTTON: &str = "\u{4dc}";
 /// The A button's glyph in `mainfont00`, which `<KEY_ASSIGN_FIELD_ACCESS>` (`STR_UI_0281`) becomes.
 // STAND-IN: the glyph is the capture's (the game picks it for the pad's assignment).
 const A_BUTTON: &str = "\u{4da}";
@@ -27,8 +31,6 @@ const A_BUTTON: &str = "\u{4da}";
 // frames after it and the item notice's a frame later (the sounds of 2125 and 2128), the
 // notice's fade-out 141 frames after its start and the log's 211 after its. The game's own
 // timers (the gathering motion's length, the notices' holds) are not read.
-const DISCOVERY_AT: f32 = 87.0;
-const NOTICE_AT: f32 = 88.0;
 const NOTICE_HOLD: f32 = 141.0;
 const DISCOVERY_HOLD: f32 = 211.0;
 // STAND-INs read off `gather-rasen2` (A at 2500: a comb, two items): the second item's notice starts 22 frames after the
@@ -42,6 +44,13 @@ const NOTICE_UP_FRAMES: f32 = 21.0;
 /// The frames the prompt takes to slide in (`anm_common_slide_in_bottom`'s 30).
 const SLIDE_FRAMES: f32 = 30.0;
 
+/// The frames after the press the first notice starts, by hand and with the staff (the discovery log's a frame before).
+// STAND-IN: read off the captures (`gather-rasen`: A at 2040, the notice on 2128; `gather-rasen2`: X at 3160, the notice on 3195
+// by its sound's frame and the log's slide there, whose count came to 3194). The game's own timers are not read.
+pub const HAND_NOTICE_AT: f32 = 88.0;
+pub const STAFF_NOTICE_AT: f32 = 35.0;
+pub const STAFF_LEAVE_AT: f32 = 24.0;
+
 /// What the gathering shows at a frame.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Gathering {
@@ -51,6 +60,12 @@ pub struct Gathering {
     pub pressed: Option<f32>,
     /// What came of it: the items in the order gathered.
     pub found: Vec<Found>,
+    /// The frames after the press the first notice starts (`HAND_NOTICE_AT`, `STAFF_NOTICE_AT`), and the prompt begins to
+    /// slide out (0 by hand; the staff's swing takes 24 frames: the gathering's draws, `STAFF_LEAVE_AT`).
+    pub notice_at: f32,
+    pub leave_at: f32,
+    /// Whether the point in reach is the staff's (the prompt reads "Swing" with the X button).
+    pub staff: bool,
 }
 
 /// An item gathered.
@@ -170,22 +185,23 @@ impl Hud {
         let Some(p) = &self.popups else { return };
         // The prompt: slides up from below while a point is in reach, back down from A on.
         if let Some(near) = g.near {
-            let along = g.pressed.map_or(near, |since| SLIDE_FRAMES - since);
+            let along = g.pressed.map_or(near, |since| SLIDE_FRAMES - (since - g.leave_at).max(0.0));
             if along > 0.0 {
                 let t = along / 60.0;
                 let (c, shift) = (p.slide_color.at(t), p.slide_pos.at(t)[1]);
                 let color = [1.0, 1.0, 1.0, c[3] / 255.0];
                 pen.picture(FIELD, p.prompt.0, [p.prompt.1[0], p.prompt.1[1] + ROOT_SHIFT + shift], 1.0, color);
-                pen.text(&p.prompt_button, [0.0, ROOT_SHIFT + shift], A_BUTTON, color);
+                let (button, word) = if g.staff { (X_BUTTON, SWING_WORD) } else { (A_BUTTON, PROMPT_WORD) };
+                pen.text(&p.prompt_button, [0.0, ROOT_SHIFT + shift], button, color);
                 let ink = p.prompt_text.color.unwrap_or([0.0, 0.0, 0.0, 1.0]);
-                pen.text(&p.prompt_text, [0.0, ROOT_SHIFT + shift], self.word(PROMPT_WORD), [ink[0], ink[1], ink[2], color[3]]);
+                pen.text(&p.prompt_text, [0.0, ROOT_SHIFT + shift], self.word(word), [ink[0], ink[1], ink[2], color[3]]);
             }
         }
         let Some(since) = g.pressed.filter(|_| !g.found.is_empty()) else { return };
         let first = pen.out.len();
         // The discovery log (the first item the library did not know).
         if let Some((k, f)) = g.found.iter().enumerate().find(|(_, f)| f.new) {
-            let age = since - DISCOVERY_AT - k as f32 * ITEM_GAP;
+            let age = since - (g.notice_at - 1.0) - k as f32 * ITEM_GAP;
             if let Some((tint, shift)) = log_state(&p.discovery_in_color, &p.discovery_in_pos, &p.discovery_out, age, DISCOVERY_HOLD) {
                 let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT];
                 pen.picture(FIELD, p.back.0, at(p.back.1), 1.0, tint);
@@ -195,7 +211,7 @@ impl Hud {
             }
         }
         // The item notices, each pushed up a slot by the next one's coming; they leave together.
-        let start = |k: usize| NOTICE_AT + k as f32 * ITEM_GAP;
+        let start = |k: usize| g.notice_at + k as f32 * ITEM_GAP;
         let last = start(g.found.len() - 1);
         for (k, f) in g.found.iter().enumerate() {
             let hold = last - start(k) + NOTICE_HOLD;

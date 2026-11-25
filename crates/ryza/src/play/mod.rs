@@ -112,6 +112,10 @@ struct Args {
     hud_stick: Vec<(f32, f32)>,
     /// `--gather NEAR:PRESS`: the capture's frames a gathering point came in reach (its prompt began to slide in) and A was pressed at it; the HUD shows the gathering's popups by them (`BARREL_RANDOM_STATE` is the generator they draw from).
     gather: Option<(f32, f32)>,
+    /// `--swing NEAR:PRESS`: the same for the staff's swing (X) at a point of its own kind.
+    swing: Option<(f32, f32)>,
+    /// `--spent ID,...`: the points already gathered from (they give nothing).
+    spent: Vec<u32>,
     /// `--learned ITEM,...`: items the library knows in full from before the capture's start (an earlier gathering's).
     learned: Vec<i32>,
     /// The camera's yaw in the game's terms, when a run is given it (`--camera-yaw`), instead of behind her.
@@ -197,7 +201,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), gather: None, learned: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -309,6 +313,12 @@ fn args(args: Vec<String>) -> Result<Args> {
                 let (near, press) = v.split_once(':').ok_or("--gather NEAR:PRESS")?;
                 a.gather = Some((near.parse()?, press.parse()?));
             }
+            "--swing" => {
+                let v = value()?;
+                let (near, press) = v.split_once(':').ok_or("--swing NEAR:PRESS")?;
+                a.swing = Some((near.parse()?, press.parse()?));
+            }
+            "--spent" => a.spent = value()?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
             "--learned" => a.learned = value()?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
             "--hud-stick" => {
                 for span in value()?.split(',') {
@@ -2297,6 +2307,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut pad_any = false;
     // The confirm button went down this frame (a window's keyboard or pad).
     let mut confirm_pressed = false;
+    // X (the pad's west button) went down: the staff's swing.
+    let mut swing_pressed = false;
     let mut title_input = a.title_input.clone();
     title_input.saves |= !save_slots.is_empty();
     // The field's gathering points, and with `--gather` the gathering the HUD replays.
@@ -2308,8 +2320,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         barrel_ryza::gather::know(&mut know_items, item);
     }
     let mut gather_rng = gathering::generator();
-    let gather_plan = match (a.gather, &gather_points, &rig) {
-        (Some(frames), Some(points), Some(r)) => points.plan(r.player.at.into(), r.player.turn.to_degrees(), frames, &mut gather_rng, &mut know_items, &played_events),
+    let gather_plan = match (a.gather.map(|f| (f, gathering::Tool::Hand)).or(a.swing.map(|f| (f, gathering::Tool::Staff))), &gather_points, &rig) {
+        (Some((frames, tool)), Some(points), Some(r)) => points.plan(r.player.at.into(), r.player.turn.to_degrees(), frames, tool, &a.spent, &mut gather_rng, &mut know_items, &played_events),
         _ => None,
     };
     if let Some(plan) = &gather_plan {
@@ -2440,12 +2452,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     }
     // A replayed gathering's sounds: the reach and the pick-up, and the discovery's chime for an item the library did not know.
     if let (Some(s), Some(plan)) = (sound.as_mut(), gather_plan.as_ref()) {
-        use barrel_ryza::sound::{Cue, GATHER_REACH, GATHER_SOUND_AT, GATHER_TAKE, NEW_DISCOVERY};
-        let press = plan.press as i64;
-        for (hash, after) in [(GATHER_REACH, GATHER_SOUND_AT[0]), (GATHER_TAKE, GATHER_SOUND_AT[1]), (NEW_DISCOVERY, GATHER_SOUND_AT[2])] {
-            if hash != NEW_DISCOVERY || plan.found.iter().any(|f| f.new) {
-                s.schedule(Cue::effect(press + after, hash));
-            }
+        for cue in plan.cues(plan.press as i64) {
+            s.schedule(cue);
         }
     }
     // The field's music is asked for once the load's stop is past (the frames count on from the title's).
@@ -2467,6 +2475,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The gathering in a window: the prompt where a point is in reach, A gathers (the offscreen replay is `--gather`).
     let mut live_gather = gathering::Live::default();
     let mut gather_hud_items: Option<Vec<usize>> = None;
+    // Whether the gathering holds the help bar's rest count (as of the last frame).
+    let mut gather_busy = false;
     let walk_start = rig.as_ref().map_or(Vec3::ZERO, |r| r.player.at);
     loop {
         // Last frame's joints, then the field's moving objects at this frame's moment (the
@@ -2513,6 +2523,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             (title_keys, pad_pressed) = p.take_input();
             pad_any = !pad_pressed.is_empty();
             confirm_pressed = title_keys.contains(&K::Enter) || pad_pressed.contains(&play.buttons().0);
+            // STAND-IN: the keyboard's key for the swing is X; the game's own default is not read.
+            swing_pressed = title_keys.contains(&K::KeyX) || pad_pressed.contains(&barrel_render::pad::Pad::West);
             if field_menu.is_some() {
                 use barrel_ryza::field_menu::Key as MenuKey;
                 use barrel_render::pad::Pad;
@@ -2600,7 +2612,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         // The field stands still under the menu.
         if let (Some((dt, mut sticks, zoom)), false) = (drive, menu_up) {
             let length = (sticks.left[0] * sticks.left[0] + sticks.left[1] * sticks.left[1]).sqrt();
-            help_bar.step(length > barrel_ryza::walk::MOVE_DEAD_ZONE, dt * 60.0);
+            help_bar.step(length > barrel_ryza::walk::MOVE_DEAD_ZONE || gather_busy, dt * 60.0);
             let full = if pump.as_ref().is_some_and(|p| p.held(winit::keyboard::KeyCode::ShiftLeft) || p.held(winit::keyboard::KeyCode::ShiftRight)) { SHIFT_LEAN } else { 1.0 };
             if length > full {
                 sticks.left = sticks.left.map(|v| v / length * full);
@@ -3563,19 +3575,17 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         } else if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
             let tick = menu_tick - paused;
             if let (Some(points), true, None) = (&gather_points, pump.is_some(), &gather_plan) {
-                if let Some(image) = live_gather.step(points, r.player.at.into(), r.player.turn.to_degrees(), tick, confirm_pressed, &mut know_items, &played_events) {
-                    gather_hud_items = Some(image);
+                if let Some(image) = live_gather.step(points, r.player.at.into(), r.player.turn.to_degrees(), tick, (confirm_pressed, swing_pressed), &mut know_items, &played_events) {
+                    gather_hud_items = Some(image).filter(|i| !i.is_empty());
                     if let (Some(s), Some(plan)) = (sound.as_mut(), live_gather.plan()) {
-                        use barrel_ryza::sound::{Cue, GATHER_REACH, GATHER_SOUND_AT, GATHER_TAKE, NEW_DISCOVERY};
                         let now = sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64;
-                        for (hash, after) in [(GATHER_REACH, GATHER_SOUND_AT[0]), (GATHER_TAKE, GATHER_SOUND_AT[1]), (NEW_DISCOVERY, GATHER_SOUND_AT[2])] {
-                            if hash != NEW_DISCOVERY || plan.found.iter().any(|f| f.new) {
-                                s.schedule(Cue::effect(now + after, hash));
-                            }
+                        for cue in plan.cues(now) {
+                            s.schedule(cue);
                         }
                     }
                 }
             }
+            gather_busy = live_gather.busy(tick);
             let state = barrel_ryza::field_hud::State {
                 at: r.player.at.into(),
                 turn: r.player.turn.to_degrees(),
@@ -3589,7 +3599,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 place: barrel_ryza::field_hud::place_names(&a.field).filter(|_| !a.no_banner),
                 arrival: a.no_banner,
                 gather: match &gather_plan {
-                    Some(g) => barrel_ryza::field_hud::Gathering { near: (tick >= g.near).then(|| tick - g.near), pressed: (tick >= g.press).then(|| tick - g.press), found: g.found.clone() },
+                    Some(g) => barrel_ryza::field_hud::Gathering { near: (tick >= g.near).then(|| tick - g.near), pressed: (tick >= g.press).then(|| tick - g.press), found: g.found.clone(), notice_at: g.notice_at(), leave_at: g.leave_at(), staff: g.tool == gathering::Tool::Staff },
                     None => live_gather.show(tick),
                 },
                 help: if let (Some(back), true) = (resumed, pump.is_none()) {
