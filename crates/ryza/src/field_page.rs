@@ -42,6 +42,8 @@ const HELP_PLATE: usize = 3;
 const EQUIPMENT_TITLE: u32 = 6_684_752;
 /// The Status page's title plate string (the menu's own word "Status").
 const STATUS_TITLE: u32 = 4_194_516;
+/// The synthesis's finished screen's title plate ("Complete", `str_menu_define`).
+const COMPLETE_TITLE: u32 = 4_194_480;
 /// The party icons' places in the layout.
 const ICON_PLACES: usize = 9;
 // STAND-IN: the shoulder buttons' glyphs (private-use characters of `MainFont00`) are the capture's; the game picks them by the pad's assignment
@@ -455,6 +457,7 @@ impl Page {
                     || (262_148..262_188).contains(n)
                     || *n == EQUIPMENT_TITLE
                     || *n == STATUS_TITLE
+                    || *n == COMPLETE_TITLE
                     || (ACTION_NAME..ACTION_NAME + 1000).contains(n)
                     || (ACTION_COMMENT..ACTION_COMMENT + 1000).contains(n)
                     || (NAME_BASE..NAME_BASE + 1000).contains(n)
@@ -1115,6 +1118,117 @@ impl Page {
             };
             w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
+        (w.out, w.additive, w.clips)
+    }
+}
+
+/// What the synthesis's "Complete" screen shows besides its title (`uil_a21_mix_item_sheet.xml`'s `chara_detail`): the alchemy level
+/// after the synthesis, the experience to the next level and the experience gained.
+pub struct CompleteLook {
+    pub level: u32,
+    pub next: u32,
+    pub gained: u32,
+    /// Frames since the "Level UP!" animation began (`anm_level_up`), 0 before it.
+    pub age: f32,
+}
+
+/// A keyed curve of `uia_a21_mix.xml`: (frame, value) pairs, linear between them; before the first key the first value, after the
+/// last the last (two keys on one frame make a step).
+fn keyed(keys: &[(f32, f32)], t: f32) -> f32 {
+    let Some(&(_, first)) = keys.first() else { return 0.0 };
+    if t < keys[0].0 {
+        return first;
+    }
+    for w in keys.windows(2) {
+        let ((t0, v0), (t1, v1)) = (w[0], w[1]);
+        if t >= t0 && t < t1 {
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0);
+        }
+    }
+    keys[keys.len() - 1].1
+}
+
+/// A keyed curve with `interpolate="spline"`: the Catmull-Rom spline through the keys (uniform in the parameter of each segment;
+/// the end keys are their own neighbours), as the plate's rise matches the capture's seven frames to the hundredth of a pixel.
+fn spline(keys: &[(f32, f32)], t: f32) -> f32 {
+    let last = keys.len() - 1;
+    if t <= keys[0].0 {
+        return keys[0].1;
+    }
+    for i in 0..last {
+        if t >= keys[i].0 && t <= keys[i + 1].0 {
+            let (p0, p1, p2, p3) = (keys[i.saturating_sub(1)].1, keys[i].1, keys[i + 1].1, keys[(i + 2).min(last)].1);
+            let u = (t - keys[i].0) / (keys[i + 1].0 - keys[i].0);
+            return 0.5 * (2.0 * p1 + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u * u + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u * u * u);
+        }
+    }
+    keys[last].1
+}
+
+// The "Level UP!" animations (`mix_anm_level_up_plate`, `_plate_on`, `_effect_07` and `_effect_09` of `uia_a21_mix.xml`, in frames of 60 a second).
+const PLATE_RISE: [(f32, f32); 6] = [(0.0, 150.0), (20.0, 150.0), (45.0, -50.0), (65.0, 25.0), (80.0, -13.0), (95.0, 0.0)];
+const PLATE_ALPHA: [(f32, f32); 5] = [(0.0, 0.0), (20.0, 0.0), (50.0, 1.0), (105.0, 1.0), (105.0, 0.0)];
+const ON_SCALE: [(f32, f32); 3] = [(0.0, 0.9), (50.0, 0.9), (85.0, 1.5)];
+const ON_ALPHA: [(f32, f32); 3] = [(0.0, 0.0), (40.0, 1.0), (85.0, 0.0)];
+const E07_SCALE: [(f32, f32); 3] = [(0.0, 0.1), (30.0, 0.1), (60.0, 4.0)];
+const E07_ALPHA: [(f32, f32); 4] = [(0.0, 0.0), (30.0, 0.0), (40.0, 1.0), (60.0, 0.0)];
+const E09_SCALE_X: [(f32, f32); 5] = [(0.0, 6.0), (25.0, 6.0), (55.0, 6.0), (70.0, 26.4), (80.0, 40.0)];
+const E09_SCALE_Y: [(f32, f32); 5] = [(0.0, 6.0), (25.0, 6.0), (55.0, 2.0), (70.0, 0.02), (80.0, 0.02)];
+const E09_ALPHA: [(f32, f32); 5] = [(0.0, 0.0), (25.0, 0.0), (30.0, 1.0), (55.0, 1.0), (80.0, 0.0)];
+
+impl Page {
+    /// The "Complete" screen's parts, on a `screen` of pixels, once the level panel has slid in and the "Level UP!" plate is gone: the
+    /// title plate and the alchemy level panel. STAND-IN: the numbers are the capture's; the experience rule is not read.
+    pub fn complete_quads(&self, look: &CompleteLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        // The effects under the card and over it, then the level panel, then the plate (the layout's order).
+        let age = look.age;
+        let about = |e: &Element, size: [f32; 2], scale: [f32; 2]| -> Xf {
+            // (a node scaled about its pivot: `pivot_pos` in the node's own pixels)
+            let pivot = pair(e, "pivot_pos", [0.0; 2]);
+            let at = pair(e, "pos", [0.0; 2]);
+            let _ = size;
+            root.node([at[0] + pivot[0] - scale[0] * pivot[0], at[1] + pivot[1] - scale[1] * pivot[1]], 0.0, scale)
+        };
+        if let Some(e) = find(&self.mix_sheet, "a21_mix07") {
+            let a = keyed(&E07_ALPHA, age);
+            let s = keyed(&E07_SCALE, age);
+            w.image(e, about(e, [0.0; 2], [s, s]), &Over { alpha: Some(a), ..Default::default() });
+        }
+        if let Some(e) = find(&self.mix_sheet, "a21_mix09") {
+            let a = keyed(&E09_ALPHA, age);
+            let scale = [keyed(&E09_SCALE_X, age), keyed(&E09_SCALE_Y, age)];
+            w.image(e, about(e, [0.0; 2], scale), &Over { alpha: Some(a), ..Default::default() });
+        }
+        if let Some(panel) = find(&self.mix_sheet, "chara_detail") {
+            let numbers = [look.level.to_string(), look.next.to_string(), look.gained.to_string()];
+            let over = |path: &[&str]| -> Over {
+                match path {
+                    ["chara_detail"] => Over { show: true, ..Default::default() },
+                    ["chara_detail", "Alc_lv", "alclv"] => Over { text: Some(numbers[0].clone()), ..Default::default() },
+                    ["chara_detail", "Next", "next"] => Over { text: Some(numbers[1].clone()), ..Default::default() },
+                    ["chara_detail", "GetExp", "exp"] => Over { text: Some(numbers[2].clone()), ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        }
+        // The "Level UP!" plate: its picture and its words rise together, a glow of the words grows over them.
+        if let (Some(plate), Some(text), Some(on)) = (find(&self.mix_sheet, "level_up_plate"), find(&self.mix_sheet, "level_up_text"), find(&self.mix_sheet, "level_up_text_on")) {
+            let a = keyed(&PLATE_ALPHA, age);
+            let at = pair(plate, "pos", [0.0; 2]);
+            let xf = root.node([at[0], at[1] + spline(&PLATE_RISE, age)], 0.0, [1.0; 2]);
+            w.image(plate, xf, &Over { alpha: Some(a), ..Default::default() });
+            let words = xf.node(pair(text, "pos", [0.0; 2]), 0.0, [1.0; 2]);
+            w.image(text, words, &Over { alpha: Some(a), ..Default::default() });
+            let s = keyed(&ON_SCALE, age);
+            let (pivot, at) = (pair(on, "pivot_pos", [0.0; 2]), pair(on, "pos", [0.0; 2]));
+            let glow = words.node([at[0] + pivot[0] - s * pivot[0], at[1] + pivot[1] - s * pivot[1]], 0.0, [s, s]);
+            w.image(on, glow, &Over { alpha: Some(a * keyed(&ON_ALPHA, age)), ..Default::default() });
+        }
+        self.caption_plate(&mut w, &root, COMPLETE_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)
     }
 }
