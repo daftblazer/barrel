@@ -67,6 +67,37 @@ fn record<'a>(mut d: &'a [u8], name: &str) -> Option<&'a [u8]> {
     None
 }
 
+/// Every record of a decoded state, depth first: its depth, name and contents' size. A record's
+/// contents are read as records too when they parse as records to their end.
+pub fn records(state: &[u8]) -> Vec<(usize, String, usize)> {
+    fn list(d: &[u8]) -> Option<Vec<(&str, &[u8])>> {
+        let mut out = Vec::new();
+        let mut d = d;
+        while !d.is_empty() {
+            let size = u32::from_le_bytes(d.get(..4)?.try_into().ok()?) as usize;
+            let whole = d.get(..size).filter(|_| size >= 5)?;
+            let end = whole[4..].iter().position(|&b| b == 0)? + 4;
+            let name = std::str::from_utf8(&whole[4..end]).ok().filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_graphic()))?;
+            out.push((name, &whole[end + 1..]));
+            d = &d[size..];
+        }
+        Some(out)
+    }
+    fn walk(d: &[u8], depth: usize, out: &mut Vec<(usize, String, usize)>) {
+        for (name, body) in list(d).unwrap_or_default() {
+            out.push((depth, name.to_string(), body.len()));
+            if body.len() >= 5 && list(body).is_some() {
+                walk(body, depth + 1, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let body = state.get(0x20..).unwrap_or_default();
+    let len = body.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    walk(&body[..len], 0, &mut out);
+    out
+}
+
 /// The contents of the record at `path` in a decoded state (`["event", "execFlag"]`).
 pub fn find<'a>(state: &'a [u8], path: &[&str]) -> Option<&'a [u8]> {
     path.iter().try_fold(state.get(0x20..)?, |d, name| record(d, name))

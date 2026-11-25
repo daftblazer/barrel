@@ -47,7 +47,10 @@ usage:
   barrel-tool opl2-scan DIR|PAK...  read every field placement list in the containers (a folder's, or
                                in PAK archives: Sophie 2, the Ryza games)
   barrel-tool ryza-save-events INSTALL SAVE OUT EVENT...  a copy of a Ryza DX save (data.dat) with the story events
-      named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves)
+      named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves);
+      an EVENT can be `record/list[i]=v` instead: entry i of a list record set (knowledge/recipe[2]=10), or
+      `record/list@OFFSET=HEX`: bytes written at OFFSET in a list record (item/m_unitContainer@396=...: a unit)
+  barrel-tool ryza-save-tree INSTALL SAVE  a Ryza DX save's records (name and size, nested) and the story events it has played
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
   barrel-tool ryza-lockstep INSTALL STATE.bin SCRIPT HOOKS.LOG FROM TO [--save FILE]  a run's draws (gatherings, her clips, free play) from the generator's dump against the game's hook log
       SCRIPT lines: `FRAME gather PLACE`, `FRAME clip` (a hand's voice chance), `FRAME swing` (the staff's clip), `FRAME free TIMERS SPAWN` (`tools/free_play.py`),
@@ -288,6 +291,7 @@ fn main() -> ExitCode {
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
         ["ryza-lockstep", install, state, script, hooks, from, to, rest @ ..] => ryza_lockstep(Path::new(install), Path::new(state), Path::new(script), Path::new(hooks), from, to, rest),
+        ["ryza-save-tree", install, file] => ryza_save_tree(Path::new(install), Path::new(file)),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
         ["bonuses", file] => bonuses(Path::new(file), None),
         ["bonuses", file, exe] => bonuses(Path::new(file), Some(Path::new(exe))),
@@ -1932,6 +1936,22 @@ fn ryza_file(install: &Path, name: &str, out: &Path) -> Result<()> {
     Ok(())
 }
 
+fn ryza_save_tree(install: &Path, file: &Path) -> Result<()> {
+    let state = barrel_ryza::save::decode(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+    for (depth, name, size) in barrel_ryza::save::records(&state) {
+        println!("{:width$}{name} {size}", "", width = depth * 2);
+    }
+    let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    let (names, first) = pe.enum_names("EVENT_AA01_010").ok_or("the executable does not name the story's events")?;
+    let done = barrel_ryza::save::events_done(&state)?;
+    println!("{} events played:", done.len());
+    for i in done {
+        println!("  {}", names.get(first + i).map_or("?", |n| &**n));
+    }
+    Ok(())
+}
+
 fn ryza_save_events(install: &Path, file: &Path, out: &Path, events: &[&str]) -> Result<()> {
     if out.exists() {
         return Err(format!("{} exists: this writes new copies only", out.display()).into());
@@ -1942,7 +1962,39 @@ fn ryza_save_events(install: &Path, file: &Path, out: &Path, events: &[&str]) ->
     let data = read(file)?;
     let mut state = barrel_ryza::save::decode(&data).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut done = Vec::new();
+    let mut sets = 0;
     for e in events {
+        // `record/list@offset=hex`: bytes written into a list record's body (after its 4-byte count).
+        if let Some((at, hex)) = e.split_once('=').filter(|(at, _)| at.contains('@')) {
+            let (path, offset) = at.split_once('@').unwrap();
+            let offset: usize = offset.parse().map_err(|_| format!("{e}: offset"))?;
+            let bytes = (0..hex.len() / 2).map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)).collect::<std::result::Result<Vec<u8>, _>>().map_err(|_| format!("{e}: hex"))?;
+            let names: Vec<&str> = path.split('/').collect();
+            let d = barrel_ryza::save::find(&state, &names).ok_or_else(|| format!("{e}: no record {path}"))?;
+            let base = d.as_ptr() as usize - state.as_ptr() as usize + 4;
+            let len = u32::from_be_bytes(d[..4].try_into().unwrap()) as usize;
+            if offset + bytes.len() > len {
+                return Err(format!("{e}: past {path}'s {len} bytes").into());
+            }
+            state[base + offset..base + offset + bytes.len()].copy_from_slice(&bytes);
+            sets += 1;
+            continue;
+        }
+        // `record/list[i]=v`: entry i of a list record (a big-endian count, then big-endian i32s) set to v.
+        if let Some((at, v)) = e.split_once('=') {
+            let (path, i) = at.trim_end_matches(']').split_once('[').ok_or_else(|| format!("{e}: not record/list[i]=v"))?;
+            let (i, v): (usize, i32) = (i.parse().map_err(|_| format!("{e}: index"))?, v.parse().map_err(|_| format!("{e}: value"))?);
+            let names: Vec<&str> = path.split('/').collect();
+            let d = barrel_ryza::save::find(&state, &names).ok_or_else(|| format!("{e}: no record {path}"))?;
+            let base = d.as_ptr() as usize - state.as_ptr() as usize;
+            let count = u32::from_be_bytes(d[..4].try_into().unwrap()) as usize / 4;
+            if i >= count {
+                return Err(format!("{e}: {path} has {count} entries").into());
+            }
+            state[base + 4 + i * 4..base + 8 + i * 4].copy_from_slice(&v.to_be_bytes());
+            sets += 1;
+            continue;
+        }
         let i = names.iter().position(|n| n == e).ok_or_else(|| format!("no event {e}"))?;
         done.push(i.checked_sub(first).ok_or_else(|| format!("{e} is not a story event"))?);
     }
@@ -1954,7 +2006,7 @@ fn ryza_save_events(install: &Path, file: &Path, out: &Path, events: &[&str]) ->
         return Err("the coded copy does not decode back to the state".into());
     }
     std::fs::write(out, &coded)?;
-    println!("{} events marked, {} bytes", done.len(), coded.len());
+    println!("{} events marked, {sets} entries set, {} bytes", done.len(), coded.len());
     Ok(())
 }
 

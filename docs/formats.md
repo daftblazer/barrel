@@ -850,6 +850,14 @@ byte count (9,999 units of 66 bytes, the "Empty 9993" of the page is the places 
 `explore_equip/explore_equip_item` (15 places, the first two the Wind Shoes and a bag in the capture's save). `save::container` and
 `save::tools` read them. Checked against the capture's Quartz Necklace (effects 1175, 1276, 1279) and Wind Shoes (688 "Movement Up S").
 
+**Recipes** (`knowledge/recipe`, loaded to `0x141aab7e4` by `0x140597500`: a big-endian byte count, then a big-endian i32 a
+recipe, 442, in `itemrecipedata.xml`'s order: 2 Craft, 92 Red Supplement): a recipe is known, and listed on the Select Recipe
+page, at 10 and up (1 and 2 do not list it; `0x1405971f0` counts the entries at 10 or more). `mix_recipe/mix_recipe_status`
+(442 i32s, `0x141aae850`, loaded by `0x14059a210`) are bit sets: bit `loop * 4 + level` (or `16 + loop`) set by `0x14059a640`,
+the loops' unlocked effects, not whether the recipe is known. Checked with ryza-recomp's synthesis probes (2026-11-25).
+`barrel-tool ryza-save-tree` prints a save's records and played events; `ryza-save-events` makes answer-key copies with
+events marked, list entries set (`knowledge/recipe[2]=10`) and unit bytes written (`item/m_unitContainer@396=HEX`).
+
 ## Voices (`Sound/Voice/Series*.fp`)
 
 `Data/x64/Sound/Voice` (and `Voice_EN`) hold 18 banks, `Series0000` to `Series17000`, each
