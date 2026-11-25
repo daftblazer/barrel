@@ -108,6 +108,8 @@ struct Args {
     hud_at: f32,
     /// The capture frame the field's arrival falls on (`--hud-arrival`, 0 in a run of its own): the area name's banner and the help bar run from it.
     hud_arrival: f32,
+    /// `--mix-sheet ITEM:COUNT`: the synthesis's finished card for an item and the number made (docs/ryza/open.md, "Synthesis (P6)").
+    mix_sheet: Option<(u16, u32)>,
     /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
     hud_stick: Vec<(f32, f32)>,
     /// `--hud-slips F,..`: the capture frames at which the game's animation clock lost a frame (its looping glows run 1 frame behind from each).
@@ -211,7 +213,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -318,6 +320,11 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--save-hour" => a.save_hour = Some(value()?.parse()?),
             "--hud-at" => a.hud_at = value()?.parse()?,
             "--hud-arrival" => a.hud_arrival = value()?.parse()?,
+            "--mix-sheet" => {
+                let v = value()?;
+                let (item, count) = v.split_once(':').ok_or("--mix-sheet ITEM:COUNT")?;
+                a.mix_sheet = Some((item.parse()?, count.parse()?));
+            }
             "--gather" => {
                 let v = value()?;
                 let (near, press) = v.split_once(':').ok_or("--gather NEAR:PRESS")?;
@@ -728,6 +735,32 @@ fn page_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Ren
     let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex)?;
     Ok((layer, page))
+}
+
+/// The synthesis's finished card (`--mix-sheet`): the background and the still picture, the card of `item` with the `count` made, and
+/// the help bar, as three layers made in the order they draw.
+fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, item: u16, count: u32, screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+    use barrel_ryza::field_page as fp;
+    let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let image = tables.image(item);
+    // The background (`a21_bg01`) and the still picture (`ipu/still_ns01`): the capture's quads (the layout's `etc_a21_bg` is a 1920 by
+    // 1080 picture drawn twice the screen's size over twice its uv, as the capture has it).
+    let files = [install.read("\\data\\x64\\res_cmn\\ui\\a21_bg01.g1t")?, install.read("\\data\\x64\\res_cmn\\ipu\\still_ns01.g1t")?];
+    let parsed = files.iter().map(|b| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("mix background: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
+    let tex: Vec<_> = parsed.iter().filter_map(|g| g.textures.first()).collect();
+    let mut back = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex)?;
+    let (w, h) = (screen.0 as f32, screen.1 as f32);
+    let quad = |rect: [f32; 4], uv: [f32; 4], texture: usize| text::Quad { turn: false, spin: None, rect, uv, color: [1.0; 4], texture };
+    let fill = [quad([0.0, 0.0, 2.0 * w, 2.0 * h], [0.0, 0.0, 2.0, 2.0], 0), quad([0.0, 0.0, 2.0 * w, 2.0 * h], [0.0, 0.0, 2.0, 2.0], 0), quad([0.0, 0.0, w, h], [0.0, 0.0, 1.0, 1.0], 1)];
+    back.set(gpu, &fill)?;
+    // The card.
+    let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &[fp::ShelfItem { image, category: None }])?;
+    let (quads, additive, clips) = page.sheet_quads(&fp::SheetLook { item, image, count }, screen);
+    sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
+    // The help bar ("A Next"), from the menu's own.
+    let (mut bar, view) = menu_layer(install, gpu, renderer)?;
+    bar.set(gpu, &view.next_help(screen))?;
+    Ok(vec![back, sheet, bar])
 }
 
 /// The layer of the blurred menu picture and the vignettes over it (`barrel_ryza::field_menu::backdrop`).
@@ -2372,6 +2405,10 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         (true, Some(t)) if !menu_shown.party.is_empty() => Some(page_layer(&install, &gpu, &renderer, &menu_shown.party, t, &container.0.iter().chain(&tools).map(|u| barrel_ryza::field_page::ShelfItem { image: t.image(u.item), category: item_info.as_ref().and_then(|i| i.row(u.item)).and_then(|r| r.category) }).chain(item_info.as_ref().into_iter().flat_map(|i| (0..barrel_ryza::library::TABS).flat_map(|tab| library.cards(i, &know_items, tab, &|n| t.image(n)))).map(|c| barrel_ryza::field_page::ShelfItem { image: c.image, category: None })).collect::<Vec<_>>())?),
         _ => None,
     };
+    let mix_screen = match a.mix_sheet {
+        Some((item, count)) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, count, (width, height))?),
+        None => None,
+    };
     let mut showing_page = false;
     // The Settings screen's own layer and what it shows (the config's values over the defaults).
     // The field's menu opens it too (where there is a field HUD to leave).
@@ -3665,6 +3702,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             hud = Some(hud_layer(&install, &gpu, &renderer, &images)?);
         }
         let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref(), showing_options, options_screen.as_ref()) {
+            _ if mix_screen.is_some() => mix_screen.iter().flatten().collect(),
             (true, Some((l, _, _)), _, _) => vec![l],
             (_, _, true, Some((l, _, _))) if showing_notice && menu_now.is_none() => std::iter::once(l).chain(load_screen.as_ref().map(|(n, _, _)| n)).collect(),
             (_, _, true, Some((l, _, _))) if menu_now.is_none() => vec![l],

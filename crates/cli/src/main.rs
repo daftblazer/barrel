@@ -1941,7 +1941,7 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
 }
 
 /// `ryza-mix`: a synthesis of `recipe` (its number in `itemrecipedata.xml`, or its `ITEM_MIX_*` tag) from a save's container, and the
-/// draws of a steps file (`FRAME irand A B | frand A B | r640 N | r680 N` lines; `barrel_ryza::mix::Step`) from a dump of the generator.
+/// draws of a steps file (`FRAME draw irand A B | frand A B | r640 N | r680 N | rand15` lines; `barrel_ryza::mix::Step`) from a dump of the generator.
 fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&str]) -> Result<()> {
     let (mut steps, mut calls_only) = (None, false);
     let mut it = rest.iter();
@@ -1969,7 +1969,8 @@ fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&st
         }
         let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
         let pe = barrel_formats::pe::Pe::parse(&exe)?;
-        let item = pe.enum_names(&r.tag).map(|(_, first)| first);
+        // The enum's array has an entry before item 0 (ITEM_MIX_CRAFT is index 240; item 239 is named Craft).
+        let item = pe.enum_names(&r.tag).and_then(|(_, at)| at.checked_sub(1));
         println!("  makes item {item:?}");
         match barrel_ryza::mix::make(&tables, r, &container) {
             Some(made) => {
@@ -1992,7 +1993,8 @@ fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&st
         rng.record();
         for (n, line) in std::fs::read_to_string(&file)?.lines().enumerate() {
             let words: Vec<&str> = line.split('#').next().unwrap_or_default().split_whitespace().collect();
-            let Some((_, step)) = words.split_first() else { continue };
+            // `FRAME draw CALL ARGS` (`tools/synth_script.py`); its `index` lines are for ryza-lockstep.
+            let [_, "draw", step @ ..] = &words[..] else { continue };
             barrel_ryza::mix::Step::parse(step).map_err(|e| format!("{}:{}: {e}", file.display(), n + 1))?.draw(&mut rng);
         }
         for d in rng.draws() {

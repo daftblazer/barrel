@@ -326,6 +326,8 @@ pub struct Page {
     /// The Guide's Item page (`uil_library_04_item_top.xml`) and its Effect/Trait page (`uil_library_08_eff_esp.xml`).
     library_items: Element,
     library_eff: Element,
+    /// The synthesis's finished item card (`a21_mix/uil_a21_mix_item_sheet.xml`).
+    mix_sheet: Element,
     /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
     text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
@@ -374,6 +376,7 @@ impl Page {
         let (library_bg, library_top) = (library("uil_library_00_bg.xml")?, library("uil_library_01_top.xml")?);
         let (library_items, mut library_eff) = (library("uil_library_04_item_top.xml")?, library("uil_library_08_eff_esp.xml")?);
         stars_copy_the_first(&mut library_eff);
+        let mix_sheet = table::parse(&read("ui_en\\a21_mix\\uil_a21_mix_item_sheet.xml")?).map_err(|e| format!("mix item sheet: {e}"))?;
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -401,7 +404,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -465,7 +468,7 @@ impl Page {
                     || (3_538_945..3_538_945 + 2000).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, text_styles, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, mix_sheet, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -1077,6 +1080,44 @@ impl Page {
 /// frame later than the Container's (A on 2000) by the stall on 2587; the period is 161.7 inside the three bounds (161.43 to 162 from the first two, above 161.25
 /// from the third) and 1 / 0.9938, the Guide's blink rate, is 161.3 within that rate's error. The cause of the stall is not read.
 const STALL_EVERY: f32 = 161.7;
+
+/// What the synthesis's finished item card shows (`uil_a21_mix_item_sheet.xml`): the item, its picture and the number made.
+pub struct SheetLook {
+    /// The item's number (its name is the string `NAME_BASE + item`).
+    pub item: u16,
+    /// The item's picture number in `etc_a21_item_l`.
+    pub image: usize,
+    /// Units made (the card's "To Make:" line).
+    pub count: u32,
+}
+
+/// The card's title is a `MainFont00` text of this size (layout pixels): its node names none.
+/// STAND-IN: the engine's default text size is not read; 24 fits the capture's title (its "R" is 32 pixels tall on 1080 lines).
+const SHEET_TITLE_SIZE: f32 = 24.0;
+
+impl Page {
+    /// The finished item's card, on a `screen` of pixels (the card is whole: its coming in, `mix_anm_finish_card_in`, is not drawn).
+    pub fn sheet_quads(&self, look: &SheetLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        if let Some(panel) = find(&self.mix_sheet, "panel") {
+            let name = self.strings.get(&(NAME_BASE + u32::from(look.item))).cloned().unwrap_or_default();
+            let count = look.count.to_string();
+            let over = |path: &[&str]| -> Over {
+                match path {
+                    ["panel", "item_sheet"] => Over { show: true, ..Default::default() },
+                    ["panel", "item_sheet", "image"] => Over { image_no: Some(look.image), ..Default::default() },
+                    ["panel", "item_sheet", "name"] => Over { text: Some(name.clone()), size: Some(SHEET_TITLE_SIZE), ..Default::default() },
+                    ["panel", "item_sheet", "num"] => Over { text: Some(count.clone()), ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        }
+        (w.out, w.additive, w.clips)
+    }
+}
 
 /// The animation clock's reading at game frame `frame`: the frame less the stalls so far.
 pub fn animation_clock(frame: f32) -> f32 {
