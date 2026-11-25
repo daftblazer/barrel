@@ -7,6 +7,7 @@ pub mod chara;
 pub mod environment;
 pub mod face;
 pub mod flare;
+pub mod free_play;
 pub mod gimmick;
 pub mod mapmarker;
 pub mod grass;

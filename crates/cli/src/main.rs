@@ -49,6 +49,9 @@ usage:
   barrel-tool ryza-save-events INSTALL SAVE OUT EVENT...  a copy of a Ryza DX save (data.dat) with the story events
       named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves)
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
+  barrel-tool ryza-lockstep INSTALL STATE.bin SCRIPT HOOKS.LOG FROM TO [--save FILE]  a run's draws (gatherings, her clips, free play) from the generator's dump against the game's hook log
+      SCRIPT lines: `FRAME gather PLACE`, `FRAME clip` (a hand's voice chance), `FRAME swing` (the staff's clip), `FRAME free TIMERS SPAWN` (`tools/free_play.py`),
+      `FRAME index HEX` (the generator's index there, from the game's dump); prints `N draws, M differ` and each index that is off
   barrel-tool ryza-gather INSTALL STATE.bin PLACE [--save FILE] [--known ITEM,..] [--hand|--staff] [--rank N] [--difficulty N] [--draws]  a gathering at a place
       (FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND or without the prefix) from the game's random generator state
       (a dump of its window; ryza-recomp's dumps/F.1.bin): each draw (`irand a b`, hex, `frand a b` -> value) and the items;
@@ -284,6 +287,7 @@ fn main() -> ExitCode {
         ["ryza-file", install, name, out] => ryza_file(Path::new(install), name, Path::new(out)),
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
+        ["ryza-lockstep", install, state, script, hooks, from, to, rest @ ..] => ryza_lockstep(Path::new(install), Path::new(state), Path::new(script), Path::new(hooks), from, to, rest),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
         ["bonuses", file] => bonuses(Path::new(file), None),
         ["bonuses", file, exe] => bonuses(Path::new(file), Some(Path::new(exe))),
@@ -1838,6 +1842,87 @@ fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Resu
             println!("item {} quality {} potentials {:?} effects {:?}{}", g.item, g.quality, g.potentials, g.effects, if g.new { " (new discovery)" } else { "" });
         }
     }
+    Ok(())
+}
+
+/// `ryza-lockstep`: a run of the game's random draws (gatherings, her voice clips, the field's free play) from a dump of its generator,
+/// against the draws its hook log has from frame `from` to `to`: the same calls in the same order, and the generator's index where the
+/// script says (`barrel_ryza::free_play`).
+fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from: &str, to: &str, rest: &[&str]) -> Result<()> {
+    let (from, to): (u32, u32) = (from.parse()?, to.parse()?);
+    let mut save = None;
+    let mut it = rest.iter();
+    while let Some(&flag) = it.next() {
+        match flag {
+            "--save" => save = Some(PathBuf::from(it.next().ok_or("--save FILE")?)),
+            other => return Err(format!("ryza-lockstep: {other}?").into()),
+        }
+    }
+    let game = barrel_ryza::install::Install::open(install)?;
+    let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
+    let tables = barrel_ryza::gather::Tables::read(&exe, &game.read("\\saves\\item\\itemdata.xml")?, &game.read("\\saves\\item\\item_potential.xml")?)?;
+    let mut rng = barrel_ryza::random::Random::from_dump(&read(state)?).ok_or("the generator dump is too short or its index is out of the window")?;
+    rng.record();
+    let (mut knowledge, mut played) = (Vec::new(), Vec::new());
+    if let Some(file) = &save {
+        let state = barrel_ryza::save::decode(&read(file)?).map_err(|e| format!("{}: {e}", file.display()))?;
+        knowledge = barrel_ryza::save::knowledge(&state, "item").ok_or("the save has no item knowledge")?;
+        played = barrel_ryza::save::events_done(&state)?;
+    }
+    let flag = |f: i32| usize::try_from(f).is_ok_and(|f| played.contains(&f));
+    // The run's draws, each with the frame it was made on.
+    let mut ours: Vec<String> = Vec::new();
+    let mut off = Vec::new();
+    for (n, line) in std::fs::read_to_string(script)?.lines().enumerate() {
+        let words: Vec<&str> = line.split('#').next().unwrap_or_default().split_whitespace().collect();
+        let Some((&frame, rest)) = words.split_first() else { continue };
+        let frame: u32 = frame.parse().map_err(|e| format!("{}:{}: {e}", script.display(), n + 1))?;
+        let before = rng.draws().len();
+        match rest {
+            ["gather", place] => {
+                let at = tables.place(place).ok_or_else(|| format!("no gathering place {place}"))?;
+                let ctx = barrel_ryza::gather::Context { difficulty: 1, rank: 0, knowledge: &knowledge, flag: &flag, more_items: 0, boost: Default::default() };
+                let got = tables.gather(&ctx, &mut rng, at);
+                barrel_ryza::gather::learn(&mut knowledge, &got);
+            }
+            ["clip"] => {
+                barrel_ryza::gather::hand_clip(&mut rng);
+            }
+            ["swing"] => {
+                barrel_ryza::gather::swing_clip(&mut rng);
+            }
+            ["free", timers, spawn] => barrel_ryza::free_play::Emission { frame, timers: timers.parse()?, spawn: *spawn != "0" }.draw(&mut rng),
+            ["index", want] => {
+                let want = u32::from_str_radix(want, 16)?;
+                if rng.index() != want {
+                    off.push(format!("index at {frame}: {:x}, the game's {want:x}", rng.index()));
+                }
+            }
+            _ => return Err(format!("{}:{}: {line}?", script.display(), n + 1).into()),
+        }
+        for d in &rng.draws()[before..] {
+            ours.push(format!("{frame} {}", d.to_string().split(" @").next().unwrap_or_default()));
+        }
+    }
+    // The game's: every `irand` and `frand` of its hook log in the frames, but the ones with equal bounds (they draw nothing).
+    let mut theirs: Vec<String> = Vec::new();
+    for line in std::fs::read_to_string(hooks)?.lines() {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        let [_, frame, call @ ("irand" | "frand"), a, b, ..] = w[..] else { continue };
+        let Ok(frame) = frame.parse::<u32>() else { continue };
+        if frame >= from && frame <= to && a != b {
+            theirs.push(format!("{frame} {call} {a} {b}"));
+        }
+    }
+    let differ = ours.iter().zip(&theirs).filter(|(a, b)| a != b).count() + ours.len().abs_diff(theirs.len());
+    println!("{} draws, {} differ", ours.len(), differ);
+    if let Some((i, (a, b))) = ours.iter().zip(&theirs).enumerate().find(|(_, (a, b))| a != b) {
+        println!("first difference at draw {i}: ours {a}, the game's {b}");
+    }
+    for o in &off {
+        println!("{o}");
+    }
+    println!("generator index {:x}", rng.index());
     Ok(())
 }
 
