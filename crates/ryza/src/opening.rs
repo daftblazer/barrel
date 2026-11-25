@@ -1,7 +1,10 @@
 //! The opening: the story's first event (`event_mm00_010`), which New Game on the title starts
 //! (docs/ryza/open.md, "The opening (P5b)"; the answer key is ryza-recomp's `opening-key`).
 
+use crate::event::{self, Taken, Talk};
 use crate::new_game;
+use barrel_engine::event::{Buttons, Timed};
+use barrel_formats::ebd::Ebd;
 
 /// The event the title's New Game starts.
 pub const EVENT: &str = "mm00_010";
@@ -9,6 +12,43 @@ pub const EVENT: &str = "mm00_010";
 /// The capture frame the event's first command runs on: the button's frame (1535) and
 /// [`new_game::OPENING_AFTER`].
 pub const START: i32 = 1535 + new_game::OPENING_AFTER;
+
+/// The event that follows the opening's last fade (the game's help-page event: the first line over
+/// the stage, then two pictures' worth of explanation; `opening-key3`, 13846 on).
+pub const FOLLOWING: &str = "xx01_150";
+
+/// The frames the following event starts after the opening's last command's wait: its first commands run
+/// a frame after the queue ends (the last fade, preset 3 half a second, is on 13813 and holds
+/// [`barrel_engine::event::fade_hold`]; the next event's first commands are on 13846 in the key).
+pub const HAND_OVER_FRAMES: f32 = 1.0;
+
+/// Both events as one run: the opening's steps, then the following event's from where the opening ends, each
+/// with the commands taken. `buttons` hold the presses in seconds from the opening's first command; the
+/// following event gets the same presses from its own start. A following event behind a line still
+/// waiting for its press is laid out at infinity.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn schedule<'a>(
+    install: &'a crate::install::Install,
+    opening: &'a Ebd,
+    following: &'a Ebd,
+    messages: [&'a [barrel_formats::ebm::Message]; 2],
+    buttons: Option<Buttons>,
+    given: &[f32],
+    clock: u32,
+    until: f32,
+) -> Result<(Vec<Timed<'a>>, Vec<Taken>, f32), String> {
+    let talk = |m, b| Talk { messages: m, buttons: b };
+    let (mut steps, mut taken) = event::schedule_drawn_taken_with(opening, given, clock, until, Some(event::motion_lengths(install)), talk(messages[0], buttons.clone()))?;
+    // the opening is over when its last command's wait is (it ends on a fade of half a second)
+    let last = taken.iter().map(|t| t.0).fold(0.0f32, f32::max);
+    let end = last + barrel_engine::event::fade_hold(0.5) + HAND_OVER_FRAMES / 60.0;
+    let then = buttons.map(|b| Buttons { presses: b.presses.iter().map(|p| p - end).collect(), ..b });
+    let (next_steps, next_taken) = event::schedule_drawn_taken_with(following, &[], clock, until, Some(event::motion_lengths(install)), talk(messages[1], then))?;
+    let shift = opening.actions.len();
+    steps.extend(next_steps.into_iter().map(|t| Timed { time: t.time + end, action: t.action + shift, step: t.step }));
+    taken.extend(next_taken.into_iter().map(|(time, action, words)| (time + end, action + shift, words)));
+    Ok((steps, taken, end))
+}
 
 /// The event's stage clock, in seconds, for the picture drawn on capture frame `frame`: the
 /// picture shows the stage a tick on from the commands' own frame (as the title's event does,

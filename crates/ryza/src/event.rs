@@ -33,6 +33,10 @@ pub const TUTORIAL_CLOSE_FRAMES: f32 = 32.0;
 /// STAND-IN, `opening-key2` shows it within 10 frames, 13176 to 13185).
 pub const TUTORIAL_BETWEEN_FRAMES: f32 = 2.0;
 
+/// A press counts from this many frames after a line comes up (the key's 13875 line takes the press 140 frames in, not the one 20 in;
+/// STAND-IN: any value from 21 up fits it, the box's 30-frame ease in is the guess).
+pub const READY_FRAMES: f32 = 30.0;
+
 /// The buttons of a scripted run: presses at the capture frames `frames`, for an event whose
 /// first command is on capture frame `start`.
 pub fn buttons_at(frames: &[i32], start: i32) -> barrel_engine::event::Buttons {
@@ -41,6 +45,7 @@ pub fn buttons_at(frames: &[i32], start: i32) -> barrel_engine::event::Buttons {
         close: LINE_CLOSE_FRAMES / 60.0,
         tutorial_close: TUTORIAL_CLOSE_FRAMES / 60.0,
         tutorial_between: TUTORIAL_BETWEEN_FRAMES / 60.0,
+        ready: READY_FRAMES / 60.0,
     }
 }
 

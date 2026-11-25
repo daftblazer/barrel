@@ -93,6 +93,10 @@ fn markup(text: &str) -> (String, Vec<(usize, [f32; 3])>) {
             let v = u32::from_str_radix(&tag[..6], 16).unwrap_or(0);
             runs.push((plain.chars().count(), [(v >> 16) as f32 / 255.0, (v >> 8 & 0xff) as f32 / 255.0, (v & 0xff) as f32 / 255.0]));
             rest = &rest[9..];
+        } else if let Some(r) = rest.strip_prefix("<KEY_ASSIGN_FIELD_PHOTO_MODE>") {
+            // the button's icon in the font (STAND-IN: the pad's layout is not read; the key shows the one icon, `opening-key3` 14005)
+            plain.push('\u{4f4}');
+            rest = r;
         } else if let Some(r) = rest.strip_prefix("<CLNR>") {
             runs.push((plain.chars().count(), TUTORIAL_TEXT));
             rest = r;
@@ -126,6 +130,8 @@ pub enum Hint {
     Full,
     /// Fast forward and skip (`u7 1`).
     Short,
+    /// A help box's own: the full set without skip (the help event's, `opening-key3` 14005).
+    NoSkip,
 }
 
 impl Hint {
@@ -134,6 +140,7 @@ impl Hint {
         match self {
             Hint::Full => "\u{4f0}Event Log \u{4e7}Fast Forward \u{4ec}Skip \u{4dc}Auto-Play",
             Hint::Short => "\u{4e7}Fast Forward \u{4ec}Skip",
+            Hint::NoSkip => "\u{4f0}Event Log \u{4e7}Fast Forward \u{4dc}Auto-Play",
         }
     }
 
@@ -142,6 +149,7 @@ impl Hint {
         match self {
             Hint::Full => 1177.8333,
             Hint::Short => 1511.1667,
+            Hint::NoSkip => 1270.5,
         }
     }
 }
@@ -155,6 +163,8 @@ pub struct Cues {
     hints: Vec<(f32, bool, bool)>,
     // `u76` (a tutorial picture): (time, shown, picture number)
     pictures: Vec<(f32, bool, u32)>,
+    /// The stage time the help event starts at: its boxes have no event log among their hints.
+    help_from: Option<f32>,
 }
 
 impl Cues {
@@ -180,6 +190,17 @@ impl Cues {
             }
         }
         cues
+    }
+
+    /// Marks the event that starts at `t` as the help event ([`Hint::NoSkip`]).
+    pub fn help_from(mut self, t: f32) -> Cues {
+        self.help_from = Some(t);
+        self
+    }
+
+    /// The hints of a tutorial box at stage time `t`: the full set, without skip in the help event.
+    pub fn box_hint(&self, t: f32) -> Hint {
+        if self.help_from.is_some_and(|h| t >= h) { Hint::NoSkip } else { Hint::Full }
     }
 
     /// Whether the letterbox is up at stage time `t` (commands up to `t` taken).
@@ -217,6 +238,16 @@ impl Cues {
             _ => None,
         }
     }
+}
+
+/// A tutorial picture's file (`u76`'s number): the room tutorial's are `ipu\t<84 + number>`; the help pages' (the opening's
+/// following event, number 163 for `help_h_075`) are `ipu\help_h_<number - 88>`. STAND-IN: the executable's table that names
+/// each picture is not read; the second rule is fitted to the one page the key shows (`opening-key3`, 14255 to 14755).
+pub fn picture_file(install: &crate::install::Install, id: u32) -> Result<Vec<u8>, String> {
+    install
+        .read(&format!("\\data\\x64\\res_cmn\\ipu\\t{}.g1t", 84 + id))
+        .or_else(|_| install.read(&format!("\\data\\x64\\res_cmn\\ipu\\help_h_{:03}.g1t", id.saturating_sub(88))))
+        .map_err(|e| format!("tutorial picture {id}: {e}"))
 }
 
 pub struct Talk {
@@ -337,7 +368,7 @@ impl Talk {
     /// A tutorial line at stage time `now`: its box, its text in dark red (`<#RRGGBB>` to `<CLNR>` in that colour), the
     /// arrow's shadow and arrow, and the hints. It comes in over 30 frames along an ease-out cubic (the arrow sliding up
     /// 45 pixels with it) and goes out over 30 along an ease-in cubic.
-    pub fn tutorial_quads(&self, line: &Line, now: f32, screen: (u32, u32)) -> Vec<Quad> {
+    pub fn tutorial_quads(&self, line: &Line, now: f32, hint: Hint, screen: (u32, u32)) -> Vec<Quad> {
         let ticks = |since: f32| ((now - since) * 60.0).round() - 1.0;
         let k_in = ticks(line.since);
         if k_in < FIRST_DRAWN && !line.joined {
@@ -362,7 +393,8 @@ impl Talk {
         // the text: rows wrapped at TUTORIAL_WRAP, a block centred on TUTORIAL_CENTRE; colours by the markup
         let (plain, runs) = markup(&line.text);
         let rows = self.rows_at(&plain, TUTORIAL_SCALE, TUTORIAL_WRAP);
-        let top = TUTORIAL_CENTRE - TUTORIAL_PITCH * rows.len() as f32 * 0.5;
+        // STAND-IN: a lone row stands 7/3 pixels higher than the centring gives (the one lone row the key shows, `opening-key3` 14005; the rule behind it is not read)
+        let top = TUTORIAL_CENTRE - TUTORIAL_PITCH * rows.len() as f32 * 0.5 - if rows.len() == 1 { 7.0 / 3.0 } else { 0.0 };
         let mut at = 0;
         for (i, row) in rows.iter().enumerate() {
             let mut pen = TUTORIAL_PEN;
@@ -391,7 +423,7 @@ impl Talk {
         out.push(Quad { turn: false, spin: None, rect: still, uv: ARROW_UV[2], color: [1.0, 1.0, 1.0, alpha], texture: self.textures.balloon });
         // the hints come in once the line has
         if (k_in >= TUTORIAL_HINT_AFTER || line.joined) && line.closing.is_none() {
-            out.extend(self.hint_quads(Hint::Full, 1.0, &fixed));
+            out.extend(self.hint_quads(hint, 1.0, &fixed));
         }
         out
     }

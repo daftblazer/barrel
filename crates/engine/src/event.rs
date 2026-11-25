@@ -528,24 +528,31 @@ pub struct Buttons {
     pub tutorial_close: f32,
     /// The same for a line the command goes on from: the next one takes the box at once.
     pub tutorial_between: f32,
+    /// How long after a line comes up a press counts (earlier ones are lost: the line's fade in).
+    pub ready: f32,
 }
 
 impl Buttons {
     /// The moment the next command runs after a line that came up at `shown`: the first press
     /// at or after it plus the closing time. A line no later press ends is never left (infinity).
     /// The press that ends a line that came up at `shown`.
-    pub fn line_press(&self, shown: f32) -> Option<f32> {
-        self.presses.iter().copied().find(|&p| p >= shown - 1e-4)
+    pub fn line_press(&self, shown: f32, system: bool) -> Option<f32> {
+        let ready = if system { self.ready } else { 0.0 };
+        self.presses.iter().copied().find(|&p| p >= shown + ready - 1e-4)
     }
 
-    pub fn line_end(&self, shown: f32, tutorial: bool, last: bool) -> f32 {
+    /// When the next command runs after a line: `system` for a line of the game's own voice (a message of speaker -1: a help box, which
+    /// closes like a tutorial's and takes no press before it is [`Buttons::ready`]).
+    pub fn line_end(&self, shown: f32, tutorial: bool, system: bool, last: bool) -> f32 {
+        let tutorial = tutorial || system;
+        let ready = if system { self.ready } else { 0.0 };
         let close = match (tutorial, last) {
             (_, false) => self.tutorial_between,
             (false, true) => self.close,
             (true, true) => self.tutorial_close,
         };
         // (a frame's slack for the float sums: a press a frame's thousandth early still counts)
-        self.presses.iter().find(|&&p| p >= shown - 1e-4).map_or(f32::INFINITY, |p| p + close)
+        self.presses.iter().find(|&&p| p >= shown + ready - 1e-4).map_or(f32::INFINITY, |p| p + close)
     }
 }
 
@@ -1243,14 +1250,15 @@ impl<'a> Player<'a> {
                 }
                 let held = match (&s, self.reading, &self.buttons) {
                     (Step::Message { .. }, _, _) if c.word == SHOW_MESSAGES_UNHELD_RYZA => 0.0,
-                    (Step::Message { .. }, _, Some(b)) => {
-                        let end = b.line_end(threads[t].0, tutorial, Some(step_at) == last_line);
+                    (Step::Message { speaker, .. }, _, Some(b)) => {
+                        let system = *speaker < 0;
+                        let end = b.line_end(threads[t].0, tutorial, system, Some(step_at) == last_line);
                         event_clock[t] += end - threads[t].0;
                         if end.is_finite() {
                             // the game takes the press a frame before the pad's frame (the line's fade out starts then); only a command's last line fades out,
                             // the others give the box to the next
                             let last = Some(step_at) == last_line;
-                            out.push(Timed { time: b.line_press(threads[t].0).unwrap_or(end) - 1.0 / 60.0, action, step: Step::LineClose { action, last, more: Some(step_at) != last_line } });
+                            out.push(Timed { time: b.line_press(threads[t].0, system).unwrap_or(end) - 1.0 / 60.0, action, step: Step::LineClose { action, last, more: Some(step_at) != last_line } });
                         }
                         end - threads[t].0
                     }
@@ -1774,7 +1782,7 @@ mod tests {
         let messages = vec![msg("a"), msg("b"), msg("c")];
         let table = OperandTable::new(&[(SHOW_MESSAGES, Some(2)), (TIME_WAIT, Some(1))]);
         // presses at 1 s and 2 s; a line lasts to 18 frames after its press
-        let buttons = Buttons { presses: vec![1.0, 2.0], close: 18.0 / 60.0, tutorial_close: 32.0 / 60.0, tutorial_between: 1.0 / 60.0 };
+        let buttons = Buttons { presses: vec![1.0, 2.0], close: 18.0 / 60.0, tutorial_close: 32.0 / 60.0, tutorial_between: 1.0 / 60.0, ready: 0.0 };
         let timed = Player::new(&event, &messages, &table).unwrap().buttons(buttons).schedule();
         let lines: Vec<(String, f32)> = timed.iter().filter_map(|t| match &t.step { Step::Message { text, .. } => Some((text.clone(), t.time)), _ => None }).collect();
         // "a" at 0 waits for the press at 1.0 s and hands the box to "b" a frame on; "b" takes the press at 2.0 s (ends at 2.3); the wait of

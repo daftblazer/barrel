@@ -424,7 +424,7 @@ fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         install.read("\\data\\x64\\res_cmn\\ui\\sys_alpha_circle.g1t")?,
     ];
     for id in pictures {
-        set_files.push(install.read(&format!("\\data\\x64\\res_cmn\\ipu\\t{}.g1t", 84 + id))?);
+        set_files.push(barrel_ryza::talk::picture_file(install, *id)?);
     }
     let set_g1t: Vec<G1t> = set_files.iter().map(|b| G1t::parse(b).map_err(|e| format!("tutorial textures: {e}"))).collect::<std::result::Result<_, _>>()?;
     textures.push(&set_g1t[0].textures[1]);
@@ -1424,20 +1424,33 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // hour of it is laid out.
     // The opening's lines (the title's event has none).
     let opening_messages = if a.opening { barrel_ryza::event::messages(&install, barrel_ryza::opening::EVENT)? } else { Vec::new() };
+    // The event that follows it (the help pages) and its lines.
+    let (following_event, following_messages) = if a.opening {
+        let e = barrel_formats::ebd::Ebd::parse(&install.read(&barrel_ryza::event::path(barrel_ryza::opening::FOLLOWING).ok_or("event name")?)?)?;
+        (Some(e), barrel_ryza::event::messages(&install, barrel_ryza::opening::FOLLOWING)?)
+    } else {
+        (None, Vec::new())
+    };
     let title_steps = match &title_event {
         Some(e) => {
             let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
             let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
-            let talk = barrel_ryza::event::Talk { messages: &opening_messages, buttons: if a.opening { barrel_ryza::event::buttons_from_env() } else { None } };
-            Some(barrel_ryza::event::schedule_drawn_taken_with(e, &given, clock, 3600.0, a.opening.then(|| barrel_ryza::event::motion_lengths(&install)), talk)?)
+            let buttons = if a.opening { barrel_ryza::event::buttons_from_env() } else { None };
+            match &following_event {
+                Some(next) => Some(barrel_ryza::opening::schedule(&install, e, next, [&opening_messages, &following_messages], buttons, &given, clock, 3600.0)?),
+                None => {
+                    let (steps, taken) = barrel_ryza::event::schedule_drawn_taken_with(e, &given, clock, 3600.0, None, barrel_ryza::event::Talk { messages: &opening_messages, buttons })?;
+                    Some((steps, taken, f32::INFINITY))
+                }
+            }
         }
         None => None,
     };
-    let (title_steps, title_taken) = title_steps.map_or((None, Vec::new()), |(s, t)| (Some(s), t));
+    let (title_steps, title_taken, help_from) = title_steps.map_or((None, Vec::new(), f32::INFINITY), |(s, t, h)| (Some(s), t, h));
     let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
     let title_heads = actors::head_turns(&title_taken);
     // What the opening's commands switch for the talk: the letterbox and the button hints.
-    let opening_cues = barrel_ryza::talk::Cues::from_taken(&title_taken);
+    let opening_cues = barrel_ryza::talk::Cues::from_taken(&title_taken).help_from(help_from);
     // The telops the opening shows (`u65`'s numbers), for the 2D layer built below.
     let opening_cards: std::collections::BTreeSet<u32> = match (&title_steps, a.opening) {
         (Some(steps), true) => steps.iter().filter_map(|t| match t.step { barrel_engine::event::Step::Telop { card, .. } => Some(card), _ => None }).collect(),
@@ -2565,8 +2578,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                         }
                     }
                     if let Some(line) = &play.stage.line {
-                        if pictures.is_some() {
-                            quads.extend(talk.tutorial_quads(line, play.stage.time, (width, height)));
+                        if pictures.is_some() || line.speaker < 0 {
+                            quads.extend(talk.tutorial_quads(line, play.stage.time, opening_cues.box_hint(seen), (width, height)));
                         } else {
                             quads.extend(talk.line_quads(line, play.stage.time, opening_cues.hint(seen), (width, height)));
                         }
