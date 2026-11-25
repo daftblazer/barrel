@@ -1268,19 +1268,7 @@ impl Page {
             let scale = [keyed(&E09_SCALE_X, age), keyed(&E09_SCALE_Y, age)];
             w.image(e, about(e, [0.0; 2], scale), &Over { alpha: Some(a), ..Default::default() });
         }
-        if let Some(panel) = find(&self.mix_sheet, "chara_detail") {
-            let numbers = [look.level.to_string(), look.next.to_string(), look.gained.to_string()];
-            let over = |path: &[&str]| -> Over {
-                match path {
-                    ["chara_detail"] => Over { show: true, ..Default::default() },
-                    ["chara_detail", "Alc_lv", "alclv"] => Over { text: Some(numbers[0].clone()), ..Default::default() },
-                    ["chara_detail", "Next", "next"] => Over { text: Some(numbers[1].clone()), ..Default::default() },
-                    ["chara_detail", "GetExp", "exp"] => Over { text: Some(numbers[2].clone()), ..Default::default() },
-                    _ => Over::default(),
-                }
-            };
-            w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
-        }
+        self.level_panel(&mut w, &root, look, Slide::NONE);
         // The "Level UP!" plate: its picture and its words rise together, a glow of the words grows over them.
         if let (Some(plate), Some(text), Some(on)) = (find(&self.mix_sheet, "level_up_plate"), find(&self.mix_sheet, "level_up_text"), find(&self.mix_sheet, "level_up_text_on")) {
             let a = keyed(&PLATE_ALPHA, age);
@@ -1302,13 +1290,37 @@ impl Page {
 impl Page {
     /// The "Complete" screen's item card, as the Container page's (the made item's `card`: a `normal_item` card at its place), and the
     /// title plate, on a `screen` of pixels.
-    pub fn result_quads(&self, card: &Card, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+    /// `leaving`: the frames since A, which sends the card out to the right (the slide in played backwards) and brings the level panel in.
+    pub fn result_quads(&self, card: &Card, leaving: Option<(f32, CompleteLook)>, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new() };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
-        self.item_card(&mut w, &root, "normal_item", None, card, &[]);
+        let slide = leaving.as_ref().map_or(Slide::NONE, |(out, _)| Slide::in_from(SLIDE_FRAMES - out.max(0.0), [40.0, 0.0]));
+        w.slid(slide, |w| self.item_card(w, &root, "normal_item", None, card, &[]));
+        // The level panel slides in over the 30 frames the card goes out in.
+        if let Some((out, look)) = &leaving {
+            self.level_panel(&mut w, &root, look, Slide::in_from(*out, [40.0, 0.0]));
+        }
         self.caption_plate(&mut w, &root, COMPLETE_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)
+    }
+}
+
+impl Page {
+    /// The alchemy level panel (`chara_detail`: the level, the experience to the next and the experience gained), slid in by `slide`.
+    fn level_panel(&self, w: &mut Walker, root: &Xf, look: &CompleteLook, slide: Slide) {
+        let Some(panel) = find(&self.mix_sheet, "chara_detail") else { return };
+        let numbers = [look.level.to_string(), look.next.to_string(), look.gained.to_string()];
+        let over = |path: &[&str]| -> Over {
+            match path {
+                ["chara_detail"] => Over { show: true, ..Default::default() },
+                ["chara_detail", "Alc_lv", "alclv"] => Over { text: Some(numbers[0].clone()), ..Default::default() },
+                ["chara_detail", "Next", "next"] => Over { text: Some(numbers[1].clone()), ..Default::default() },
+                ["chara_detail", "GetExp", "exp"] => Over { text: Some(numbers[2].clone()), ..Default::default() },
+                _ => Over::default(),
+            }
+        };
+        w.slid(slide, |w| w.walk(panel, root.node(pair(panel, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
     }
 }
 
