@@ -52,6 +52,7 @@ usage:
       `record/list@OFFSET=HEX`: bytes written at OFFSET in a list record (item/m_unitContainer@396=...: a unit)
   barrel-tool ryza-save-tree INSTALL SAVE  a Ryza DX save's records (name and size, nested) and the story events it has played
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
+  barrel-tool ryza-mix INSTALL STATE.bin SAVE RECIPE [--steps FILE] [--draws]  a synthesis from a save: the units its rows take, what it makes, and the draws of a steps file from the generator's dump
   barrel-tool ryza-lockstep INSTALL STATE.bin SCRIPT HOOKS.LOG FROM TO [--save FILE]  a run's draws (gatherings, her clips, free play) from the generator's dump against the game's hook log
       SCRIPT lines: `FRAME gather PLACE`, `FRAME clip` (a hand's voice chance), `FRAME swing` (the staff's clip), `FRAME free TIMERS SPAWN` (`tools/free_play.py`),
       `FRAME index HEX` (the generator's index there, from the game's dump); prints `N draws, M differ` and each index that is off
@@ -290,6 +291,7 @@ fn main() -> ExitCode {
         ["ryza-file", install, name, out] => ryza_file(Path::new(install), name, Path::new(out)),
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
+        ["ryza-mix", install, state, save, recipe, rest @ ..] => ryza_mix(Path::new(install), Path::new(state), Path::new(save), recipe, rest),
         ["ryza-lockstep", install, state, script, hooks, from, to, rest @ ..] => ryza_lockstep(Path::new(install), Path::new(state), Path::new(script), Path::new(hooks), from, to, rest),
         ["ryza-save-tree", install, file] => ryza_save_tree(Path::new(install), Path::new(file)),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
@@ -1896,6 +1898,7 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
                 barrel_ryza::gather::swing_clip(&mut rng);
             }
             ["free", timers, spawn] => barrel_ryza::free_play::Emission { frame, timers: timers.parse()?, spawn: *spawn != "0" }.draw(&mut rng),
+            ["draw", steps @ ..] => barrel_ryza::mix::Step::parse(steps)?.draw(&mut rng),
             ["index", want] => {
                 let want = u32::from_str_radix(want, 16)?;
                 if rng.index() != want {
@@ -1912,6 +1915,13 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
     let mut theirs: Vec<String> = Vec::new();
     for line in std::fs::read_to_string(hooks)?.lines() {
         let w: Vec<&str> = line.split_whitespace().collect();
+        if let [_, frame, call @ ("r640" | "r680"), n, ..] = w[..] {
+            // The wrappers over a draw: `n` 0 draws nothing.
+            if frame.parse::<u32>().is_ok_and(|f| f >= from && f <= to) && n != "0" {
+                theirs.push(format!("{frame} {call} {n}"));
+            }
+            continue;
+        }
         let [_, frame, call @ ("irand" | "frand"), a, b, ..] = w[..] else { continue };
         let Ok(frame) = frame.parse::<u32>() else { continue };
         if frame >= from && frame <= to && a != b {
@@ -1927,6 +1937,75 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
         println!("{o}");
     }
     println!("generator index {:x}", rng.index());
+    Ok(())
+}
+
+/// `ryza-mix`: a synthesis of `recipe` (its number in `itemrecipedata.xml`, or its `ITEM_MIX_*` tag) from a save's container, and the
+/// draws of a steps file (`FRAME irand A B | frand A B | r640 N | r680 N` lines; `barrel_ryza::mix::Step`) from a dump of the generator.
+fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&str]) -> Result<()> {
+    let (mut steps, mut calls_only) = (None, false);
+    let mut it = rest.iter();
+    while let Some(&flag) = it.next() {
+        match flag {
+            "--steps" => steps = Some(PathBuf::from(it.next().ok_or("--steps FILE")?)),
+            "--draws" => calls_only = true,
+            other => return Err(format!("ryza-mix: {other}?").into()),
+        }
+    }
+    let game = barrel_ryza::install::Install::open(install)?;
+    let tables = barrel_ryza::mix::Tables::read(&game.read("\\saves\\item\\itemrecipedata.xml")?, &game.read("\\saves\\item\\itemdata.xml")?)?;
+    let n = match recipe.parse::<usize>() {
+        Ok(n) => n,
+        Err(_) => tables.recipes.iter().position(|r| r.tag == recipe).ok_or_else(|| format!("no recipe {recipe}"))?,
+    };
+    let r = tables.recipes.get(n).ok_or_else(|| format!("no recipe {n}"))?;
+    let data = barrel_ryza::save::decode(&read(save)?).map_err(|e| format!("{}: {e}", save.display()))?;
+    let (container, _) = barrel_ryza::save::container(&data).ok_or("the save has no container")?;
+    if !calls_only {
+        let known = barrel_ryza::save::knowledge(&data, "recipe").and_then(|k| k.get(n).copied()).unwrap_or(0);
+        println!("recipe {n} {} (knowledge {known}): {} units, {} hours", r.tag, r.make, r.hours);
+        for row in &r.rows {
+            println!("  row {} x{} effects {:?}", row.category.as_deref().unwrap_or("-"), row.need, row.effects);
+        }
+        let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&exe)?;
+        let item = pe.enum_names(&r.tag).map(|(_, first)| first);
+        println!("  makes item {item:?}");
+        match barrel_ryza::mix::make(&tables, r, &container) {
+            Some(made) => {
+                for &at in &made.taken {
+                    let w = &container[at];
+                    println!("  takes place {at}: item {} quality {}", w.item, w.quality);
+                }
+                println!("  makes {} units in {} hours; the container keeps {} units", made.count, made.hours, barrel_ryza::mix::after(&container, &made).len());
+            }
+            None => println!("  the container has too few of a row's category"),
+        }
+        let clock = barrel_ryza::save::clock(&data).unwrap_or(0);
+        println!("  clock word {clock} (hour {})", barrel_ryza::save::hour_of(clock));
+        if let Some(lv) = barrel_ryza::save::find(&data, &["mix_lv"]) {
+            println!("  mix_lv {:02x?}", &lv[..lv.len().min(32)]);
+        }
+    }
+    if let Some(file) = steps {
+        let mut rng = barrel_ryza::random::Random::from_dump(&read(state)?).ok_or("the generator dump is too short or its index is out of the window")?;
+        rng.record();
+        for (n, line) in std::fs::read_to_string(&file)?.lines().enumerate() {
+            let words: Vec<&str> = line.split('#').next().unwrap_or_default().split_whitespace().collect();
+            let Some((_, step)) = words.split_first() else { continue };
+            barrel_ryza::mix::Step::parse(step).map_err(|e| format!("{}:{}: {e}", file.display(), n + 1))?.draw(&mut rng);
+        }
+        for d in rng.draws() {
+            if calls_only {
+                println!("{}", d.to_string().split(" @").next().unwrap_or_default());
+            } else {
+                println!("{d}");
+            }
+        }
+        if !calls_only {
+            println!("generator index {:x}", rng.index());
+        }
+    }
     Ok(())
 }
 

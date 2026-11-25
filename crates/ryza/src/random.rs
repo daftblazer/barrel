@@ -66,6 +66,10 @@ pub enum Call {
     Int(i32, i32),
     /// `frand(a, b)`: a float from `a` to `b` (`0x1406ae340`).
     Float(f32, f32),
+    /// `one_to(n)`: an integer from 1 to `n` (`0x1406ae640`, hooked as `r640`).
+    OneTo(i32),
+    /// `below(n)`: an integer from 0 to `n - 1` (`0x1406ae680`, hooked as `r680`).
+    Below(i32),
 }
 
 /// One logged draw: the call, the generator's index before it (the game's own window index)
@@ -90,6 +94,8 @@ impl std::fmt::Display for Draw {
         match (self.call, self.value) {
             (Call::Int(a, b), Value::Int(v)) => write!(f, "irand {a:x} {b:x} @{:x} -> {v}", self.index),
             (Call::Float(a, b), Value::Float(v)) => write!(f, "frand {a} {b} @{:x} -> {v}", self.index),
+            (Call::OneTo(n), Value::Int(v)) => write!(f, "r640 {n:x} @{:x} -> {v}", self.index),
+            (Call::Below(n), Value::Int(v)) => write!(f, "r680 {n:x} @{:x} -> {v}", self.index),
             _ => Err(std::fmt::Error),
         }
     }
@@ -199,19 +205,23 @@ impl Random {
     /// A draw from 1 to `n` (`0x1406ae640`; 0 for `n` 0, without a draw).
     pub fn one_to(&mut self, n: i32) -> i32 {
         if n == 0 {
-            0
-        } else {
-            (self.rand15() as i32) % n + 1
+            return 0;
         }
+        let index = self.index();
+        let value = (self.rand15() as i32) % n + 1;
+        self.note(index, Call::OneTo(n), Value::Int(value));
+        value
     }
 
     /// A draw from 0 to `n - 1` (`0x1406ae680`; 0 for `n` 0, without a draw).
     pub fn below(&mut self, n: i32) -> i32 {
         if n == 0 {
-            0
-        } else {
-            (self.rand15() as i32) % n
+            return 0;
         }
+        let index = self.index();
+        let value = (self.rand15() as i32) % n;
+        self.note(index, Call::Below(n), Value::Int(value));
+        value
     }
 
     /// A chance of `percent` in 100 (`0x1406ae500`): whether a draw mod 100 is below it; 0 or less is never and 100 or
