@@ -2817,3 +2817,18 @@ An event flag is the number of an entry of the game's event flag array (`0x141ab
 opening flag is set and its closing flag is not: `0x1405a2c20`). The honeycomb point's list 538 has two entries: item
 106 (weight 70) and item 128 (30), quality 11 to 20, 0 or 1 random potentials of the grade 1 to 10 band, level 1 to 3.
 
+**After a gathering** (`gather-rasen2`, A at 2500 at the second comb: `irand(1, 2)` gave 2): the library's level of each item gathered is
+raised (the entry's `gather::learn`; 10 here, any level above 2 acts alike), so the next gathering's pick counts only the items still
+at level 2 or less: the first pick drew `irand(0, 69)` (item 106, weight 70, the one unknown), the second, with none left unknown,
+`irand(0, 99)` over the whole list (item 128, now known: no discovery, no chime). Each item draws its quality and potentials (`frand`, `irand`
+list in docs/ryza/open.md) before the next pick. Her voice: the frame after, a chance of 28 to 31 in 100 (`0x1406ae500` from
+`0x1406ae532`: draws of 27 spoke, 31 did not) and then `irand(0, 2)` from `0x1400e4b73` for the clip (`df33fd76` is the first of three).
+
+**The staff's point** (`ITEM_D_MULTIPLE_WAND_ACTION`, `FIELDMAP_COLLECT_PLACE_S06_T_RASEN_BOX_ROD` of Rasenboden's wooden box, fixID 49):
+X swings whether a point is hit or not: her clip (`irand(0, 1)`: `ffc8b3d0` or `59a41e11`) at press + 6, `SE_PTC_001_KLAUDIA_001`
+(`03b1031e`, +17) and `SE_FLD_003_WAND01` (`b1bafbe5`, +19); a point within reach gathers at press + 24 (the draws as a hand point's, the
+potential's `irand(0, 10)` over 11 candidates for item 90) with `SE_FLD_044_BARREL` (`9dbfc51d`, +26), `GATHER02` (+32) and, for a new
+item, `NEW_DISCOVERY` (+35). A spent point's swing gives nothing. A gimmick's model is also a body she walks against: its
+`charabase.xml` row's `FMrad` (metres) times the placement's scale, gone once the point is gathered from (the honeycombs: 0.5 m, scale 1.2,
+she stopped 91.2 units from the centre with her 28; the walls' polygon is 3.2 units further out).
+

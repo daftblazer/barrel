@@ -609,11 +609,15 @@ rounded to float, times `high + 1e-4 - low`, plus `low`, all in float; equal bou
 `0x1406ae3d0` (it times `a`), `0x1406ae2e0` (`draw * 2a - (a + 1e-4)`). `barrel_ryza::random`
 has all of them, and the window index (`Random::index`), the game's own number in its hook logs.
 
+`0x1406ae500` is a chance of `p` in 100 (`draw % 100 < p`; 0 or less never, 100 or more always, no draw): her voice at a hand gathering
+(`barrel_ryza::gather::hand_clip`) is a chance then `irand(0, 2)`, the staff's swing `irand(0, 1)` (`swing_clip`).
+
 Barrel seeds from the clock too. `BARREL_RANDOM_STATE=FILE` (a dump of the game's window, ryza-recomp's
 `dumps/F.1.bin`) starts a run from the game's state instead, for the lockstep checks only
 (`docs/ryza/parity.md`, "gather"). Free play draws on its own from 2040 on (`frand(0, 15)` every
 20 to 60 frames from `0x14008e290`, some field timer); Barrel does not make those draws yet, so
-its index runs behind the game's after the first gathering.
+its index runs behind the game's after the first gathering: each lockstep replay starts from the game's dump of the frame
+before it (`gather-rasen2`: 2500 for the comb, 3165 for the staff).
 
 ## Movies
 
@@ -633,6 +637,8 @@ mistake for a day). `u46` in the events does not play its movie yet.
 
 (Ryza's graphics settings apply live from the Settings screen's Yes: `Renderer::apply_settings`, docs/renderer.md "Rebuilding for new settings".)
 
+- **Ryza's staff swings on X (the pad's west button) or the keyboard's X key in a window.** The game's keyboard map is not read; A or Enter
+  gathers by hand as before.
 - **Ryza's field menu opens on Tab or the pad's Y in a window.** The game's keyboard map is not read;
   the arrows move, Enter chooses, Backspace or Escape closes (as the title's keys), and the field
   stands still under the menu (the walk takes no sticks). Offscreen the script's pad frames

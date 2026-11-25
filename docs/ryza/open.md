@@ -2817,5 +2817,68 @@ second point with the hook on `0x14008e290` named.
 - **The walk drifts from the game's over later walks** (P3): Barrel's walk matched the game's first walk (gather-rasen,
   1900-2010) within 5 cm, but the next one (2400, 45 frames, from her stop after the gathering) ended 1 m off
   (Barrel 33636, 29800 vs the game's 33647.2, 29701.8) and a 215-frame one 3 m off; and with her turned back after a
-  gathering the camera faces her (stick up walks her east). The camera's follow after a stop is the suspect.
+  gathering the camera faces her (stick up walks her east). The camera's follow after a stop was the suspect; it was not (part 2).
 
+
+**Part 2 (2026-11-25, answer key `gather-rasen2`).** Two items from one press, a gathering of an item the library knows, the staff's
+swing at a `_WAND_ACTION` point, and the walk's drift.
+
+**Built.**
+- *Two items and the library.* The rule needed no change: the 2501 draws (`irand(1, 2)` 2, `irand(0, 69)`, then the second item's
+  `irand(0, 99)`) are the part-1 rule with the library as the first gathering left it. A gathering makes every item it gave known
+  in full (level 10, `gather::learn`; the game's own call raises the library's entry, `0x1403692f0`, docs/tables.md): so at
+  2500 the comb's pick is among the one item not known (106, total weight 70), and the second pick finds none left unknown and
+  draws over the whole list (100): item 106 (a new discovery, quality 15, potential 139 at 2) and item 128 (Honey Ant again, known:
+  no "New Discovery", quality 16, no potential). `barrel-tool ryza-gather ... --known 128 --hand` gives the 12 draws of 2501 and 2502
+  as the hook log has them and leaves the generator at 0x1e0 as the game has it (`gather2-draws`, `-items`, `-index`).
+- *Her clip.* The frame after a hand gathering's draws the game draws a chance (`0x1406ae500`, caller `0x1406ae532`) and, when it
+  holds, `irand(0, 2)` from `0x1400e4b73` for a voice clip. The draw at 0x1de was 27 (spoke, 2502, clip `df33fd76`) where
+  `gather-rasen` 2042's was 31 (silent): the chance is 28 to 31 in 100, taken as 30 (`gather::VOICE_PERCENT`). Only clip 0's hash is
+  known; the other two play nothing. The staff's swing draws `irand(0, 1)` (the clips `ffc8b3d0`, `59a41e11`) the frame its action
+  starts (press + 6), before the gathering's draws.
+- *Two notices.* `field_hud/gather.rs`: the gathering shows one notice per item; the second starts 22 frames after the first (2588,
+  2610); the first moves up by the plate's slot (66 screen pixels, 44 layout) over 21 frames from the second's start; the notices
+  fade out together, the hold counted from the last one's start (2610 + 141 = 2751). The discovery log is the first new item's.
+  The item pictures are one pair of textures per item (`field_hud::item_texture`); the HUD layer is made again with them when an item is
+  gathered. In a window the library learns the items (`know_items`) and the point's body goes (below).
+- *The staff.* X (the pad's west button; Barrel's keyboard key is X) swings: her clip (press + 6), `SE_PTC_001_KLAUDIA_001` (+17),
+  `SE_FLD_003_WAND01` (+19) whether or not a point is hit; at a `_WAND_ACTION` point within `STAFF_REACH` (2 m) the gathering's
+  draws follow at press + 24 and its sounds `SE_FLD_044_BARREL` (+26), `GATHER02` (+32), `NEW_DISCOVERY` (+35, a new item), the
+  popups' notice at +35 and the log a frame before (`sound::gather_cues`, `field_hud::STAFF_NOTICE_AT`). The point is spent: X at
+  3260 swings and gathers nothing (`--spent 49`). The draw list from 3165.1.bin (`barrel-tool ryza-gather ... BOX_ROD --staff`):
+  `irand 0 1`, then the part-1 list with `irand 0 a` for the potential pick (11 candidates for item 90) (`gather2-staff-*`).
+  The prompt of a staff point reads "Swing" (`STR` 4718596, the list's fourth) with the X button's glyph `\u{4dc}`, comes up when she is
+  within 2 m (3120.5 of the capture) and slides out from the gathering's draws (press + 24); the prompt's alpha is a byte
+  (truncated). `--swing NEAR:PRESS`, `--spent ID,..` and `--learned ITEM,..` replay it offscreen.
+- *The help bar's rest.* The bar's idle count is held at 0 while the prompt slides in (30 frames) and while a swing's action runs (60
+  frames from its first command, 3166 and 3266), as well as by the stick: the bar of `gather-rasen2` began to fade in on 2591 (2470 + 121: the prompt's slide-in ended 2470) and
+  3446 (3326 + 120: the second swing's action ended). The replay lists those frames as `--hud-stick` spans.
+- *The walk's drift was not the camera.* The first walk of `gather-rasen` stops against the honeycomb: the gimmicks' models have a body
+  (`charabase.xml` `FMrad`, 0.5 m for `FM_HONEYCOMB_01`, times the row's `objScale`; `walk::gimmick_walls`, a 12-sided polygon 3.2 units
+  larger than the radius), which Barrel did not have (she ran on 50 cm past the game's stop at 33354.8, 30040.9, and every later walk started
+  from there). The body is gone once its point is spent (the game walks through the first comb after A at 2040): `Walls::remove`,
+  `barrel-tool walk ... --after EVENT --gathered FRAME:ID`. Her positions against the dumps (`tools/walkat.py`, a walk of the whole
+  pad from gather-rasen's start, in game units): 1950 1.2, 2004 2.3, 2010 6.5, 2445 5.0, 2470 5.0, 2860 to 2960 under 7
+  (`gather2-walk-first`, `-2470`, `-2960`).
+
+**STAND-INs** (named in the code): the second notice's gap (22), its slot (44 layout pixels) and the third's (the same steps); the staff's
+reach and hit test (any point of its kind within 2 m: she hit from 1.6 m, 62 degrees off her facing, and the prompt came at 2.0 m);
+the chance's 30; the swing action's 60 frames; the keyboard's X; the body's 3.2 units and its shape (a cylinder for a box as well: `Fmdepth`).
+
+**Left.**
+- The staff point's marker over the box (`a21_field.g1t#0`, 58 by 47 pixels at the point's projection, with the staff's icon
+  `a21_icon.g1t#0`, from 3130 on and still there at 3500), the tool disc's ring while the prompt is up (`a21_field.g1t#3`, 140
+  pixels at 1589, 652 and its glow) and the basket's pulse (`a21_field.g1t#1`, 40 pixels at 1790, 955) are not drawn; the rows leave
+  those quads out (`gather2-staff-ui-*`). A glyph of the first notice that straddles the screen's edge on 3200 and 3210 is the one
+  quad Barrel does not make (the game's at x -15.6 to 0.9; those two frames are not rows). After 3450 the bar's line differs (the game's
+  has other entries: fewer glyphs than Barrel's).
+- The walk after 2960 (`gather2-walk-3100`, 3159 not rows): Barrel stalls 8 frames at (32705, 30070), standing on the floor of the
+  hull of the placed `A21-S09-STAIR-03` (its only collision file, a `_cplh`; 570 units long, scale 0.57), whose northern edge there is at
+  z 30071.5 where the game passed at z 30073: with that hull left out the walk is 0.9 at 3000 and 13.7 at 3082 (15.6 at 3127); with it,
+  72 at 3100 and 3159. The game may use hulls differently (not as floors) or the 8 units of the first slide (her z at 2010: 30034.8 against
+  30040.9; the body's polygon decides the slide's speed: 8, 12 and 24 sides gave 19, 6.5 and 0.3 at 2010 and 27, 5 and 29 at 2470) cost it.
+- The free play's draws (item 5): the `frand(0, 15)` of the emitter at `0x14008e290` and its neighbours; Barrel's index still runs behind
+  the game's between gatherings, so each replay starts from its own dump (`BARREL_RANDOM_STATE`).
+- The other tool points, the second and later items' discovery logs, the item notices' third slot (never captured), the voice clips'
+  hashes 1 and 2, the real chance and the library's level for an item after a gathering (10 here: any value above 2 behaves alike in the
+  captures).
