@@ -379,10 +379,13 @@ impl Talk {
     pub fn tutorial_quads(&self, line: &Line, now: f32, hint: Hint, screen: (u32, u32)) -> Vec<Quad> {
         let ticks = |since: f32| ((now - since) * 60.0 + HALF_FRAME_NUDGE).round() - 1.0;
         let k_in = ticks(line.since);
-        if k_in < FIRST_DRAWN && !line.joined {
+        // STAND-IN: a box that comes in after another tutorial line's (a gap between them) is also drawn once a frame before the third, at the first tick
+        // of its fade (`opening-key4` 13329, 13478, 14174 and 13878's first frame); the game's reason for the extra frame is not read.
+        let ghost = k_in + 1.0 == FIRST_DRAWN && line.shown_before > 0;
+        if k_in < FIRST_DRAWN && !line.joined && !ghost {
             return Vec::new();
         }
-        let t_in = if line.joined { 1.0 } else { (k_in / TUTORIAL_FADE).clamp(0.0, 1.0) };
+        let t_in = if line.joined { 1.0 } else if ghost { 1.0 / TUTORIAL_FADE } else { (k_in / TUTORIAL_FADE).clamp(0.0, 1.0) };
         let mut alpha = 1.0 - (1.0 - t_in).powi(3);
         if let Some(c) = line.closing {
             alpha = alpha.min(1.0 - (ticks(c) / TUTORIAL_FADE).clamp(0.0, 1.0).powi(3));

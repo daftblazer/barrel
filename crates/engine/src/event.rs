@@ -1988,7 +1988,7 @@ mod tests {
                 },
                 Step::FieldChange { map, .. } => format!("field {map}"),
                 Step::CharacterMove { character, .. } => format!("{character} moves"),
-                Step::Turn { character, .. } | Step::Face { character, .. } | Step::CopyFacing { character, .. } | Step::TurnOver { character, .. } => {
+                Step::Turn { character, .. } | Step::Face { character, .. } | Step::FaceOver { character, .. } | Step::CopyFacing { character, .. } | Step::TurnOver { character, .. } => {
                     format!("{character} turns")
                 }
             })
@@ -1997,5 +1997,13 @@ mod tests {
             texts,
             ["a", "b", "ECT_CHARA_MOTION_WAIT", "wait 0.5", "c", "0 at [100.0, -5.0, 200.0]", "0 motion 32 blend 0.4", "1 waits 1.5"]
         );
+    }
+
+    /// Ryza's walks land on the terrain: the whole units of its height less the written y (`opening-key3`: 4964.1 with -29 logs 4993).
+    #[test]
+    fn a_walk_lands_on_the_terrain() {
+        assert_eq!(walk_height(Some(4408.816), 0.0), 4408.0);
+        assert_eq!(walk_height(Some(4964.124), -29.0), 4993.0);
+        assert_eq!(walk_height(None, 12.0), 12.0);
     }
 }

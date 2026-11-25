@@ -104,19 +104,28 @@ pub enum Command {
     Effect(usize),
 }
 
+/// `u2/0x10` (`ECT_SOUND_SE_STOP`, `{effect}`): the key logs it as a stop (3701: the sea's effect, as the music changes). STAND-IN: it stops every channel here, the
+/// effect's own channel is not told apart (nothing else plays at the key's one use).
+const SOUND_SE_STOP: u32 = 0x7510_0002;
+
 // STAND-IN: that `s124`'s second operand is an `sfx.xml` row as `u1`'s first is, is read off the one use the key has (`opening-key4` 9381: row 294, `SE_EVE_034_DESK`, logged on that frame); the command's handler is not read.
 const CHARA_SE_ROW: u32 = 0x7300_007c;
 
 /// The sounds a run of an event's commands (`event::Taken`: the time in seconds, the action and the words) asks for, in
 /// order: its music, its stops and its effects. The voices an event names are not placed (their ids are not derived).
 pub fn commands(taken: &[crate::event::Taken]) -> Vec<(f32, Command)> {
-    use barrel_engine::event::{SOUND_BG_FADEOUT, SOUND_BG_PLAY, SOUND_BG_STOP, SOUND_EFFECT, SOUND_SE_PLAY};
+    use barrel_engine::event::{FIELD_CHANGE, SOUND_BG_FADEOUT, SOUND_BG_PLAY, SOUND_BG_STOP, SOUND_EFFECT, SOUND_SE_PLAY};
+    // The map the event's field changes have brought it to: the first change only says where the event is.
+    let mut map = None;
     taken
         .iter()
         .filter_map(|(time, _, words)| match words.as_slice() {
             [SOUND_BG_PLAY, track, ..] => Some((*time, Command::Music(*track as i32))),
-            [SOUND_BG_STOP | SOUND_BG_FADEOUT, ..] => Some((*time, Command::Stop)),
+            [SOUND_BG_STOP | SOUND_BG_FADEOUT | SOUND_SE_STOP, ..] => Some((*time, Command::Stop)),
             [SOUND_SE_PLAY | SOUND_EFFECT, row, ..] | [CHARA_SE_ROW, _, row, ..] => Some((*time, Command::Effect(*row as usize))),
+            // A change to another map stops the channels at once (`opening-key4`: 8115 and 11905; the first change, 1603, and the one
+            // to the map it is in, 13779, have no stop).
+            [FIELD_CHANGE, to, ..] if map.replace(*to).is_some_and(|from| from != *to) => Some((*time, Command::Stop)),
             _ => None,
         })
         .collect()
@@ -348,6 +357,9 @@ mod tests {
         let taken = vec![(0.0, 0, vec![SOUND_BG_FADEOUT, 150, 0]), (1.0, 0, vec![SOUND_SE_PLAY, 1, 0]), (2.0, 0, vec![SOUND_BG_PLAY, 5003, 100, 0, 0]), (2.5, 0, vec![0x7300_007c, 0, 2, 0])];
         let mut commands = commands(&taken);
         assert_eq!(commands.len(), 4);
+        // A sound effect's stop and a change to another map stop the channels; the first change and a change to the same map do not.
+        let more = vec![(0.0, 0, vec![SOUND_SE_STOP, 368]), (1.0, 0, vec![0x7100_0002, 5, 0]), (2.0, 0, vec![0x7100_0002, 0, 0]), (3.0, 0, vec![0x7100_0002, 0, 0]), (4.0, 0, vec![0x7100_0002, 5, 0])];
+        assert_eq!(super::commands(&more).iter().map(|c| c.0).collect::<Vec<_>>(), [0.0, 2.0, 4.0]);
         // The next event takes over a frame after the first one ends, with the field's music.
         event_change(&mut commands, 3.0, Some(5003));
         assert_eq!(commands.iter().map(|c| c.1).collect::<Vec<_>>(), [Command::Stop, Command::Effect(1), Command::Music(5003), Command::Effect(2), Command::Stop, Command::Music(5003)]);
