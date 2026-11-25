@@ -3015,9 +3015,13 @@ words "Fast Forward" until the card's 140 frames, then "Next"); the bar's going 
 the container's order for "first listed"; the Level UP numbers 2, 3 and 0 (the experience rule is not read).
 
 **The silhouette** (the capture's white Ryza on the right of Select Recipe and Add Materials): the
-pixels show it white, not black, in every frame I looked at (2250 none, 2400, 2800, 3400, 3500 white, 3050 and 3950 on: lit). It is not among the
-2D quads the diff lists (no quad of the screen covers it), so it is a draw of her model or stand picture; whether the game really draws it white (a
-shadow-pass fill, or her picture not there yet) or the capture's pipeline does cannot be told from the quads. Left.
+pixels show it white, not black, in every frame I looked at (2250 none, 2400, 2800, 3400, 3500 white, 3050 and 3950 on: lit). The lit frames (3050) have draws the white ones (2800, 3400) lack: 41 big
+draws with the pixel shader `sh14f4ae6ffb` and 133 with `shc1558e0792` into the screen's 1920 by 1080 target (her model's lit passes), where 2800 and 3400 have
+only the shaders every frame has (`sha654bf1926`, `sh5c84771836`, the 2000 by 2400 shadow maps): so the game does not draw her lit model in the white
+frames, and the white silhouette is what it draws in its place (not a missed mirror, and the capture's pixels show it white, not black). It is not among
+the 2D quads the diff lists. Which condition switches the lit model on (3050 has the material list open) is not found.
+
+Left.
 
 **Left.**
 - The screens' state machine and the field side: BACK in free play and the Yes/No prompt, the load of the attic, the prompt "Synthesis" over the
