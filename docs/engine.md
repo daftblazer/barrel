@@ -620,6 +620,12 @@ frames. Their timers' bases and visibility are not read, so `barrel_ryza::free_p
 (`tools/free_play.py` writes it from the hook log) and a window makes none. `barrel-tool ryza-lockstep` runs a whole replay's draws (the two
 combs' gatherings, her clips, the staff, the free play) from the one dump of 2040 and diffs them with the hook log: `gather3-lockstep`.
 
+`0x1406ae640` and `0x1406ae680` are logged now as `one_to(n)` and `below(n)` (`r640 N`, `r680 N` in the hook log, N in hex; none for N 0), so a run's draw
+list has them. The synthesis's draws (docs/ryza/open.md, "Synthesis (P6)"): the effect's 48 `frand(0.05, 0.2)` at `0x1401e2fad`, the world's restocking pass at
+`0x14059f9b0` to `0x14059fdaf` (per group `shufA` `0x14059fb40`; the stock's random potentials `0x14059f210`, whose `0x14059f3e0` picks the entry; the stage
+`0x14059f4a0` fills the 13 groups' lists from the table at `0x1402fc490`), the voice picks at `0x1402de19b`; `barrel_ryza::mix::Step` runs them by the hook
+log's own words and `barrel-tool ryza-lockstep` takes them as `FRAME draw irand A B` lines.
+
 ## Movies
 
 Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":

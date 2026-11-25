@@ -36,3 +36,10 @@ diff one captured frame each and count only the quads whose texture is one of th
 particles' textures and are not drawn. `--hud-arrival` is 1730 here, two frames later than `hud-walk`'s
 1728: the destination glow's loop (71 frames, started 2 before the arrival) fits the capture with it.
 
+| synth-atelier (the synthesis: the room, Select Recipe, Add Materials, the synthesis, the result, Complete and Level UP) | 3830-3930 (11 rows), 3940-3970, 4020-4080 (7), 4090-4250 (14) | `--mix-sheet 329:4:CLOCK:FRAMES` (the card coming in: the clock is the capture's, the frames since 3819), `--mix-sheet 329:4` (at rest), `--mix-result 329:49:1333[:LEAVING]` (the made item's card), `--mix-complete 2:3:0:AGE` (AGE frames since 4100) | 0 `res_` quads each | 41 `synth-card-*`, `synth-result-*`, `synth-complete-*` rows; the 2D quads of the game's `res_*` files, as `gather` |
+
+**synth**: eight rows are the draws and the rules, not pictures. `synth-draws`, `-index`, `-end-index` run `tools/synth_script.py` and `barrel-tool ryza-lockstep` over the
+whole capture (2250 to 4900: 109 draws, the index right at each of the 26 dumps, 0x285 at the end); `synth-refresh-draws` and `-index` run `barrel-tool ryza-mix ... --steps` from the
+generator of 3535 and diff its calls with the hook log's lines of frames 3535 and 3536 (98 draws: the effect's 48 and the world's pass); `synth-recipe`, `-takes` and
+`-made` print the recipe, the container places its rows take (13, 14, 15, 18) and the result (4 units in 14 hours). The picture rows count the `res_*` quads
+the two sides do not match with `barrel-parity diff` (`grep -E '^  (GAME|BARREL) .*res_'`); the effect particles are not counted.

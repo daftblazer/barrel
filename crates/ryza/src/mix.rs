@@ -107,6 +107,21 @@ pub fn after(container: &[Worn], made: &Made) -> Vec<Worn> {
     container.iter().enumerate().filter(|(i, _)| !made.taken.contains(i)).map(|(_, w)| *w).collect()
 }
 
+/// The clock word's step for an hour (`save::hour_of`: 50 to the hour, fitted to the capture's 493 at 10 AM; a synthesis of 14 hours from it
+/// reads "AM 0" on the room's clock).
+pub const CLOCK_PER_HOUR: u32 = 50;
+
+/// The clock word after `hours` have gone by.
+pub fn clock_after(word: u32, hours: u32) -> u32 {
+    word + hours * CLOCK_PER_HOUR
+}
+
+/// The save's alchemy level and experience (`mix_lv`: `m_lv` and `m_exp`, one big-endian i32 each).
+pub fn alchemy(state: &[u8]) -> Option<(u32, u32)> {
+    let word = |name: &str| -> Option<u32> { crate::save::find(state, &["mix_lv", name])?.get(..4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])) };
+    Some((word("m_lv")?, word("m_exp")?))
+}
+
 /// One of the game's draws a run makes, as a script names it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Step {
@@ -204,6 +219,14 @@ mod tests {
         let left = after(&container, &made);
         assert_eq!(left.iter().map(|w| w.item).collect::<Vec<_>>(), [3]);
         assert!(make(&t, &t.recipes[0], &container[..2]).is_none(), "too few flowers");
+    }
+
+    #[test]
+    fn the_clock_moves_by_the_hours() {
+        use crate::save::hour_of;
+        // The capture's autosave: 493 reads 10 AM; the synthesis's 14 hours later the clock reads 0.
+        assert_eq!(hour_of(493), 10);
+        assert_eq!(hour_of(clock_after(493, 14)), 0);
     }
 
     #[test]

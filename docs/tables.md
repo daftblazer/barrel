@@ -2837,3 +2837,17 @@ item, `NEW_DISCOVERY` (+35). A spent point's swing gives nothing. A gimmick's mo
 `charabase.xml` row's `FMrad` (metres) times the placement's scale, gone once the point is gathered from (the honeycombs: 0.5 m, scale 1.2,
 she stopped 91.2 units from the centre with her 28; the walls' polygon is 3.2 units further out).
 
+## Ryza DX: synthesis recipes (`Saves/item/itemrecipedata.xml`)
+
+442 recipes in 1,129 rows (`barrel_ryza::mix::Tables`). A recipe's head row has `ItemTag` (`ITEM_MIX_*`), `MakeNum` (units made), `Hour` (14 for the
+ones read), `NeedNum` (how many units its first material takes), `HasData`, `RecipeCategory` (`MIX_RECIPE_CATEGORY_*`), `MatTag` (the first material's
+category, `ITEM_CATEGORY_*`), `IsCategory`, `AddEff0` ... `AddEff3` (the effects the first loop unlocks: `ITEM_EFF_*`) and `MassEffect`; the rows after it, until
+the next head, are the other loops: a `MatTag` and `NeedNum` of their own or only effects. The recipe numbers of the save (`knowledge/recipe`,
+`mix_recipe_status`) are the head rows' order (2 Craft, 92 Red Supplement). Recipe 92: the head takes 3 `ITEM_CATEGORY_FLOWER` (effects
+`ITEM_EFF_CREATE_QUALITY_01` to `_04`, the "Synth Quality +5, +7, +10, +12" of the ring), the next row one `ITEM_CATEGORY_LIQUID` (`ITEM_EFF_ADD_CATEGORY_12`),
+the next only `ITEM_EFF_ADD_CATEGORY_13` and the last nothing; `MakeNum` 4. An item's categories are `itemdata.xml`'s `cat_0`, `cat_1` ...; the item's number is
+its row (`ITEM_MIX_*` tags are in the executable's enum array one place after their item number: `Pe::enum_names` gives index + 1). The made item's
+card is the Container page's (`uil_a21_item_info.xml`'s `normal_item`) and the finished card `uil_a21_mix_item_sheet.xml` with the animations of
+`uia_a21_mix.xml` (`mix_anm_finish_card_in`: the card rises 25 layout pixels by out cubic from frame 20 to 140 and fades in from 20 to 60, its
+panel's copy at 2.5 times the speed; `mix_anm_finish_mix05` to `09`: the white, the glows; `mix_anm_level_up_*`: the plate's spline rise
+(frames 0 150, 20 150, 45 -50, 65 25, 80 -13, 95 0), its alpha 20 to 50, the words' glow and the two glows).

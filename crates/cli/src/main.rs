@@ -1983,9 +1983,10 @@ fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&st
             None => println!("  the container has too few of a row's category"),
         }
         let clock = barrel_ryza::save::clock(&data).unwrap_or(0);
-        println!("  clock word {clock} (hour {})", barrel_ryza::save::hour_of(clock));
-        if let Some(lv) = barrel_ryza::save::find(&data, &["mix_lv"]) {
-            println!("  mix_lv {:02x?}", &lv[..lv.len().min(32)]);
+        let after = barrel_ryza::mix::clock_after(clock, r.hours);
+        println!("  clock word {clock} (hour {}), after the synthesis {after} (hour {})", barrel_ryza::save::hour_of(clock), barrel_ryza::save::hour_of(after));
+        if let Some((level, exp)) = barrel_ryza::mix::alchemy(&data) {
+            println!("  alchemy level {level}, experience {exp}");
         }
     }
     if let Some(file) = steps {

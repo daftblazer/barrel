@@ -2950,3 +2950,82 @@ none and keeps its own clock-seeded state.
   game picks the nearest (only one door of the captures); the icon's alpha was 1 in every frame captured.
 - The staff's ring: that it follows the prompt rather than the swing's reach, and its end (3190 shows it, 3200 does not).
 - The free play's own schedule (timers, bases, visibility).
+
+## Synthesis (P6)
+
+Part 1 of the synthesis stage (2026-11-25, answer key `synth-atelier`: ryza-recomp `scenarios/synth-atelier.sh`, the user's save with the opening's
+events played, a recipe known and 15 materials in the container; BACK for the room, the cauldron, A for Select Recipe, DOWN to the second recipe, A
+through Add Materials, the synthesis, the result and Complete / Level UP, B back to the room). Every draw hooked (`rng-all.hooks`), draws every 10
+frames 2250 to 4900, her and the generator every frame, pictures every 50. Items, recipes and screens are named only; no story text.
+
+**Built.**
+- `barrel_ryza::mix` (docs/tables.md, "Ryza DX: synthesis recipes"): `itemrecipedata.xml` read into recipes (a head row and the loops' rows), the units a
+  synthesis takes (each row takes its `NeedNum` units of its category, the first listed in the container), what it makes (`MakeNum`) and how long it
+  takes (`Hour`, 50 clock words to the hour: 493 reads 10 AM, 14 hours on the clock reads "AM 0", as the room's does after), the save's alchemy level
+  (`mix_lv`: level 1, experience 0 before; the Level UP screen reads 2, next 3). `barrel-tool ryza-mix INSTALL STATE.bin SAVE RECIPE [--steps FILE]
+  [--draws]` prints it: recipe 92 (`ITEM_MIX_MATERIAL_NEUTRALIZE_001`: item 329, "Red Supplement"; the enum's array has an entry before item 0, so a tag's
+  index is the item number plus one) takes three flowers (container places 13, 14, 15: Health Flower x2 and Northern Wind Flower), one liquid
+  (place 18: Clean Water) and makes 4 units in 14 hours.
+- **The draws are not the synthesis's own.** The key's draws at 3500 to 3536 are the effect's 48 `frand(0.05, 0.2)` (`0x1401e2fad`, particles), a pass over
+  the world's stock when the hours go by (`0x14059f9b0` to `0x14059fdaf`, 50 `rand15` draws: per group of stock entries (`0x141ab3480`, 13 groups of up to
+  100, stride `0x194`) the entries' `shufA` (`0x14059fb40`, which draws `irand(0, n - 1)` for the entries it picks, 0x14059fdaf), and the random potentials
+  the stock gets (`0x14059f210`: `r640(range)`, `r640(count)`, `r680(size)` for each pick and `irand(2, 4)` for its level; seven times in the key),
+  then `irand(0, 99)` at `0x1404225a9`) and Ryza's voice pick. The result of a synthesis draws nothing in the capture (quality, effects and traits
+  are the screens' numbers, below). `barrel_ryza::random` now logs `one_to` and `below` (`r640`, `r680`) as the hook log has them; `mix::Step` is one
+  draw by its hook spelling (`irand A B`, `frand A B`, `r640 N`, `r680 N`, `rand15` for the two wrappers whose arguments are not hooked: `around`
+  `0x1406ae2e0`, 2305, 2501, 2635, 2817, 4271, and `chance` `0x1406ae500`, her idle sounds every 60 frames from 4360).
+  `tools/synth_script.py SCENARIO_DIR [FROM TO]` writes the run's draws from the hook log (and the generator's index every 100 frames from the dumps);
+  `barrel-tool ryza-lockstep ... dumps/2250.1.bin SCRIPT hooks.log 2250 4900` runs them from the one dump: **109 draws, 0 differ, the index right at
+  every dump** (`synth-draws`, `-index`, `-end-index`); `barrel-tool ryza-mix ... dumps/3535.1.bin SAVE 92 --steps` makes the 98 draws of 3535 and 3536
+  (48 + 50) with the same calls and ranges in the same order and ends at index 0x279 as the dump of 3537 (`synth-refresh-draws`, `-index`).
+  STAND-IN: the world's restocking pass is a schedule taken from the capture (the stock's state is not read), as `free_play`'s.
+- **The voice picks** (`0x1402de19b`, called from `0x1402de1b6` with a request for a voice, the sound request then `0x140320097`): `irand(2k, 2k + 1)` (the
+  Add Materials ones with four, `0x18` to `0x1b`) picks one of a line's clips, and the pick is the clip's number. In the key: (0, 1) at 2303 gave 0
+  (clip `6b211790`); (4, 5) at 2860 gave 5 (`8bb5cdea`); (6, 7) at 2921, 3041 and 3281 gave 6 (`e591382b`); (8, 9) at 3198 and 3438 gave 8 (`99480cad`);
+  (0x14, 0x15) at 3500 gave 0x14 (`2edcaace`); (0x16, 0x17) at 3536 gave 0x16 (`e2937f50`); (0x18, 0x1b) at 3824 gave 0x1a (`c525f1b4`); (0x1c, 0x1d)
+  at 4101 gave 0x1c (`78dcc636`). Only the picked clip of each is known. The sounds at the key's `play` lines: `MESSAGE` (`54eed79d`) at each of the
+  Select Recipe's tutorial pages (2420 to 2660), `3027bfbd` at the last (2720), `CURSOR` (`5e3dae22`) at DOWN (2800), `CLICK` (`09c3999b`) at A in the
+  lists (2860, 2980, 3100, 3340, 3520), `CANCEL` (`22bda2fa`) at 4270 and 4300, `49bc3781` with a voice at 2920, 3040 and 3280 (a material added),
+  `3356d4c4`, `4f139bfa`, `7e185a3a` and `8865c5c1` in the loops, `3e78ab99` and `e2937f50` at the synthesis (3536), `c0d383b0` at 3642, `c525f1b4`,
+  `b86bc79c` and `11e25c7c` at the result (3824), `78dcc636` and `67c2431d` at Level UP (4101), `fb78b7fb` and `b704f2c1` alternating in the room from 4360. No
+  state machine of the screens exists yet to cue them.
+- **2D at 0** (the quads of the game's `res_*` files; the particles' textures and the 3D are not counted, as the gathering's rows): `--mix-sheet ITEM:COUNT
+  [:CLOCK:FRAMES]` (the finished card), `--mix-result ITEM:QUALITY:EFFECTS[:LEAVING]` (the made item's card and the Complete screen's title) and
+  `--mix-complete LEVEL:NEXT:GAINED[:AGE]` (the Complete screen's level panel and its Level UP plate), each three layers: the background (`a21_bg01`, twice
+  the screen's size) and the still picture (`ipu/still_ns01`), the layout's parts (`field_page::Page::sheet_quads`, `result_quads`, `complete_quads` over the
+  Walker of the field menu's pages, which also draws the Container page's item card for the made item) and the help bar
+  (`field_menu::View::next_help`). Every capture frame 3830 to 3930 (the card comes in: the white-out, the rise, three glows), 3940 to 3970 (at rest),
+  4020 to 4080 (the made item's card, then out as the level panel comes in), 4090 to 4250 (Complete, the Level UP plate: a spline rise, a glow, a flash
+  and a beam) has **0 unmatched `res_` quads**: 43 rows `synth-card-*`, `synth-result-*`, `synth-complete-*`. The animation curves are
+  `uia_a21_mix.xml`'s (`keyed` and `spline` in `field_page.rs`; the plate's rise is a Catmull-Rom spline through its keys, which fits the capture to a
+  hundredth of a pixel).
+- **The made item** (seen on 4020 to 4060, not derived): Red Supplement, quality 49 with the rank letter C, item level 1, element value 2 with fire lit, one
+  effect "Synth Quality +5" (the first of the recipe's four `ITEM_EFF_CREATE_QUALITY_*`, string 6882614), no traits, category "(Supplement)"; four units.
+  The container's qualities (35, 42, 38 for the flowers, 40 for the water) do not give 49 by an average, so the quality rule is not found; the first-listed
+  rule of `mix::make` is unverified too (the Add Materials list showed its first Health Flower at quality 42, the one the container has second, so the
+  game's list is sorted, not in the container's order).
+- **The animation clock hitches**: the card's coming in runs on a clock that ran 12 frames ahead of the frame count from the capture's 3880 on (the
+  glows' alpha and scale, and the card's rise by two curves, 2.5 times faster for the panel's copy, fit frame by frame only with those 12 frames; the
+  full-screen white-out, an other anim, does not have them: its 0.18 s delay counts the frames). The rows give the clock as an input (`--mix-sheet
+  ITEM:COUNT:CLOCK:FRAMES`); a run has no such hitch.
+
+**STAND-INs** (named in the code): the world's restocking schedule; the clock's 50 words to the hour; the made-item rank (a letter lower than
+`item_info`'s steps give: quality 49 is C here, D there); the help bar's plate width on the finished card (40.2 layout pixels more than its words, and the
+words "Fast Forward" until the card's 140 frames, then "Next"); the bar's going away 15 frames after A (10 has it, 20 does not); the title's size (24);
+the container's order for "first listed"; the Level UP numbers 2, 3 and 0 (the experience rule is not read).
+
+**The silhouette** (the capture's white Ryza on the right of Select Recipe and Add Materials): the
+pixels show it white, not black, in every frame I looked at (2250 none, 2400, 2800, 3400, 3500 white, 3050 and 3950 on: lit). It is not among the
+2D quads the diff lists (no quad of the screen covers it), so it is a draw of her model or stand picture; whether the game really draws it white (a
+shadow-pass fill, or her picture not there yet) or the capture's pipeline does cannot be told from the quads. Left.
+
+**Left.**
+- The screens' state machine and the field side: BACK in free play and the Yes/No prompt, the load of the attic, the prompt "Synthesis" over the
+  cauldron (the MIX gimmick: fixID 8 of `gimmick_fieldmap_s01_i_attic.xml`) and A (the capture has no draws before 2250; her end place (3772.95, 4140.70)
+  facing 14.5 degrees is the only check of the walk 2160 to 2200); the attic's room camera (the 2250 frame is a first look: Barrel's frame has the wrong
+  camera, so the balloons over the room's three gimmicks, the prompt and the arrival plate "Ryza's Room" are not compared).
+- Select Recipe (with the tutorial pages) and Add Materials (loops, the material list, the quality bar, the ring graph): about 520 to 920 quads a
+  frame, most of them the ring graph's pieces and the lists' text; not started. The quality, effects and traits of the result and the experience rule.
+- The card's coming in before 3830 and the leaving frames 3980 to 4015 (the card out and the made item's card in with the caption, on a clock that
+  hitched again), 4260 to 4300 (Complete out, the room's HUD back: the help bar of the lists fades, "AM 0", the moon).
+- Sounds in a window (no screens to cue them) and the 4600 `irand(0, 1)` (`0x1400e4b73`: her idle clip pick, `rand15` after it is the chance).
