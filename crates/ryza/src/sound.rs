@@ -32,6 +32,10 @@ pub const CANCEL: u32 = 0x22bd_a2fa;
 pub const WINDOW: u32 = 0x0d0f_cb87;
 pub const CURSOR: u32 = 0x5e3d_ae22;
 pub const PAGE: u32 = 0x5ce8_51ca;
+/// `SE_SYS_004_MESSAGE`: the sound of the button that closes a line.
+pub const MESSAGE: u32 = 0x54ee_d79d;
+/// `SE_SYS_013_MARQUEE`: the story marquee's text coming to rest.
+pub const MARQUEE: u32 = 0xd3fe_dd56;
 
 /// Frames from the load's stop to the field's music (the answer key: the stop at game frame
 /// 1725, the music at 1751).
@@ -87,6 +91,70 @@ impl Cue {
 pub fn title_cues(with_saves: bool) -> [Cue; 2] {
     let (music, voice) = if with_saves { (2, 98) } else { (18, 106) };
     [Cue::music(music, TITLE_MUSIC), Cue::voice(voice, TITLE_VOICE)]
+}
+
+/// A sound an event's command asks for.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Command {
+    /// `ECT_SOUND_BG_PLAY {track, ..}`: the music of that number.
+    Music(i32),
+    /// `ECT_SOUND_BG_STOP` or `_FADEOUT`: the channels stop.
+    Stop,
+    /// `u1`/`u8` `{effect, ..}` or `s124` `{character, effect, ..}`: the effect is the row of `sfx.xml` (counted from 0).
+    Effect(usize),
+}
+
+// STAND-IN: that `s124`'s second operand is an `sfx.xml` row as `u1`'s first is, is read off the one use the key has (`opening-key4` 9381: row 294, `SE_EVE_034_DESK`, logged on that frame); the command's handler is not read.
+const CHARA_SE_ROW: u32 = 0x7300_007c;
+
+/// The sounds a run of an event's commands (`event::Taken`: the time in seconds, the action and the words) asks for, in
+/// order: its music, its stops and its effects. The voices an event names are not placed (their ids are not derived).
+pub fn commands(taken: &[crate::event::Taken]) -> Vec<(f32, Command)> {
+    use barrel_engine::event::{SOUND_BG_FADEOUT, SOUND_BG_PLAY, SOUND_BG_STOP, SOUND_EFFECT, SOUND_SE_PLAY};
+    taken
+        .iter()
+        .filter_map(|(time, _, words)| match words.as_slice() {
+            [SOUND_BG_PLAY, track, ..] => Some((*time, Command::Music(*track as i32))),
+            [SOUND_BG_STOP | SOUND_BG_FADEOUT, ..] => Some((*time, Command::Stop)),
+            [SOUND_SE_PLAY | SOUND_EFFECT, row, ..] | [CHARA_SE_ROW, _, row, ..] => Some((*time, Command::Effect(*row as usize))),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An event that follows another in the same field (the opening's help event): the first one's end stops the channels
+/// and the new one starts with the field's music (`opening-key4`: 13845 and 13846), the second `start` seconds on its clock.
+pub fn event_change(commands: &mut Vec<(f32, Command)>, start: f32, field_music: Option<i32>) {
+    commands.push((start - 1.0 / FPS, Command::Stop));
+    if let Some(n) = field_music {
+        commands.push((start, Command::Music(n)));
+    }
+    commands.sort_by(|a, b| a.0.total_cmp(&b.0));
+}
+
+/// Schedules the cues of `commands` due in the frames after `heard` up to `now` (game frames in the sound's count; a
+/// command's frame is its time in 60ths of a second, rounded, `offset` frames on): the track is the stream whose tag
+/// starts with its number (`music::music_hash`).
+pub fn schedule_commands(sound: &mut Sound, commands: &[(f32, Command)], offset: i64, heard: i64, now: i64, streams: &[crate::music::Entry], effects: &[crate::music::Entry]) {
+    for &(time, command) in commands {
+        let at = (time * FPS).round() as i64 + offset;
+        if at <= heard || at > now {
+            continue;
+        }
+        match command {
+            Command::Music(n) => {
+                if let Some(hash) = crate::music::music_hash(streams, n) {
+                    sound.request("music", Cue::music(at, hash));
+                }
+            }
+            Command::Stop => sound.request("stop", Cue::stop(at)),
+            Command::Effect(row) => {
+                if let Some(e) = effects.get(row) {
+                    sound.request("effect", Cue::effect(at, e.hash));
+                }
+            }
+        }
+    }
 }
 
 /// The title frame `seconds` into the title is on.
@@ -268,6 +336,32 @@ mod tests {
         assert_eq!(title_cues(false).map(|c| c.at_frame), [18, 106]);
         assert_eq!(Cue::effect(692, PRESS_START).line(), "692 effect a699d027");
         assert_eq!(Cue::stop(1182).line(), "1182 stop -");
+    }
+
+    fn entry(hash: u32, tag: &str) -> crate::music::Entry {
+        crate::music::Entry { hash, tag: tag.into(), file: "BGM".into() }
+    }
+
+    #[test]
+    fn an_events_sound_commands_become_cues_on_their_frames() {
+        use barrel_engine::event::{SOUND_BG_FADEOUT, SOUND_BG_PLAY, SOUND_SE_PLAY};
+        let taken = vec![(0.0, 0, vec![SOUND_BG_FADEOUT, 150, 0]), (1.0, 0, vec![SOUND_SE_PLAY, 1, 0]), (2.0, 0, vec![SOUND_BG_PLAY, 5003, 100, 0, 0]), (2.5, 0, vec![0x7300_007c, 0, 2, 0])];
+        let mut commands = commands(&taken);
+        assert_eq!(commands.len(), 4);
+        // The next event takes over a frame after the first one ends, with the field's music.
+        event_change(&mut commands, 3.0, Some(5003));
+        assert_eq!(commands.iter().map(|c| c.1).collect::<Vec<_>>(), [Command::Stop, Command::Effect(1), Command::Music(5003), Command::Effect(2), Command::Stop, Command::Music(5003)]);
+        let (streams, effects) = (vec![entry(0x03be_a3b2, "BGM00003_FM_03_ISLAND01")], vec![entry(1, "SE_A"), entry(0xaa, "SE_B"), entry(0xbb, "SE_C")]);
+        let mut s = quiet();
+        // The event's frame 0 is game frame 1600.
+        schedule_commands(&mut s, &commands, 1600, 1599, 1600 + 150, &streams, &effects);
+        let lines: Vec<String> = s.queue.iter().map(Cue::line).collect();
+        assert_eq!(lines, ["1600 stop -", "1660 effect 000000aa", "1720 music 03bea3b2", "1750 effect 000000bb"]);
+        // The rest comes due later, and what was heard is not asked for again.
+        schedule_commands(&mut s, &commands, 1600, 1600 + 150, 1600 + 200, &streams, &effects);
+        assert_eq!(s.queue.len(), 6);
+        assert_eq!(s.queue[4].line(), "1779 stop -");
+        assert_eq!(s.queue[5].line(), "1780 music 03bea3b2");
     }
 
     #[test]

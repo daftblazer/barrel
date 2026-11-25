@@ -53,6 +53,10 @@ fn text_shift(age: f32) -> Option<f32> {
     Some(if age <= TEXT_OUT_AGE { (TEXT_IN_OFFSET - TEXT_SPEED * (age - TEXT_IN_AGE)).max(0.0) } else { -TEXT_SPEED * (age - TEXT_OUT_AGE).min(TEXT_OUT_FRAMES) })
 }
 
+/// The frame (counted from the field's first) the text comes to rest at, which the marquee's sound is played on
+/// (`opening-key4`: `SE_SYS_013_MARQUEE` on 14939, 77 frames in).
+pub const SOUND_AT: i64 = 77;
+
 /// The layouts' pieces the arrival draws.
 pub(super) struct Arrival {
     /// The marquee's plate (its picture and place when it has slid in) and its text node.
@@ -159,5 +163,24 @@ impl Hud {
             return;
         }
         pen.out.extend(a.spinner.quads((age + SPINNER_LEAD) / FPS, pen.k, pen.left, base, 0.0));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_text_comes_in_from_the_right_rests_goes_out_to_the_left_and_is_gone() {
+        // `opening-key4`: the first glyph at 1890 on 14898 (age 36) and 690 on 14938, resting at 667.5 from 14939.
+        assert_eq!(text_shift(36.0), Some(815.0));
+        assert_eq!(text_shift(76.0), Some(15.0));
+        assert_eq!(text_shift(77.0), Some(0.0));
+        assert_eq!(text_shift(289.0), Some(0.0));
+        // Out at 30 pixels a frame on the capture's 1080 lines (20 layout pixels), 37 frames, then it holds.
+        assert_eq!(text_shift(290.0), Some(-20.0));
+        assert_eq!(text_shift(326.0), Some(-740.0));
+        assert_eq!(text_shift(327.0), Some(-740.0));
+        assert_eq!(text_shift(328.0), None);
     }
 }

@@ -21,6 +21,7 @@ use crate::title::{curve, find, numbers, pair, Curve, LAYOUT_HEIGHT};
 
 mod arrival;
 use arrival::Arrival;
+pub use arrival::SOUND_AT as MARQUEE_SOUND_AT;
 
 /// The textures of the HUD's layer, in this order.
 pub const FONT01: usize = 0;
@@ -948,6 +949,23 @@ mod tests {
         for frame in [1930.0, 2330.0, 2400.0, 2700.0, 2740.0, 3000.0, 3400.0, 3421.0] {
             assert_eq!(help_at(frame).alpha(), 0.0, "frame {frame}");
         }
+    }
+
+    #[test]
+    fn the_bar_after_the_opening_fades_in_from_the_fourth_frame_with_its_plate_half_grown() {
+        // `opening-key4`: the field's frames 14862 to 14871; the first plate on 14865 at 1/15, 785 pixels of 1191.5 (the
+        // shortest 376.5): half of the way, whole on 14871.
+        let mut bar = HelpBar::arriving_at_once();
+        let mut seen = Vec::new();
+        for _ in 0..10 {
+            bar.step(false, 1.0);
+            seen.push((bar.alpha(), bar.grow()));
+        }
+        assert_eq!(seen[..3].iter().map(|s| s.0).sum::<f32>(), 0.0);
+        assert!((seen[3].0 - 1.0 / 15.0).abs() < 1e-6);
+        assert!((seen[3].1 - 0.5012).abs() < 0.001, "{}", seen[3].1);
+        assert_eq!(seen[9].1, 1.0);
+        assert!(!bar.first_line());
     }
 
     #[test]

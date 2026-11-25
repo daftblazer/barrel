@@ -73,6 +73,8 @@ const TUTORIAL_WRAP: f32 = 750.0;
 const TUTORIAL_PEN: f32 = 598.5;
 const TUTORIAL_CENTRE: f32 = 892.5;
 const TUTORIAL_PITCH: f32 = 36.0;
+/// Where the letters' tops sit in the font's cell (the bracket's `y_offset`), in font units.
+const LETTER_TOP: f32 = 10.0;
 const TUTORIAL_TEXT: [f32; 3] = [26.0 / 255.0, 0.0, 0.0];
 const TEXT_COLOR_DARK: [f32; 3] = TUTORIAL_TEXT;
 const TUTORIAL_ARROW: [f32; 3] = [1390.0, 935.5, 25.0];
@@ -393,8 +395,11 @@ impl Talk {
         // the text: rows wrapped at TUTORIAL_WRAP, a block centred on TUTORIAL_CENTRE; colours by the markup
         let (plain, runs) = markup(&line.text);
         let rows = self.rows_at(&plain, TUTORIAL_SCALE, TUTORIAL_WRAP);
-        // STAND-IN: a lone row stands 7/3 pixels higher than the centring gives (the one lone row the key shows, `opening-key3` 14005; the rule behind it is not read)
-        let top = TUTORIAL_CENTRE - TUTORIAL_PITCH * rows.len() as f32 * 0.5 - if rows.len() == 1 { 7.0 / 3.0 } else { 0.0 };
+        // STAND-IN: a lone row is centred by the box its glyphs fill, so one that holds a taller glyph (a button's icon rises 7
+        // font units above the letters, the bracket's top at 10) stands half that rise higher (`opening-key3` 14005: 7/3
+        // pixels with an icon; `opening-key4` 13141 to 13323: none for plain letters); the rule for several rows is not read.
+        let rise = if let [row] = rows.as_slice() { row.chars().filter_map(|c| self.glyphs.get(&c)).map(|g| g.y_offset).min().map_or(0.0, |y| (LETTER_TOP - y as f32).max(0.0)) } else { 0.0 };
+        let top = TUTORIAL_CENTRE - TUTORIAL_PITCH * rows.len() as f32 * 0.5 - rise * TUTORIAL_SCALE * 0.5;
         let mut at = 0;
         for (i, row) in rows.iter().enumerate() {
             let mut pen = TUTORIAL_PEN;

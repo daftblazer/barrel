@@ -9,6 +9,8 @@
 //!                                                      the game's 2D quads against Barrel's
 //!   barrel-parity diffs <trace dir> <a-b[/step]> <barrel trace> <first Barrel frame> [index]
 //!                                                      every frame of a range, one line each
+//!   barrel-parity bquads <barrel trace> <a-b[/step]> [index]
+//!                                                      Barrel's own frames, printed as `quads` does
 //!   barrel-parity draws <trace dir> <frame> [index] [--vars A,B] [--pass N] [--summary]
 //!                                                      a frame's draws by pass, with the
 //!                                                      constant buffers' values (3D)
@@ -900,6 +902,24 @@ fn main() -> Result<()> {
         Some("diff") if a.len() >= 5 => {
             let bad = diff(Path::new(&a[1]), a[2].parse()?, Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str))?;
             std::process::exit(if bad == 0 { 0 } else { 1 })
+        }
+        // Barrel's own frames of a trace (`a-b`, from its first frame 0), in the layout `quads` prints for the game's
+        Some("bquads") if a.len() >= 3 => {
+            let (names, glyphs) = index(a.get(3).map(String::as_str))?;
+            let (from, to, step) = parse_range(&a[2])?;
+            let wanted: Vec<u64> = (from..=to).step_by(step as usize).collect();
+            let s = Setup::new(a.get(3).map(String::as_str))?;
+            for (f, q) in wanted.iter().zip(barrel_frames(Path::new(&a[1]), &wanted)?) {
+                println!("== {f}");
+                for q in text_runs(s.barrel(q), glyphs.as_ref()) {
+                    let turned = q.corners.map(|c| format!(" corners {c:?}")).unwrap_or_default();
+                    match &q.text {
+                        Some(text) => println!("text {text:?} {:?} color {:?}", q.rect, q.color),
+                        None => println!("{} {:?} uv {:?} color {:?}{turned}", names.get(&q.tex).unwrap_or(&q.tex), q.rect, q.uv, q.color),
+                    }
+                }
+            }
+            Ok(())
         }
         Some("diffs") if a.len() >= 5 => {
             let bad = diffs(Path::new(&a[1]), &a[2], Path::new(&a[3]), a[4].parse()?, a.get(5).map(String::as_str))?;

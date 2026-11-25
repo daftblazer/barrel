@@ -341,6 +341,9 @@ pub struct Stage {
     pub line: Option<Line>,
     /// The next line starts its arrow's clock afresh (a tutorial picture came up: Ryza DX's `u76`).
     pub line_clock_reset: bool,
+    /// How many times a button has closed a line or handed the box on ([`Step::LineClose`]): the
+    /// player's message sound goes with each.
+    pub lines_closed: u32,
     /// How long a line stays up, for playback nobody reads along with: the reading time the
     /// schedule holds each line for (`event::Player::reading_time`). None keeps each line up
     /// until the next.
@@ -485,6 +488,7 @@ impl Stage {
             Step::Command { word, operands, .. } if word & !crate::event::UNMAPPED == crate::event::TUTORIAL_PICTURE && operands.first() == Some(&1) => self.line_clock_reset = true,
             Step::LineClose { last, more, .. } => {
                 let now = self.time;
+                self.lines_closed += 1;
                 if let Some(l) = self.line.as_mut() {
                     l.more_follows = *more;
                     if *last {

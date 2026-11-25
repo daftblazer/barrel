@@ -2368,21 +2368,43 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
             Some(s)
         }
-        None if field_music.is_some() => Some(barrel_ryza::sound::Sound::new(&install.root, sfx(), pump.is_some())),
+        None if field_music.is_some() || a.opening || a.no_banner => Some(barrel_ryza::sound::Sound::new(&install.root, sfx(), pump.is_some())),
         None => None,
     };
+    // The opening and the free play after it (offscreen: a run from `--opening-at`) count their sound frames as the game's.
+    let cue_origin = if pump.is_none() && (a.opening || a.no_banner) { i64::from(a.opening_at) } else { 0 };
+    let streams = if a.opening || a.no_banner { barrel_ryza::music::parse_table(&install.read("\\saves\\sound\\stream.xml").unwrap_or_default()) } else { Vec::new() };
+    let mut closes_heard = 0u32;
+    let effects = sfx();
+    // The field's own music (Rasenboden by day), which the help event starts with when it takes over.
+    let help_music = if a.opening { barrel_files::read(install.root.join("Atelier_Ryza_DX.exe")).ok().and_then(|exe| barrel_ryza::music::field_number(&exe, barrel_ryza::opening::FIELD_MAP as usize, false)) } else { None };
+    let sound_of = |taken: &[barrel_ryza::event::Taken], help: f32| {
+        let mut cmds = barrel_ryza::sound::commands(taken);
+        if help.is_finite() {
+            barrel_ryza::sound::event_change(&mut cmds, help, help_music);
+        }
+        cmds
+    };
+    let mut sound_cmds = sound_of(&title_taken, help_from);
+    let mut sound_heard = carry.frame + cue_origin - 1;
+    // The arrival after the opening: the field's music from its first frame and the marquee's sound as its text comes to rest.
+    if let (Some(s), true) = (sound.as_mut(), a.no_banner && !a.title) {
+        let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+        let number = barrel_ryza::music::field_number(&exe, barrel_ryza::opening::FIELD_MAP as usize, barrel_ryza::music::is_night(a.save_hour.unwrap_or(10)));
+        if let Some(hash) = number.and_then(|n| barrel_ryza::music::music_hash(&streams, n)) {
+            s.schedule(barrel_ryza::sound::Cue::music(carry.frame + cue_origin, hash));
+        }
+        s.schedule(barrel_ryza::sound::Cue::effect(carry.frame + cue_origin + barrel_ryza::field_hud::MARQUEE_SOUND_AT, barrel_ryza::sound::MARQUEE));
+    }
     // The field's music is asked for once the load's stop is past (the frames count on from the title's).
     if let (Some(s), Some(hash), false) = (sound.as_mut(), field_music, a.title) {
         s.schedule(barrel_ryza::sound::Cue::music(carry.music_at, hash));
     }
-    // STAND-IN: The title's music and voice stop as the opening begins; the real thing is the opening-key's own sound requests (not read: the sound tables are packed), and the event's music and voices are not played.
-    if let (Some(s), true) = (sound.as_mut(), a.opening) {
-        s.schedule(barrel_ryza::sound::Cue::stop(carry.frame));
-    }
+    // The opening's own sound comes from its commands (below); a window carrying the title's music over has it stopped by the event's first one.
     if let Some(s) = sound.as_mut() {
         s.set_volumes(&play.volumes);
     }
-    let (sound_base, mut handoff_at, mut music_at) = (carry.frame, 0i64, 0i64);
+    let (sound_base, mut handoff_at, mut music_at) = (carry.frame + cue_origin, 0i64, 0i64);
     if pump.is_some() && !a.title {
         eprintln!("field: entered");
     }
@@ -2598,6 +2620,18 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
             let boot_ahead = if a.boot { a.boot_at - title_start } else { 0.0 };
             actors::advance(play, if a.opening { barrel_ryza::opening::stage_seconds(a.opening_at) + clock } else { a.title_at + boot_ahead + clock - actors::EVENT_START });
+            // The event's sound: its music commands, and the message sound of each button that closes a line.
+            if let (true, Some(s)) = (a.opening, sound.as_mut()) {
+                let now = sound_base + if pump.is_some() { (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64 } else { i64::from(frame_no) };
+                let offset = sound_base - i64::from(a.opening_at - barrel_ryza::opening::START);
+                barrel_ryza::sound::schedule_commands(s, &sound_cmds, offset, sound_heard, now, &streams, &effects);
+                sound_heard = now;
+                // STAND-IN: the message sound falls on the frame after the step that closes the line (the schedule stamps the button's step one frame ahead of the frame the game's key logs the sound on: `opening-key4`, 8255 for the press the stage closes at 8254).
+                for _ in closes_heard..play.stage.lines_closed {
+                    s.schedule(barrel_ryza::sound::Cue::effect(now + 1, barrel_ryza::sound::MESSAGE));
+                }
+                closes_heard = play.stage.lines_closed;
+            }
             // The help event's last fade is over: the field goes on as free play (a window; offscreen the frames past it are a run of their own).
             if a.opening && pump.is_some() && opening_over.is_some_and(|end| play.stage.time >= end) {
                 eprintln!("opening: over at {:.2} s (stage {:.2} s): on into free play", opening_over.unwrap_or(0.0), play.stage.time);
@@ -2612,6 +2646,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     play.relay(steps);
                     opening_cues = barrel_ryza::talk::Cues::from_taken(&taken).help_from(help);
                     opening_over = over_of(&taken);
+                    sound_cmds = sound_of(&taken, help);
                 }
             }
             if a.opening {
