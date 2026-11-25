@@ -592,6 +592,29 @@ bumper numbers change, the camera's eye (not in the object's first 4 KB), and ho
 blend comes back after a stop (it fell at the same rate once, stayed at 1 the other time; Barrel
 brings it back at the same rate). The settings still switch at once between camera areas.
 
+## Ryza DX: the random generator
+
+Every random number of Ryza DX comes from one `std::mt19937` (MSVC's layout: a u32 index, then a
+sliding window of 1,248 words) at `0x141b74600`: seeded 5489 statically (`0x1400114e0`) and reseeded
+once at start-up from the clock (`0x1406ae440`, `time(0)`). Under ryza-recomp's virtual clock the
+seed is 1767225600; the generator state dumped at frame 2040 of `gather-rasen` equals Python's
+`mt19937(1767225600)` after 7,306 draws (the window index 0x1ba = (624 + 7306) mod 1248; the
+current block is the first half of the window up to index 624, the second half from there).
+Everything goes through `rand15` (`0x1406ae6b0`, under a lock: `_Rng_from_urng` over the 32-bit
+engine with the range 0x8000, which is the low 15 bits of one output and never redraws) and its
+wrappers: `irand(a, b)` (`0x1406ae5e0`: either order, equal bounds give the number with no draw,
+else `low + draw % (high - low + 1)`), `frand(a, b)` (`0x1406ae340`: `draw * (1/32767)` as a double
+rounded to float, times `high + 1e-4 - low`, plus `low`, all in float; equal bounds no draw), and
+`0x1406ae640` (`draw % n + 1`), `0x1406ae680` (`draw % n`), `0x1406ae410` (the float 0 to 1),
+`0x1406ae3d0` (it times `a`), `0x1406ae2e0` (`draw * 2a - (a + 1e-4)`). `barrel_ryza::random`
+has all of them, and the window index (`Random::index`), the game's own number in its hook logs.
+
+Barrel seeds from the clock too. `BARREL_RANDOM_STATE=FILE` (a dump of the game's window, ryza-recomp's
+`dumps/F.1.bin`) starts a run from the game's state instead, for the lockstep checks only
+(`docs/ryza/parity.md`, "gather"). Free play draws on its own from 2040 on (`frand(0, 15)` every
+20 to 60 frames from `0x14008e290`, some field timer); Barrel does not make those draws yet, so
+its index runs behind the game's after the first gathering.
+
 ## Movies
 
 Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":

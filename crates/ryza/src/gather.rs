@@ -96,6 +96,8 @@ pub struct Tables {
     potentials: Vec<Potential>,
     /// Each item's kind group (`-1` for none).
     item_groups: Vec<i8>,
+    /// Each item's picture (`imgNo`).
+    images: Vec<usize>,
 }
 
 fn int(data: &[u8], at: usize) -> i32 {
@@ -156,8 +158,8 @@ impl Tables {
             .collect();
         let (kinds, first) = pe.enum_names("ITEM_KIND_MATERIAL").ok_or("gather: no item kinds")?;
         let material = kinds.iter().position(|n| *n == "ITEM_KIND_MATERIAL").unwrap_or(first);
-        let item_groups = table::parse(item_data)
-            .map_err(|e| format!("itemdata: {e}"))?
+        let items = table::parse(item_data).map_err(|e| format!("itemdata: {e}"))?;
+        let item_groups = items
             .children
             .iter()
             .map(|r| {
@@ -165,7 +167,8 @@ impl Tables {
                 kind.and_then(|k| KIND_GROUP.get(k)).copied().unwrap_or(-1)
             })
             .collect();
-        Ok(Tables { places, entries, names, potentials, item_groups })
+        let images = items.children.iter().map(|r| number(r, "imgNo") as usize).collect();
+        Ok(Tables { places, entries, names, potentials, item_groups, images })
     }
 
     /// The number of a place by its name (`FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND` or
@@ -173,6 +176,11 @@ impl Tables {
     pub fn place(&self, name: &str) -> Option<usize> {
         let name = name.strip_prefix(PLACE_PREFIX).unwrap_or(name);
         self.names.iter().position(|n| n == name)
+    }
+
+    /// An item's picture number (`imgNo`: the small and large pictures' places in their files).
+    pub fn image(&self, item: i32) -> Option<usize> {
+        self.images.get(usize::try_from(item).ok()?).copied()
     }
 
     pub fn place_name(&self, place: usize) -> Option<&str> {

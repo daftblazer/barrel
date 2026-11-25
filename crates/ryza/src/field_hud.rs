@@ -20,8 +20,11 @@ use crate::load_view::{inside, style, Style, TEXT_TOP};
 use crate::title::{curve, find, numbers, pair, Curve, LAYOUT_HEIGHT};
 
 mod arrival;
+mod gather;
 use arrival::Arrival;
 pub use arrival::SOUND_AT as MARQUEE_SOUND_AT;
+pub use gather::Gathering;
+use gather::Popups;
 
 /// The textures of the HUD's layer, in this order.
 pub const FONT01: usize = 0;
@@ -40,6 +43,10 @@ pub const BATTLE: usize = 9;
 pub const SAVELOAD: usize = 10;
 /// How many textures the layer has.
 pub const TEXTURES: usize = 11;
+/// The two textures of a gathered item's pictures, when the layer has them (after the others): the
+/// small picture (`a21_item_s.g1t`, the item's own texture) and the large one (`a21_item_l_<n>.g1t`).
+pub const ITEM_S: usize = 11;
+pub const ITEM_L: usize = 12;
 
 /// The styles' pixels count three to a layout pixel (`load_view::ATLAS_PER_LAYOUT`).
 const PER_LAYOUT: f32 = 3.0;
@@ -199,6 +206,8 @@ struct Label {
     right: bool,
     /// The node's colour, if it sets one.
     color: Option<[f32; 4]>,
+    /// Layout pixels added to each glyph's advance (`word_space`).
+    spacing: f32,
 }
 
 // STAND-IN: The basket's count (225 in the capture) is the capture's; where the game takes it from is not read.
@@ -236,6 +245,8 @@ pub struct State {
     /// Whether this is the arrival after the opening, with its popups (the story marquee and the
     /// autosave mark; `age` runs their clocks).
     pub arrival: bool,
+    /// The gathering's popups.
+    pub gather: Gathering,
 }
 
 /// What the minimap marks, as places in the field (game units, x then z).
@@ -245,6 +256,9 @@ pub struct Markers {
     pub exits: Vec<[f32; 2]>,
     /// The townsfolk.
     pub folk: Vec<[f32; 2]>,
+    /// The fishing places and the water to gather from.
+    pub fishing: Vec<[f32; 2]>,
+    pub water: Vec<[f32; 2]>,
     /// Where the story goes next, if it is in this field: a place, or the way out toward it.
     pub destination: Option<[f32; 2]>,
 }
@@ -273,6 +287,10 @@ pub struct Sources<'a> {
     pub glyphs: [HashMap<char, Glyph>; 2],
     /// Each texture's size in pixels, in the layer's order after the two fonts.
     pub sizes: [(u32, u32); TEXTURES - 2],
+    /// `uia_a21_fm01.xml` (the item notices' fades).
+    pub field_anims: &'a [u8],
+    /// The sizes of the gathered item's two pictures' textures (`ITEM_S`, `ITEM_L`), when the layer has them.
+    pub item_sizes: Option<[(u32, u32); 2]>,
 }
 
 pub struct Hud {
@@ -288,6 +306,8 @@ pub struct Hud {
     arrow: [f32; 4],
     exit_icon: [f32; 4],
     folk_icon: [f32; 4],
+    fishing_icon: [f32; 4],
+    water_icon: [f32; 4],
     destination_icon: [f32; 4],
     /// The destination's two glows (`..._eff_01` and `_eff_02`).
     glows: [[f32; 4]; 2],
@@ -325,6 +345,9 @@ pub struct Hud {
     help_left: f32,
     // The arrival's popups.
     arrival: Option<Arrival>,
+    // The gathering's popups, and the atlases of the item pictures.
+    popups: Option<Popups>,
+    item_atlases: Option<[(f32, f32); 2]>,
 }
 
 fn node<'a>(layout: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -354,6 +377,7 @@ fn label(e: &Element, at: [f32; 2]) -> Label {
         center: e.attr("align") == Some("center"),
         right: e.attr("align") == Some("right"),
         color: (rgba.len() == 4).then(|| [rgba[0] / 255.0, rgba[1] / 255.0, rgba[2] / 255.0, rgba[3] / 255.0]),
+        spacing: 0.0,
     }
 }
 
@@ -377,7 +401,8 @@ impl Hud {
                     || (MAP_NAMES..MAP_NAMES + NAMES).contains(n)
                     || (MENU_WORDS..MENU_WORDS + MENU_WORDS_SPAN).contains(n)
                     || HELP_ENTRIES.iter().any(|(_, w)| w == n)
-                    || [arrival::ADDED_LINE, arrival::STORY_TITLE].contains(n)
+                    || [arrival::ADDED_LINE, arrival::STORY_TITLE, gather::PROMPT_WORD].contains(n)
+                    || (crate::item_info::NAME_BASE..crate::item_info::NAME_BASE + 1000).contains(n)
             })
             .collect();
         let places = table::parse(src.places).map_err(|e| format!("uil_a21_fm01: {e}"))?;
@@ -448,6 +473,8 @@ impl Hud {
         let (help_text, help_text_at) = inside(help_bg_node, "text", [0.0; 2]).ok_or("uil_a21_shade: no bg/text")?;
         let atlases = src.sizes.map(|(w, h)| (w as f32 * 2.0, h as f32 * 2.0));
         let arrival = Arrival::read(&src, &places, &field, &atlases)?;
+        let popups = Popups::read(&src, &places, &field)?;
+        let item_atlases = src.item_sizes.map(|s| s.map(|(w, h)| (w as f32 * 2.0, h as f32 * 2.0)));
         Ok(Hud {
             glyphs: src.glyphs,
             atlases,
@@ -460,6 +487,8 @@ impl Hud {
             arrow,
             exit_icon: icon("icon_fm_change_img")?,
             folk_icon: icon("icon_npc")?,
+            fishing_icon: icon("icon_fishing_img")?,
+            water_icon: icon("icon_water_img")?,
             destination_icon: icon("icon_map_change_destination_img")?,
             glows: [icon("icon_map_change_destination_img_eff_01")?, icon("icon_map_change_destination_img_eff_02")?],
             base: (picture(&common, &style_of(cbase_e)?)?, cbase_at, pair(cbase_e, "size_wh", [0.0; 2])[0]),
@@ -490,6 +519,8 @@ impl Hud {
             help_text: label(help_text, help_text_at),
             help_left: left_side[0],
             arrival: Some(arrival),
+            popups: Some(popups),
+            item_atlases,
         })
     }
 
@@ -536,6 +567,9 @@ impl Hud {
             }
         }
 
+        // The gathering's prompt and notices, under the minimap.
+        self.gathering(&mut pen, &state.gather);
+
         // The minimap.
         pen.picture(FIELD, self.grid.0, self.grid.1, 1.0, white);
         let map_mask = pen.out.len();
@@ -549,6 +583,12 @@ impl Hud {
         let beside = |at: &[f32; 2]| marker_at(center, [state.at[0], state.at[2]], *at, spin.unwrap_or(0.0));
         for at in &markers.exits {
             pen.centered(FIELD, self.exit_icon, beside(at), 1.0, white);
+        }
+        for at in &markers.water {
+            pen.centered(FIELD, self.water_icon, beside(at), 1.0, white);
+        }
+        for at in &markers.fishing {
+            pen.centered(FIELD, self.fishing_icon, beside(at), 1.0, white);
         }
         for at in &markers.folk {
             pen.centered(FIELD, self.folk_icon, beside(at), 1.0, white);
@@ -728,8 +768,12 @@ impl Pen<'_> {
     }
 
     fn uv(&self, texture: usize, p: [f32; 4]) -> [f32; 4] {
-        // The atlases follow the two fonts.
-        let (aw, ah) = self.hud.atlases[texture - FIELD];
+        // The atlases follow the two fonts; the item pictures' after the others.
+        let (aw, ah) = match (texture, self.hud.item_atlases) {
+            (ITEM_S, Some(a)) => a[0],
+            (ITEM_L, Some(a)) => a[1],
+            _ => self.hud.atlases[texture - FIELD],
+        };
         [p[0] / aw, p[1] / ah, (p[0] + p[2]) / aw, (p[1] + p[3]) / ah]
     }
 
@@ -834,6 +878,25 @@ impl Pen<'_> {
         self.glyphs(l, origin, [0.0, 0.0], text, color);
     }
 
+    /// Text with an outline and a drop shadow (`bold_size` and `drop_shadow` of a text node): the
+    /// shadow, black at half alpha, 3 layout pixels right and down; the outline, `bold`'s colour
+    /// (taken by the text's own, at a quarter of the alpha) in a grid of copies `bold`'s size
+    /// round the text, in `ceil(size)` steps either side; then the text. `gather-rasen` 2205: the
+    /// 27 copies of every glyph of "New Discovery".
+    fn dropped(&mut self, l: &Label, origin: [f32; 2], text: &str, color: [f32; 4], bold: ([f32; 4], f32), tint: [f32; 4]) {
+        self.glyphs(l, origin, [3.0, 3.0], text, [0.0, 0.0, 0.0, 0.5 * tint[3]]);
+        let (ink, size) = bold;
+        let steps = size.ceil().max(1.0) as i32;
+        let each = size / steps as f32;
+        let shade = [ink[0] * color[0], ink[1] * color[1], ink[2] * color[2], ink[3] * 0.25 * tint[3]];
+        for ix in -steps..=steps {
+            for iy in -steps..=steps {
+                self.glyphs(l, origin, [ix as f32 * each, iy as f32 * each], text, shade);
+            }
+        }
+        self.glyphs(l, origin, [0.0; 2], text, color);
+    }
+
     /// A banner's text: nine copies of its colour at half the alpha one layout pixel round it, the
     /// text over them (`hud-walk` 1830: the game's `bold_size` 1 with the font's own colour).
     fn shadowed(&mut self, l: &Label, text: &str, color: [f32; 4]) {
@@ -874,7 +937,8 @@ impl Pen<'_> {
         let font = usize::from(!l.small);
         let glyphs = &self.hud.glyphs[font];
         let s = l.size * self.k / ATLAS_SIZE;
-        let width: f32 = text.chars().filter_map(|c| glyphs.get(&c)).map(|g| g.advance as f32 * s).sum();
+        let gap = l.spacing * self.k;
+        let width: f32 = text.chars().filter_map(|c| glyphs.get(&c)).map(|g| g.advance as f32 * s + gap).sum();
         let x = self.left + (origin[0] + l.at[0] + shift[0]) * self.k;
         let mut pen = if l.center {
             x - width / 2.0
@@ -889,7 +953,7 @@ impl Pen<'_> {
             let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.width as f32, g.height as f32);
             let (x0, y0) = (pen + g.x_offset as f32 * s, top + g.y_offset as f32 * s);
             self.quad(if font == 0 { FONT01 } else { FONT00 }, [gx / aw, gy / ah, (gx + gw) / aw, (gy + gh) / ah], [x0, y0, x0 + gw * s, y0 + gh * s], color);
-            pen += g.advance as f32 * s;
+            pen += g.advance as f32 * s + gap;
         }
     }
 }

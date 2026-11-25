@@ -36,6 +36,14 @@ pub const PAGE: u32 = 0x5ce8_51ca;
 pub const MESSAGE: u32 = 0x54ee_d79d;
 /// `SE_SYS_013_MARQUEE`: the story marquee's text coming to rest.
 pub const MARQUEE: u32 = 0xd3fe_dd56;
+/// A gathering's sounds (`SE_FLD_001_GATHER01`, `SE_FLD_002_GATHER02`, `SE_FLD_091_NEW_DISCOVERY`): the
+/// reach, the pick-up and the discovery's chime, 40, 85 and 88 frames after the A that began it
+/// (`gather-rasen`: A at 2040, the sounds at 2080, 2125, 2128).
+pub const GATHER_REACH: u32 = 0x1bd6_dbc8;
+pub const GATHER_TAKE: u32 = 0x985d_64e8;
+pub const NEW_DISCOVERY: u32 = 0xffd0_422c;
+/// Frames after the press each of them is asked for.
+pub const GATHER_SOUND_AT: [i64; 3] = [40, 85, 88];
 
 /// Frames from the load's stop to the field's music (the answer key: the stop at game frame
 /// 1725, the music at 1751).

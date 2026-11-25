@@ -117,6 +117,59 @@ pub fn exits(bytes: &[u8]) -> Result<Vec<Exit>, String> {
     Ok(out)
 }
 
+/// A gimmick of any kind: where it stands, how far it reaches and what its row names (a
+/// gathering point's place, a way out's field).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spot {
+    pub id: u32,
+    /// The row's type without its prefix (`ITEM_D_MULTIPLE`, `FISHING`, `WATERSIDE`).
+    pub kind: String,
+    /// Where it stands, in world units (the row's metres times 100).
+    pub position: [f32; 3],
+    /// The first number of the row's `formParam`, the form's size in metres (0 without one).
+    pub reach: f32,
+    pub story: Span,
+    /// The row's `<Value>`s (a gathering point's `FIELDMAP_COLLECT_PLACE_*`).
+    pub values: Vec<String>,
+}
+
+/// Every gimmick row of a field's table that has a type and a place.
+pub fn spots(bytes: &[u8]) -> Result<Vec<Spot>, String> {
+    let root = table::parse(bytes).map_err(|e| format!("gimmick: {e}"))?;
+    let mut values = all_values(&table::decode_text(bytes));
+    let mut out = Vec::new();
+    for row in root.children.iter().filter(|e| e.name == "Property") {
+        let (Some(kind), Some(id)) = (row.attr("gimmickTypeTag"), row.attr("fixID").and_then(|v| v.trim().parse::<u32>().ok())) else { continue };
+        let [x, y, z] = numbers(row.attr("position"), [0.0; 3])?;
+        out.push(Spot {
+            id,
+            kind: kind.strip_prefix("FIELDMAP_GIMMICK_TYPE_").unwrap_or(kind).to_string(),
+            position: [x * 100.0, y * 100.0, z * 100.0],
+            reach: row.attr("formParam").and_then(|p| p.split(',').next()?.trim().parse().ok()).unwrap_or(0.0),
+            story: Span::new(row.attr("startEvent"), row.attr("endEvent")),
+            values: values.remove(&id.to_string()).unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+/// Each row's `<Value>`s by its `fixID`, scanned from the text.
+fn all_values(text: &str) -> std::collections::HashMap<String, Vec<String>> {
+    let attr = |row: &str, name: &str| -> Option<String> {
+        let at = row.find(&format!("{name}=\""))? + name.len() + 2;
+        Some(row[at..].split('"').next()?.to_string())
+    };
+    text.split("<Property ")
+        .skip(1)
+        .filter_map(|row| {
+            let id = attr(row, "fixID")?;
+            // Only the row's own body (to the next row, which the split already cut).
+            let found = row.split("<Value>").skip(1).filter_map(|v| Some(v.split("</Value>").next()?.trim().to_string())).collect();
+            Some((id, found))
+        })
+        .collect()
+}
+
 /// Each row's first `<Value>` (an exit's destination: `FIELDMAP_S08_T_BODEN` becomes
 /// `S08_T_BODEN`) by its `fixID`, scanned from the text, which the table reader drops.
 fn first_values(text: &str) -> std::collections::HashMap<String, String> {
@@ -157,6 +210,15 @@ mod tests {
         let xml = r#"<Root><Property fixID="1" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_MAP_CHANGE_INFO" position="1,2,3"/><Property fixID="9" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_FIELDMAP_CHANGE_EX" position="4.5,0.5,2" startEvent="EVENT_X"><Parameter><Value>FIELDMAP_S08_T_BODEN</Value><Value>79.84</Value></Parameter></Property></Root>"#;
         let e = exits(xml.as_bytes()).unwrap();
         assert_eq!((e.len(), e[0].id, e[0].position, e[0].story.start.as_deref(), e[0].to.as_str()), (1, 9, [450.0, 50.0, 200.0], Some("X"), "S08_T_BODEN"));
+    }
+
+    #[test]
+    fn spots_name_their_places() {
+        let xml = r#"<Root><Property fixID="51" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_ITEM_D_MULTIPLE" formParam="3,3,3" position="334.45,61.98,300.27" startEvent="EVENT_MM01_111"><Parameter><Value>FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND</Value></Parameter></Property><Property fixID="2" gimmickTypeTag="FIELDMAP_GIMMICK_TYPE_FISHING" position="1,2,3"/></Root>"#;
+        let s = spots(xml.as_bytes()).unwrap();
+        assert_eq!(s.len(), 2);
+        assert_eq!((s[0].id, s[0].kind.as_str(), s[0].position[0], s[0].reach, s[0].values.as_slice()), (51, "ITEM_D_MULTIPLE", 33445.0, 3.0, ["FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND".to_string()].as_slice()));
+        assert_eq!((s[1].kind.as_str(), s[1].values.len()), ("FISHING", 0));
     }
 
     #[test]

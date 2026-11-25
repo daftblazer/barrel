@@ -2746,3 +2746,67 @@ Left, with causes:
   (2327) is 37 frames after its A with no boundary near: pick 2 starts 15 frames later than `PICK_AT` + 1 gives; no rule found (the stall on 2911 is inside A + 42 but moves it by 1). Not reproduced.
 - The Guide top's highlight after a return (`field-menu-guide` 2500 to 2550, 2770 to 2880, 3040 to 3150: 1 each): not worked again.
 - `field-menu-guide` 2490 (5): the bar's plate while the page goes out; `field-menu-equip` 2300 to 2320 and 2590 are as before.
+
+## Gathering (P6)
+
+Part 1 of the gathering and synthesis stage (2026-11-25): the game's random numbers, a hand point's
+gathering in lockstep with the game (same draws, same item), and its popups in 2D. The answer key is
+`gather-rasen` (ryza-recomp `scenarios/gather-rasen.sh`: the save with `EVENT_MM01_111` played, a walk to
+the honeycomb point fixID 51 of Rasenboden, A at 2040, 2200 and 2360; every draw hooked, draws every 10
+frames from 1995, the generator's window every frame 1890 to 2100).
+
+**Built.**
+- `barrel_ryza::random` (docs/engine.md, "Ryza DX: the random generator"): the MT19937, `rand15` and the
+  wrappers as the game computes them, a start from the game's window dump, a log of the draws in the
+  hook log's words (integers in hex: `irand 0 63` is `irand(0, 99)`, which cost an hour to see).
+- `barrel_ryza::gather`: a place's gathering from the executable's tables. The place table (1,834 rows
+  of twelve i32 at `0x141164260`, in the order of the `FIELDMAP_COLLECT_PLACE_*` names: its five lists by
+  story rank, the item count from and to, the opening and closing event flags, the field, ...) and the
+  entry table (3,419 rows of 27 i32 at `0x141179a40`: the list, the item, the quality range, the random
+  potentials' count, their level range, the weight, two event flags, three fixed potentials with
+  level ranges, four fixed effects) are the game's own; `item_potential.xml` and `itemdata.xml` give the
+  potentials (grade, `give_range`, the kind groups) and the items' kinds and pictures. The rule
+  (`0x1404b28b0`, `0x1404b2520`, `0x1404b36e0`, `0x1404b3980`, `0x140520840`): `irand(min, max)` items; for each,
+  among the entries the event flags allow, `irand(0, weight - 1)` over the items the library knows at level
+  2 or less (the unknown ones first, each once) or else over all; the quality `frand(low + 0.5 * (difficulty + 1),
+  high + difficulty + 1)` (Normal is 1); then the random potentials: `irand(count range)`, the threshold
+  `irand(level range)`, and for each `irand(0, candidates - 1)` and `irand(level range)` (the candidates:
+  the potentials gathering gives of the item's kind group whose grade is the threshold or more, the lower
+  ones only to fill the count).
+  From the 2040 state it draws `irand 1 2`, `irand 0 63`, `frand 12 22`, `irand 0 1`, `irand 1 a`, `irand 0 1`,
+  `irand 1 3` exactly as the hook log has them and gives Honey Ant (item 128, the entry that list 538 has second:
+  the pick was 72 of 100), quality 21, one potential (35) at level 1, a new discovery. `barrel-tool ryza-gather INSTALL
+  STATE.bin PLACE` prints it.
+- The field: the gimmicks' table gives every point (`gimmick::spots`); a hand point (`ITEM_D_MULTIPLE`)
+  whose `startEvent` has played is a gathering point (`play::gathering::Points`). The HUD's prompt (`fm_access_icon`:
+  the A button and "Check", sliding up over 30 frames when the point is in reach and faced, back down from A), the
+  discovery log (`discovery_log`: "New Discovery", the item's picture and name, outlined 5 by 5 with a drop shadow) and the
+  item notice (`general_log`), their fades and slides from `uia_a21_fm01.xml` and `uia_common.xml`; the minimap's
+  fishing and water icons (the game's gimmick icons 3 and 4, drawn after the exits, before the townsfolk).
+  `--gather NEAR:PRESS` replays it against a capture (the frames the prompt came up and A went down) with
+  `BARREL_RANDOM_STATE` for the generator; the sounds (`SE_FLD_001_GATHER01`, `_002_GATHER02`, and `SE_FLD_091_NEW_DISCOVERY`
+  for a new item) 40, 85 and 88 frames after A. In a window, A (Enter or the pad's confirm) at a faced point gathers.
+- The timeline read off 2005 to 2695: the prompt starts at 1995 (her facing came within 48 degrees of the point), is
+  steady from 2025, slides out from 2040 (the press) to 2070; the discovery log fades in 87 frames after the press (2127),
+  the notice a frame later, the notice fades out from 141 frames after its start, the log from 211 after its (2269, 2338).
+  The presses at 2200 and 2360 do nothing: no draw, no popup, and the prompt does not come back (the point is spent).
+
+**Rows** (docs/ryza/parity.md, "gather"): `gather-draws` (the 2041 draw list), `gather-item` and `gather-ui-*`.
+The UI rows count the UI quads (textures of the game's `res_*` archives) the two sides do not match; the effect
+quads of the gathering (sparkles, the particle textures) are not drawn and not counted.
+
+**STAND-INs** (named in the code with their sources): the difficulty (Normal), the story rank (the first) and the party's
+bonuses (none: the effects `0xb8`, `0xe9`, `0x12b`, `0xea`, `0x1c5` read from the equipment are not read) in
+`gather::Context`; the event flag array the entries' flags index (taken as the save's `event/execFlag`, not checked);
+the prompt's word ("Check": which string the game takes per point type), the A button's glyph, the layout's 2 pixel
+shift (`ROOT_SHIFT`), the popups' frames (`DISCOVERY_AT` and the others, from the capture), the facing cone's cosine
+0.67 (between the capture's 0.65 and 0.70); the free-play draws after 2040 are not made.
+
+**Left.** Her gathering motion and the point's model going (3D, not compared); the effect quads of the pick-up; the
+other point types (rods, sickles ... `_WAND_ACTION`, the indirect ones, fishing, water) and the tools' bonuses; the second
+and later items of one gathering (only the first has popups); the library's knowledge after a gathering; the sounds in a
+window are not heard by a test (the offscreen run schedules them and the cue trace has them); the free play's own draws
+(`frand(0, 15)` every 20 to 60 frames) so the index stays in step after 2040. The next capture wanted: a gathering with a
+tool (a rod or the sickle) and two items, the gathering from a point the library knows, and the same from a
+second point with the hook on `0x14008e290` named.
+
