@@ -80,6 +80,57 @@ pub fn place(layout: &[u8], node: &str) -> Result<Option<([f32; 2], u32)>, Strin
     Ok(find(&root, node, [0.0, 0.0]))
 }
 
+/// One of a name card's two pictures: where it goes in the layout's 1280 x 720 space (its
+/// top-left corner), its size there, and its place in `a21_charatelop` (texture number and
+/// the rectangle's pixels at the 2160-line atlas).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CardImage {
+    pub at: [f32; 2],
+    pub size: [f32; 2],
+    pub texture: usize,
+    pub rect: [f32; 4],
+}
+
+/// The pictures of name card `k` (`name00` to `name13`: the plate and the name's strip): the layout's nodes
+/// (`uil_a21_telop01.xml`) and the styles they name (`uis_gen_a21_charatelop.xml`: the plate's single
+/// image, the names' list indexed by `image_no`).
+pub fn name_card(layout: &[u8], styles: &[u8], k: u32) -> Result<Vec<CardImage>, String> {
+    let layout = table::parse(layout).map_err(|e| format!("uil_a21_telop: {e}"))?;
+    let styles = table::parse(styles).map_err(|e| format!("uis_gen_a21_charatelop: {e}"))?;
+    fn pos(e: &table::Element) -> [f32; 2] {
+        let v: Vec<f32> = e.attr("pos").unwrap_or("").split(',').filter_map(|v| v.trim().parse().ok()).collect();
+        [v.first().copied().unwrap_or(0.0), v.get(1).copied().unwrap_or(0.0)]
+    }
+    fn find<'a>(e: &'a table::Element, node: &str, at: [f32; 2]) -> Option<(&'a table::Element, [f32; 2])> {
+        let here = pos(e);
+        let at = [at[0] + here[0], at[1] + here[1]];
+        if e.name == "node" && e.attr("name") == Some(node) {
+            return Some((e, at));
+        }
+        e.children.iter().find_map(|c| find(c, node, at))
+    }
+    let (node, at) = find(&layout, &format!("name{k:02}"), [0.0, 0.0]).ok_or(format!("uil_a21_telop: no name{k:02}"))?;
+    let rect = |e: &table::Element| -> Option<[f32; 4]> { e.attr("uvwh")?.split(',').filter_map(|v| v.trim().parse().ok()).collect::<Vec<f32>>().try_into().ok() };
+    let texture = |e: &table::Element| e.attr("texture_index").and_then(|t| t.trim().parse().ok()).unwrap_or(0);
+    let mut out = Vec::new();
+    for image in node.children.iter().filter(|c| c.name == "image") {
+        let style = image.attr("style").ok_or("uil_a21_telop: a name card picture has no style")?;
+        let (r, t) = match styles.children.iter().find(|s| s.attr("name") == Some(style)) {
+            Some(s) if s.name == "image_list" => {
+                let n: usize = image.attr("image_no").and_then(|n| n.trim().parse().ok()).ok_or("uil_a21_telop: a name picture without its number")?;
+                let i = s.children.get(n).ok_or(format!("uis_gen_a21_charatelop: no image {n}"))?;
+                (rect(i), texture(i))
+            }
+            Some(s) => (rect(s), texture(s)),
+            None => return Err(format!("uis_gen_a21_charatelop: no style {style}")),
+        };
+        let r = r.ok_or("uis_gen_a21_charatelop: an image's uvwh")?;
+        let p = pos(image);
+        out.push(CardImage { at: [at[0] + p[0], at[1] + p[1]], size: [r[2] * STRIP_SCALE, r[3] * STRIP_SCALE], texture: t, rect: r });
+    }
+    Ok(out)
+}
+
 /// The layout's space: 720 lines (the strips are drawn at 2160, three times as large).
 pub const LAYOUT_HEIGHT: f32 = 720.0;
 pub const STRIP_SCALE: f32 = LAYOUT_HEIGHT / 2160.0;
@@ -100,6 +151,19 @@ pub fn quad(strip: &Strip, at: [f32; 2], screen: (u32, u32), atlas: (u32, u32), 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_name_card_has_its_plate_and_its_name() {
+        let layout = br#"<root><node name="name_group" pos="366.17, 460.00, 0.00"><node name="name02" pos="0, 0, 0">
+            <image name="image" style="plate" pos="0.00, 15.00, 0.00"/><image name="image_1" pos="119.00, 20.00, -0.00" style="names" image_no="1"/></node></node></root>"#;
+        let styles = br#"<root><image_list name="names"><image uvwh="69,70,925,112" texture_index="0"/><image uvwh="69,201,925,112" texture_index="0"/></image_list>
+            <image name="plate" texture_index="1" uvwh="69,70,1643,244"/></root>"#;
+        let card = name_card(layout, styles, 2).unwrap();
+        assert_eq!(card.len(), 2);
+        assert_eq!(card[0], CardImage { at: [366.17, 475.0], size: [1643.0 / 3.0, 244.0 / 3.0], texture: 1, rect: [69.0, 70.0, 1643.0, 244.0] });
+        assert_eq!(card[1].rect, [69.0, 201.0, 925.0, 112.0]);
+        assert!((card[1].at[0] - 485.17).abs() < 1e-3 && (card[1].at[1] - 480.0).abs() < 1e-3);
+    }
+
     #[test]
     fn places_a_node_and_its_strip() {
         let xml = br#"<root><node name="top"><node name="telop01" pos="0, 0, 0"><image name="image" pos="240.00, 333.00, 0.00" image_no="1"/></node>

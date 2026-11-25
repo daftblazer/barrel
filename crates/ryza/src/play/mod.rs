@@ -367,7 +367,7 @@ fn telop_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Re
 /// shows, its strip's rectangle, texture coordinates and atlas in the layer (a name card is not
 /// drawn yet). The atlases are the hd ones above 1080 lines, as `telop_layer` has them.
 #[allow(clippy::type_complexity)]
-fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, cards: &std::collections::BTreeSet<u32>, screen: (u32, u32)) -> Result<(text::Layer, std::collections::HashMap<u32, ([f32; 4], [f32; 4], usize)>)> {
+fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, cards: &std::collections::BTreeSet<u32>, screen: (u32, u32)) -> Result<(text::Layer, std::collections::HashMap<u32, Vec<([f32; 4], [f32; 4], usize)>>, barrel_ryza::talk::Talk)> {
     use barrel_ryza::telop;
     let hd = screen.1 > 1080;
     let layout = install.read("\\saves\\ui_en\\a21_telop\\uil_a21_telop01.xml")?;
@@ -398,10 +398,49 @@ fn opening_telops(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         let t = files[k].textures.first().ok_or("a telop atlas without a texture")?;
         shown.push((n, k, telop::quad(strip, at, screen, (t.width, t.height), if hd { 1.0 } else { 0.5 })));
     }
-    let textures: Vec<&barrel_formats::g1t::Texture> = files.iter().filter_map(|f| f.textures.first()).collect();
+    let mut textures: Vec<&barrel_formats::g1t::Texture> = files.iter().filter_map(|f| f.textures.first()).collect();
+    // The name cards' pictures come after the talk's (`a21_charatelop`: the plate and the names, its two textures).
+    let card_file = install.read(&if hd { "\\data\\x64\\res_en\\ui\\neo\\neo_a21_charatelop.g1t" } else { "\\data\\x64\\res_en\\ui\\a21_charatelop.g1t" }.to_string())?;
+    let card_g1t = G1t::parse(&card_file).map_err(|e| format!("a21_charatelop: {e}"))?;
+    // The talk's textures follow the telops': the font, the arrow's pictures, the hints' plate, the letterbox's white.
+    let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
+    let glyphs = barrel_ryza::font::glyphs(&exe).ok_or("the executable's font table")?;
+    let talk_files = [
+        install.read("\\data\\x64\\res_en\\font\\mainfont01_hd1080_0.g1t")?,
+        install.read("\\data\\x64\\res_en\\ui\\a21_balloon_frame.g1t")?,
+        install.read("\\data\\x64\\res_cmn\\ui\\a21_common.g1t")?,
+        install.read("\\data\\x64\\res_cmn\\ui\\sys_white.g1t")?,
+    ];
+    let talk_g1t: Vec<G1t> = talk_files.iter().map(|b| G1t::parse(b).map_err(|e| format!("talk textures: {e}"))).collect::<std::result::Result<_, _>>()?;
+    let base = textures.len();
+    // (the hints' plate is the fourth texture of a21_common)
+    let (font, balloon, common, white) = (&talk_g1t[0].textures[0], &talk_g1t[1].textures[0], &talk_g1t[2].textures[3], &talk_g1t[3].textures[0]);
+    textures.extend([font, balloon, common, white, &card_g1t.textures[0], &card_g1t.textures[1]]);
+    let names = barrel_ryza::talk::names(&install.read("\\saves\\text_en\\str_event_chara_name.xml")?);
+    let talk = barrel_ryza::talk::Talk::new(glyphs, (font.width, font.height), names, barrel_ryza::talk::Textures { font: base, balloon: base + 1, common: base + 2, white: base + 3 });
+    // The cards the event shows (`u65`'s numbers 1 to 14 are `name00` to `name13`).
+    let mut cards_shown: std::collections::HashMap<u32, Vec<([f32; 4], [f32; 4], usize)>> = shown.into_iter().map(|(n, k, (rect, uv))| (n, vec![(rect, uv, k)])).collect();
+    let (card_layout, card_styles) = (install.read("\\saves\\ui_en\\a21_telop\\uil_a21_telop01.xml")?, install.read("\\saves\\ui_en\\gen_styles\\uis_gen_a21_charatelop.xml")?);
+    let (k, left) = (screen.1 as f32 / barrel_ryza::telop::LAYOUT_HEIGHT, (screen.0 as f32 - 1280.0 * screen.1 as f32 / barrel_ryza::telop::LAYOUT_HEIGHT) * 0.5);
+    for &n in cards {
+        let Some(barrel_ryza::telop::Node::Name(card)) = barrel_ryza::telop::Node::of(n) else { continue };
+        if card > 13 {
+            continue;
+        }
+        let mut quads = Vec::new();
+        for image in barrel_ryza::telop::name_card(&card_layout, &card_styles, card)? {
+            let t = card_g1t.textures.get(image.texture).ok_or("a21_charatelop: a picture's texture")?;
+            let scale = if hd { 1.0 } else { 0.5 };
+            let [x, y, w, h] = image.rect;
+            let (aw, ah) = (t.width as f32, t.height as f32);
+            let rect = [left + image.at[0] * k, image.at[1] * k, left + (image.at[0] + image.size[0]) * k, (image.at[1] + image.size[1]) * k];
+            quads.push((rect, [x * scale / aw, y * scale / ah, (x + w) * scale / aw, (y + h) * scale / ah], base + 4 + image.texture));
+        }
+        cards_shown.insert(n, quads);
+    }
     // (the fade's plain quad reads no texture, but a layer needs one)
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &textures)?;
-    Ok((layer, shown.into_iter().map(|(n, k, (rect, uv))| (n, (rect, uv, k))).collect()))
+    Ok((layer, cards_shown, talk))
 }
 
 /// The title screen's layer (empty until each frame's quads are set) with its layout.
@@ -1369,6 +1408,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let (title_steps, title_taken) = title_steps.map_or((None, Vec::new()), |(s, t)| (Some(s), t));
     let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
     let title_heads = actors::head_turns(&title_taken);
+    // What the opening's commands switch for the talk: the letterbox and the button hints.
+    let opening_cues = barrel_ryza::talk::Cues::from_taken(&title_taken);
     // The telops the opening shows (`u65`'s numbers), for the 2D layer built below.
     let opening_cards: std::collections::BTreeSet<u32> = match (&title_steps, a.opening) {
         (Some(steps), true) => steps.iter().filter_map(|t| match t.step { barrel_engine::event::Step::Telop { card, .. } => Some(card), _ => None }).collect(),
@@ -2478,16 +2519,29 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                     fov = snap.fov.map_or(fov, f32::to_radians);
                 }
                 // Its telop and fade, in their own layer.
-                if let Some((layer, telops)) = opening_layer.as_mut() {
+                if let Some((layer, telops, talk)) = opening_layer.as_mut() {
                     let mut quads = Vec::new();
+                    let seen = play.stage.time - barrel_engine::stage::FRAME * 0.5;
+                    if opening_cues.bars(seen) {
+                        quads.extend(talk.bars((width, height)));
+                    }
                     if let Some((n, alpha)) = barrel_ryza::event::telop(&play.stage)
-                        && let Some(&(rect, uv, texture)) = telops.get(&n)
+                        && let Some(pictures) = telops.get(&n)
                     {
-                        quads.push(text::Quad { turn: false, spin: None, rect, uv, color: [1.0, 1.0, 1.0, alpha], texture });
+                        for &(rect, uv, texture) in pictures {
+                            quads.push(text::Quad { turn: false, spin: None, rect, uv, color: [1.0, 1.0, 1.0, alpha], texture });
+                        }
+                    }
+                    if let Some(line) = &play.stage.line {
+                        quads.extend(talk.line_quads(line, play.stage.time, opening_cues.hint(seen), (width, height)));
                     }
                     let cover = actors::cover(&play.stage);
                     if cover > 0.0 {
                         quads.push(barrel_ryza::load::cover(cover, (width, height), 0));
+                    }
+                    let white = actors::cover_white(&play.stage);
+                    if white > 0.0 {
+                        quads.push(text::Quad { color: [1.0, 1.0, 1.0, white], ..barrel_ryza::load::cover(white, (width, height), 0) });
                     }
                     layer.set(&gpu, &quads)?;
                 }
@@ -3342,7 +3396,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 .chain(options_screen.as_ref().filter(|_| showing_options).map(|(l, _, _)| l))
                 .chain(load_screen.as_ref().filter(|_| showing_options && showing_notice).map(|(n, _, _)| n))
                 .collect(),
-            _ => telop_layer.iter().chain(opening_layer.as_ref().map(|(l, _)| l)).chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
+            _ => telop_layer.iter().chain(opening_layer.as_ref().map(|(l, _, _)| l)).chain(title_layer.as_ref().map(|(l, _, _, _)| l)).chain(hud.as_ref().map(|(l, _)| l)).collect(),
         };
         // The view-projection drawn with: shifted by this frame's sub-pixel jitter when TAA or a
         // temporal upscaler is on, in a window (as Escha; `settings::jitter`, a clip-space

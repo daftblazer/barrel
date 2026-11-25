@@ -3996,6 +3996,7 @@ Step::Planboard { first } => println!("      (the planning board opens from {fir
             Step::Trophy { trophy } => println!("      (achievement {trophy}: left out)"),
             Step::Movie { movie } => println!("      movie {movie} (not played yet)"),
             Step::MarkEvent { event, seen } => println!("      (event {event} marked {})", if seen { "seen" } else { "unseen" }),
+            Step::LineClose { .. } => println!("      (the button closes the line)"),
             Step::CharacterWait { action, character, seconds } => {
                 let who = names.get(character as usize).map_or("?", String::as_str);
                 println!("{action:3} {who} waits {seconds:.2} s");

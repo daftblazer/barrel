@@ -355,6 +355,9 @@ pub struct Stage {
     pub camera_follow: Option<u32>,
 }
 
+/// The frames a closed line takes to fade out after the button (Ryza DX's events).
+const LINE_FADE_OUT: u32 = 16;
+
 /// A line of the event's text.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
@@ -366,6 +369,13 @@ pub struct Line {
     pub text: String,
     /// The stage time it goes down at, if it does before the next line.
     pub until: Option<f32>,
+    /// The stage time it came up at.
+    pub since: f32,
+    /// The stage time the button closed it at ([`Step::LineClose`]): it fades out from then.
+    pub closing: Option<f32>,
+    /// The frames the lines before it stood up (a line's own fade out counted): the clock of the
+    /// arrow that turns beside them runs over them all.
+    pub shown_before: u32,
 }
 
 impl Stage {
@@ -442,7 +452,14 @@ impl Stage {
                 }
                 let now = self.time;
                 let until = self.reading.map(|f| now + f(&text.replace("<CR>", "")).max(0.0));
-                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until });
+                let shown_before = self.line.as_ref().map_or(0, |p| {
+                    let own = match p.closing {
+                        Some(c) => ((c - p.since) * 60.0).round() as u32 + LINE_FADE_OUT,
+                        None => ((now - p.since) * 60.0).round() as u32,
+                    };
+                    p.shown_before + own
+                });
+                self.line = Some(Line { speaker: *speaker, name: *name, text: text.clone(), until, since: now, closing: None, shown_before });
                 for (&n, b) in self.characters.iter_mut() {
                     let speaking = i64::from(n) == i64::from(*speaker);
                     b.talking = speaking;
@@ -452,6 +469,12 @@ impl Stage {
                     if let (true, Some(g)) = (speaking, gesture) {
                         b.gesture = Some((*g, now));
                     }
+                }
+            }
+            Step::LineClose { .. } => {
+                let now = self.time;
+                if let Some(l) = self.line.as_mut() {
+                    l.closing = Some(now);
                 }
             }
             Step::RemoveAll { .. } => self.characters.clear(),

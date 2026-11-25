@@ -331,6 +331,14 @@ pub fn cover(stage: &barrel_engine::stage::Stage) -> f32 {
     from + (to - from) * rate
 }
 
+/// How much of the screen the event's fade covers in white (preset 1: white, clearing over the fade's length, as preset 3
+/// clears the black; the opening's 7241), 0 for the other presets.
+pub fn cover_white(stage: &barrel_engine::stage::Stage) -> f32 {
+    let Some((1, seconds, since)) = stage.fade else { return 0.0 };
+    let (frames, length) = (((stage.time - since) * 60.0).round(), (seconds * 60.0).round());
+    if length <= 0.0 { 0.0 } else { 1.0 - (frames / length).clamp(0.0, 1.0) }
+}
+
 pub fn advance(play: &mut Playback, seconds: f32) {
     while play.stage.time + barrel_engine::stage::FRAME * 0.5 < seconds {
         play.tick();

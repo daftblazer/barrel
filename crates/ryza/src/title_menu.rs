@@ -226,7 +226,7 @@ fn wait_frames(seconds: f32) -> i32 {
 /// The time shown `ticks` frames into a loop of `duration` seconds: as `boot::loop_time`, but
 /// on the frame the sum passes the end what is past it is shown (the next frame starts from 0:
 /// the cursor's 240-frame turn shows its first step twice running, once each side of the wrap).
-fn loop_shown(ticks: i32, duration: f32) -> f32 {
+pub(crate) fn loop_shown(ticks: i32, duration: f32) -> f32 {
     let (mut t, mut shown) = (0.0f32, 0.0f32);
     for _ in 0..ticks.max(0) {
         t += FRAME;

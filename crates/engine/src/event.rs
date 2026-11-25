@@ -379,6 +379,9 @@ pub enum Step<'a> {
     /// executable's speaker-name table, `barrel_escha::data::layout::speaker_names`; "???" before a
     /// character is introduced).
     Message { index: usize, speaker: i32, name: Option<i32>, text: String, expression: Option<i32>, gesture: Option<i32> },
+    /// The button went down on the line showing: it goes out (Ryza DX's events; only with
+    /// [`Player::buttons`]).
+    LineClose { action: usize },
     /// Wait this many seconds before going on (`0x14005b310` sets the event's timer, which
     /// counts down by each frame's elapsed time).
     Wait { seconds: f32 },
@@ -522,6 +525,11 @@ pub struct Buttons {
 impl Buttons {
     /// The moment the next command runs after a line that came up at `shown`: the first press
     /// at or after it plus the closing time. A line no later press ends is never left (infinity).
+    /// The press that ends a line that came up at `shown`.
+    pub fn line_press(&self, shown: f32) -> Option<f32> {
+        self.presses.iter().copied().find(|&p| p >= shown - 1e-4)
+    }
+
     pub fn line_end(&self, shown: f32, tutorial: bool) -> f32 {
         let close = if tutorial { self.tutorial_close } else { self.close };
         // (a frame's slack for the float sums: a press a frame's thousandth early still counts)
@@ -1219,6 +1227,10 @@ impl<'a> Player<'a> {
                     (Step::Message { .. }, _, Some(b)) => {
                         let end = b.line_end(threads[t].0, tutorial);
                         event_clock[t] += end - threads[t].0;
+                        if end.is_finite() {
+                            // the game takes the press a frame before the pad's frame (the line's fade out starts then)
+                            out.push(Timed { time: b.line_press(threads[t].0).unwrap_or(end) - 1.0 / 60.0, action, step: Step::LineClose { action } });
+                        }
                         end - threads[t].0
                     }
                     (Step::Message { text, .. }, Some(f), None) => f(&text.replace("<CR>", "")).max(0.0),
@@ -1247,9 +1259,11 @@ impl<'a> Player<'a> {
                     }
                     Step::ScreenEffect { seconds, .. } => effect_end = threads[t].0 + seconds.max(0.0),
                     // Ryza DX's events wait on their fades.
-                    Step::Fade { seconds, .. } if self.counted_waits => {
-                        threads[t].0 += fade_hold(*seconds);
-                        event_clock[t] += fade_hold(*seconds);
+                    Step::Fade { seconds, preset, .. } if self.counted_waits => {
+                        // STAND-IN: the one fade of preset 1 (the opening's 7241, 1.5 s) held 93 frames where the rule gives 94 (the title's 1.5 s of preset 3 held 94); the real thing is the game's own test.
+                        let hold = fade_hold(*seconds) - if *preset == 1 { 1.0 / 60.0 } else { 0.0 };
+                        threads[t].0 += hold;
+                        event_clock[t] += hold;
                     }
                     Step::CharacterMove { character, .. } => {
                         scratch.apply(&s);
@@ -1728,6 +1742,31 @@ mod tests {
         assert_eq!(marks, [(0.5, 1), (1.0, 0), (1.5, 2)]);
     }
 
+    /// Ryza DX's lines wait for the button: each line takes the first press at or after the moment it
+    /// comes up, then its closing frames; the lines after it come up then, and the press that ended a
+    /// line is logged to close it a frame early.
+    #[test]
+    fn a_line_waits_for_the_button() {
+        let words = vec![SHOW_MESSAGES, 0, 1, TIME_WAIT, 10, SHOW_MESSAGES, 2, 2, END];
+        let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words }], resources: vec![] };
+        let msg = |t: &str| Message { kind: 1, speaker: 0, fields: vec![0; 6], after: Vec::new(), text: t.into() };
+        let messages = vec![msg("a"), msg("b"), msg("c")];
+        let table = OperandTable::new(&[(SHOW_MESSAGES, Some(2)), (TIME_WAIT, Some(1))]);
+        // presses at 1 s and 2 s; a line lasts to 18 frames after its press
+        let buttons = Buttons { presses: vec![1.0, 2.0], close: 18.0 / 60.0, tutorial_close: 32.0 / 60.0 };
+        let timed = Player::new(&event, &messages, &table).unwrap().buttons(buttons).schedule();
+        let lines: Vec<(String, f32)> = timed.iter().filter_map(|t| match &t.step { Step::Message { text, .. } => Some((text.clone(), t.time)), _ => None }).collect();
+        // "a" at 0 waits for the press at 1.0 s and ends at 1.3; "b" follows at once and takes the press at 2.0 s; the wait of
+        // 0.1 s then "c", which finds no press after it
+        assert_eq!(lines[0], ("a".into(), 0.0));
+        assert!((lines[1].1 - 1.3).abs() < 1e-4 && lines[1].0 == "b", "{lines:?}");
+        let closes: Vec<f32> = timed.iter().filter(|t| matches!(t.step, Step::LineClose { .. })).map(|t| t.time).collect();
+        assert!((closes[0] - (1.0 - 1.0 / 60.0)).abs() < 1e-4 && (closes[1] - (2.0 - 1.0 / 60.0)).abs() < 1e-4, "{closes:?}");
+        assert_eq!(timed.iter().filter(|t| matches!(t.step, Step::Message { .. })).count(), 3);
+        // "c" comes up after "b" ends (2.3) and the wait (2.4), and no press follows: it stays
+        assert!(timed.iter().all(|t| t.time < 2.5));
+    }
+
     #[test]
     fn messages_come_out_in_ranges() {
         let words = vec![
@@ -1763,6 +1802,7 @@ mod tests {
                 Step::PlaceNear { character, of, offset, .. } => format!("place {character} at {offset:?} from {of}"),
                 Step::PlaceAt { character, at, .. } => format!("{character} at {at:?}"),
                 Step::MarkEvent { event, seen } => format!("mark {event} {seen}"),
+                Step::LineClose { .. } => "line closes".to_string(),
                 Step::EventFlag { flag, value } => format!("flag {flag} = {value}"),
                 Step::EventFlagAdd { flag, amount } => format!("flag {flag} += {amount}"),
                 Step::EndGroup { group } => format!("end runs process group {group}"),

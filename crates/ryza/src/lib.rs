@@ -43,6 +43,7 @@ pub mod field_menu;
 pub mod field_page;
 pub mod story;
 pub mod event;
+pub mod talk;
 pub mod telop;
 pub mod font;
 pub mod title;
