@@ -533,7 +533,9 @@ impl Hud {
             if far > DESTINATION_RING {
                 at = [center[0] + off[0] * DESTINATION_RING / far, center[1] + off[1] * DESTINATION_RING / far];
             }
-            let (alpha, scale) = glow_pulse(state.tick);
+            // With an arrival the loop starts 2 frames before it (hud-walk's 1728 and the opening's 14862 both fit it); a still without one keeps the fitted phase.
+            let arrival = state.tick - state.age;
+            let (alpha, scale) = glow_pulse(state.tick, if arrival > 0.0 { arrival - 2.0 } else { GLOW_PHASE });
             let tint = |a: f32| [GLOW_TINT[0], GLOW_TINT[1], GLOW_TINT[2], a];
             pen.centered(FIELD, self.destination_icon, at, 1.0, white);
             // The game draws no glow while the pulse is at 0 (`hud-walk` 1800: loop frame 3).
@@ -650,8 +652,8 @@ const GLOW_PHASE: f32 = -49.0;
 
 /// The glows' alpha and the first glow's scale at `tick` frames (the layout's animations: alpha
 /// 0 until frame 5, 1 at 10, 0 at 70; the first glow's scale 0.8 until 10, easing out to 1 at 70).
-fn glow_pulse(tick: f32) -> (f32, f32) {
-    let t = (tick - GLOW_PHASE).rem_euclid(GLOW_PERIOD);
+fn glow_pulse(tick: f32, start: f32) -> (f32, f32) {
+    let t = (tick - start).rem_euclid(GLOW_PERIOD);
     let alpha = match t {
         t if t < 5.0 => 0.0,
         t if t < 10.0 => (t - 5.0) / 5.0,

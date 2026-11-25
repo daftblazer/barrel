@@ -95,6 +95,8 @@ struct Args {
     save: Option<String>,
     /// `--hud`: the field's HUD over a field she stands in (a `--save` shows it too).
     hud: bool,
+    /// The basket's count the HUD shows (`--basket`; the field_hud's default is a save's).
+    basket: Option<u32>,
     /// `--menu-keys F:y,F:down,F:up,F:a,F:b`: the buttons of the field's menu at the capture's game frames (offscreen).
     menu_keys: Vec<(f32, barrel_ryza::field_menu::Key)>,
     /// The hour the save's clock word gives (`--save`).
@@ -188,7 +190,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -291,6 +293,8 @@ fn args(args: Vec<String>) -> Result<Args> {
                     a.menu_keys.push((frame.parse()?, key));
                 }
             }
+            "--basket" => a.basket = Some(value()?.parse()?),
+            "--save-hour" => a.save_hour = Some(value()?.parse()?),
             "--hud-at" => a.hud_at = value()?.parse()?,
             "--hud-arrival" => a.hud_arrival = value()?.parse()?,
             "--hud-stick" => {
@@ -1336,6 +1340,20 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             eprintln!("{save}: {} at {:?}, turn {:.1}°", a.field, place.at, place.turn);
         }
     }
+    // `--opening` from the frame the opening is over: the free play it hands over to (a window gets there by `Next::FreePlay`).
+    if a.opening && a.opening_at >= barrel_ryza::opening::FREE_PLAY {
+        barrel_ryza::opening::free_play(&install, &mut a.story)?;
+        let (at, yaw) = barrel_ryza::opening::player_start(&install)?;
+        a.opening = false;
+        a.hud = true;
+        a.basket = Some(barrel_ryza::opening::BASKET);
+        a.ryza = Some((Vec3::from(at), yaw, "00000".into(), 0.0));
+        a.hud_at = a.opening_at as f32;
+        a.hud_arrival = barrel_ryza::opening::FREE_PLAY as f32;
+        let exe = barrel_files::read(Path::new(&a.install).join("Atelier_Ryza_DX.exe"))?;
+        let pe = barrel_formats::pe::Pe::parse(&exe).map_err(|e| e.to_string())?;
+        a.field = barrel_ryza::maps::field_maps(&pe).get(barrel_ryza::opening::FIELD_MAP as usize).cloned().ok_or("the opening's field map: not named")?;
+    }
     // `--opening`: the field the opening's first field change names (its picture is the event's live stage).
     if a.opening && a.field == "-" {
         let path = barrel_ryza::event::path(barrel_ryza::opening::EVENT).ok_or("opening event")?;
@@ -1431,33 +1449,45 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     } else {
         (None, Vec::new())
     };
-    let title_steps = match &title_event {
-        Some(e) => {
-            let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
-            let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
-            let buttons = if a.opening { barrel_ryza::event::buttons_from_env() } else { None };
-            match &following_event {
-                Some(next) => Some(barrel_ryza::opening::schedule(&install, e, next, [&opening_messages, &following_messages], buttons, &given, clock, 3600.0)?),
-                None => {
-                    let (steps, taken) = barrel_ryza::event::schedule_drawn_taken_with(e, &given, clock, 3600.0, None, barrel_ryza::event::Talk { messages: &opening_messages, buttons })?;
-                    Some((steps, taken, f32::INFINITY))
-                }
+    // The opening's lines wait for the button: scripted (`BARREL_EVENT_PRESSES`), or in a window the player's own, the schedule laid out
+    // again at each press. Offscreen without a script a line takes no time.
+    let scripted_presses = if a.opening { barrel_ryza::event::buttons_from_env() } else { None };
+    let live_presses = a.opening && a.window && scripted_presses.is_none();
+    let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
+    let event_clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
+    // The event's schedule for some buttons: its steps, the commands taken and when the help event starts.
+    let lay = |buttons: Option<barrel_engine::event::Buttons>| -> Result<Option<(Vec<barrel_engine::event::Timed<'_>>, Vec<barrel_ryza::event::Taken>, f32)>> {
+        let Some(e) = &title_event else { return Ok(None) };
+        Ok(Some(match &following_event {
+            Some(next) => barrel_ryza::opening::schedule(&install, e, next, [&opening_messages, &following_messages], buttons, &given, event_clock, 3600.0)?,
+            None => {
+                let (steps, taken) = barrel_ryza::event::schedule_drawn_taken_with(e, &given, event_clock, 3600.0, None, barrel_ryza::event::Talk { messages: &opening_messages, buttons })?;
+                (steps, taken, f32::INFINITY)
             }
-        }
-        None => None,
+        }))
     };
-    let (title_steps, title_taken, help_from) = title_steps.map_or((None, Vec::new(), f32::INFINITY), |(s, t, h)| (Some(s), t, h));
-    let title_motions = title_steps.as_ref().map(|s| actors::motions_of(s));
-    let title_heads = actors::head_turns(&title_taken);
+    let mut presses: Vec<f32> = Vec::new();
+    let first_buttons = if live_presses { Some(barrel_ryza::event::buttons_at(&[], barrel_ryza::opening::START)) } else { scripted_presses };
+    let laid = lay(first_buttons.clone())?;
+    // What does not depend on the presses (who is staged, the cards, the pictures) comes from the event with no waits, as the player has not pressed yet.
+    let whole = if live_presses { lay(None)? } else { None };
+    let (title_steps, title_taken, help_from) = laid.map_or((None, Vec::new(), f32::INFINITY), |(s, t, h)| (Some(s), t, h));
+    let (whole_steps, whole_taken) = match &whole {
+        Some((s, t, _)) => (Some(s), t),
+        None => (title_steps.as_ref(), &title_taken),
+    };
+    let title_motions = whole_steps.map(|s| actors::motions_of(s));
+    let title_heads = actors::head_turns(whole_taken);
     // What the opening's commands switch for the talk: the letterbox and the button hints.
-    let opening_cues = barrel_ryza::talk::Cues::from_taken(&title_taken).help_from(help_from);
+    let mut opening_cues = barrel_ryza::talk::Cues::from_taken(&title_taken).help_from(help_from);
+    let opening_pictures = barrel_ryza::talk::Cues::from_taken(whole_taken).picture_ids();
     // The telops the opening shows (`u65`'s numbers), for the 2D layer built below.
-    let opening_cards: std::collections::BTreeSet<u32> = match (&title_steps, a.opening) {
+    let opening_cards: std::collections::BTreeSet<u32> = match (whole_steps, a.opening) {
         (Some(steps), true) => steps.iter().filter_map(|t| match t.step { barrel_engine::event::Step::Telop { card, .. } => Some(card), _ => None }).collect(),
         _ => Default::default(),
     };
     // Everyone the opening ever stages (its stage run through once): their models are loaded up front.
-    let opening_slots: std::collections::BTreeSet<u32> = match (&title_steps, a.opening) {
+    let opening_slots: std::collections::BTreeSet<u32> = match (whole_steps, a.opening) {
         (Some(steps), true) => {
             let mut scratch = barrel_engine::stage::Playback::new(barrel_engine::stage::Stage::default(), steps.clone());
             let mut seen = std::collections::BTreeSet::new();
@@ -2195,7 +2225,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     };
     // The opening's telops and fade (`--opening`): one layer of the strips' atlases.
     let mut opening_layer = match a.opening {
-        true => Some(opening_telops(&install, &gpu, &renderer, &opening_cards, &opening_cues.picture_ids(), (width, height))?),
+        true => Some(opening_telops(&install, &gpu, &renderer, &opening_cards, &opening_pictures, (width, height))?),
         false => None,
     };
     // The title screen (`--title`): its glyphs from the executable, its layout from the archives.
@@ -2227,6 +2257,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     // The keys pressed this frame, for the title's menu, and what the player has done there.
     let mut title_keys: Vec<winit::keyboard::KeyCode> = Vec::new();
     let mut pad_any = false;
+    // The confirm button went down this frame (a window's keyboard or pad).
+    let mut confirm_pressed = false;
     let mut title_input = a.title_input.clone();
     title_input.saves |= !save_slots.is_empty();
     // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
@@ -2386,6 +2418,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let pad_pressed;
             (title_keys, pad_pressed) = p.take_input();
             pad_any = !pad_pressed.is_empty();
+            confirm_pressed = title_keys.contains(&K::Enter) || pad_pressed.contains(&play.buttons().0);
             if field_menu.is_some() {
                 use barrel_ryza::field_menu::Key as MenuKey;
                 use barrel_render::pad::Pad;
@@ -2548,6 +2581,15 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             let clock = if pump.is_some() { started.elapsed().as_secs_f32() } else { frame_no as f32 / 60.0 };
             let boot_ahead = if a.boot { a.boot_at - title_start } else { 0.0 };
             actors::advance(play, if a.opening { barrel_ryza::opening::stage_seconds(a.opening_at) + clock } else { a.title_at + boot_ahead + clock - actors::EVENT_START });
+            if live_presses && confirm_pressed {
+                // The player's button: a press at the stage's moment, the schedule laid out again from it (the steps already applied do not change).
+                presses.push(play.stage.time);
+                let buttons = barrel_engine::event::Buttons { presses: presses.clone(), ..barrel_ryza::event::buttons_at(&[], barrel_ryza::opening::START) };
+                if let Some((steps, taken, help)) = lay(Some(buttons))? {
+                    play.relay(steps);
+                    opening_cues = barrel_ryza::talk::Cues::from_taken(&taken).help_from(help);
+                }
+            }
             if a.opening {
                 // The event's camera (its eye and target as this view's centre, turn, pitch and distance; render space mirrors x).
                 let snap = play.stage.snapshot();
@@ -3410,7 +3452,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 at: r.player.at.into(),
                 turn: r.player.turn.to_degrees(),
                 hour: a.save_hour.unwrap_or(10),
-                basket: barrel_ryza::field_hud::BASKET,
+                basket: a.basket.unwrap_or(barrel_ryza::field_hud::BASKET),
                 tool: 0,
                 map: a.field == barrel_ryza::field_hud::MAP_FIELD,
                 camera_yaw: play.map_rotation.then_some(180.0 - yaw),

@@ -50,6 +50,31 @@ pub fn schedule<'a>(
     Ok((steps, taken, end))
 }
 
+/// The capture frame the field's HUD arrives on after the help event (its last command's wait ends on 14861; the help bar
+/// grows from the next frame, `opening-key3`).
+pub const FREE_PLAY: i32 = 14862;
+
+/// The field the opening and the free play after it are in (`FIELDMAP_S06_T_RASEN`, the event's `q2` 5).
+pub const FIELD_MAP: u32 = 5;
+
+/// The basket's count of a new game (`opening-key3` 15255 on; a save's own is in its data).
+pub const BASKET: u32 = 200;
+
+/// Where she stands when the free play begins and which way she faces (degrees): the opening's last `q5` for her slot (the key's 13779).
+pub fn player_start(install: &crate::install::Install) -> Result<([f32; 3], f32), String> {
+    let path = event::path(EVENT).ok_or("opening event")?;
+    let ebd = Ebd::parse(&install.read(&path).map_err(|e| e.to_string())?).map_err(|e| format!("{path}: {e}"))?;
+    let added = event::added(&ebd)?;
+    let her = added.get(&0).ok_or("the opening adds no player")?;
+    Ok((her.position, her.degrees[1]))
+}
+
+/// The story at the free play's start: the opening has played (the minimap's marker points on from it).
+pub fn free_play(_install: &crate::install::Install, story: &mut crate::story::Story) -> Result<(), String> {
+    story.finish("MM00_010");
+    Ok(())
+}
+
 /// The event's stage clock, in seconds, for the picture drawn on capture frame `frame`: the
 /// picture shows the stage a tick on from the commands' own frame (as the title's event does,
 /// `play::actors::EVENT_START`).

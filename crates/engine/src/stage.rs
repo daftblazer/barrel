@@ -776,6 +776,12 @@ impl<'a> Playback<'a> {
         Playback { stage, steps, next: 0 }
     }
 
+    /// Lays the steps out again (a press moved the lines after it): the steps applied so far stay as they were, so the new
+    /// schedule must begin with the same ones.
+    pub fn relay(&mut self, steps: Vec<Timed<'a>>) {
+        self.steps = steps;
+    }
+
     /// When the last step is due (0 for none).
     pub fn end(&self) -> f32 {
         self.steps.last().map_or(0.0, |t| t.time)
