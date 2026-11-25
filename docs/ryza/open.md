@@ -2994,9 +2994,11 @@ frames 2250 to 4900, her and the generator every frame, pictures every 50. Items
   `--mix-complete LEVEL:NEXT:GAINED[:AGE]` (the Complete screen's level panel and its Level UP plate), each three layers: the background (`a21_bg01`, twice
   the screen's size) and the still picture (`ipu/still_ns01`), the layout's parts (`field_page::Page::sheet_quads`, `result_quads`, `complete_quads` over the
   Walker of the field menu's pages, which also draws the Container page's item card for the made item) and the help bar
-  (`field_menu::View::next_help`). Every capture frame 3830 to 3930 (the card comes in: the white-out, the rise, three glows), 3940 to 3970 (at rest),
-  4020 to 4080 (the made item's card, then out as the level panel comes in), 4090 to 4250 (Complete, the Level UP plate: a spline rise, a glow, a flash
-  and a beam) has **0 unmatched `res_` quads**: 43 rows `synth-card-*`, `synth-result-*`, `synth-complete-*`. The animation curves are
+  (`field_menu::View::next_help`). Every sampled capture frame from 3830 to 4250 (43 frames, every 10) has **0 unmatched `res_` quads**: 3830 to 3940 (the card comes in: the white-out,
+  the rise, three glows, the bar's "Fast Forward"), 3950 to 3990 (at rest, "Next"), 4000 and 4010 (the finished card goes out as the made item's card
+  and the title plate come in), 4020 to 4060 (the made item's card), 4070 and 4080 (it goes out as the level panel comes in), 4090 to 4250 (Complete
+  and the Level UP plate: a spline rise, a glow, a flash and a beam): rows `synth-card-*`, `synth-enter-*`, `synth-result-*`, `synth-complete-*`.
+  The animation curves are
   `uia_a21_mix.xml`'s (`keyed` and `spline` in `field_page.rs`; the plate's rise is a Catmull-Rom spline through its keys, which fits the capture to a
   hundredth of a pixel).
 - **The made item** (seen on 4020 to 4060, not derived): Red Supplement, quality 49 with the rank letter C, item level 1, element value 2 with fire lit, one
@@ -3030,6 +3032,5 @@ Left.
   camera, so the balloons over the room's three gimmicks, the prompt and the arrival plate "Ryza's Room" are not compared).
 - Select Recipe (with the tutorial pages) and Add Materials (loops, the material list, the quality bar, the ring graph): about 520 to 920 quads a
   frame, most of them the ring graph's pieces and the lists' text; not started. The quality, effects and traits of the result and the experience rule.
-- The card's coming in before 3830 and the leaving frames 3980 to 4015 (the card out and the made item's card in with the caption, on a clock that
-  hitched again), 4260 to 4300 (Complete out, the room's HUD back: the help bar of the lists fades, "AM 0", the moon).
+- The card's coming in before 3830 (3820 is the Add Materials screen going) and 4260 to 4300 (Complete out, the room's HUD back: the help bar of the lists fades, "AM 0", the moon).
 - Sounds in a window (no screens to cue them) and the 4600 `irand(0, 1)` (`0x1400e4b73`: her idle clip pick, `rand15` after it is the chance).

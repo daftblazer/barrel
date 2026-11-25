@@ -1944,4 +1944,37 @@ mod tests {
         assert_eq!(behind(2430.0) - behind(2420.0), 1.0);
         assert_eq!(behind(2420.0) - behind(2290.0), 0.0);
     }
+
+    #[test]
+    fn keyed_curves_are_linear_between_their_keys_and_step_on_a_repeated_frame() {
+        let keys = [(0.0, 0.0), (20.0, 0.0), (50.0, 1.0), (105.0, 1.0), (105.0, 0.0)];
+        assert_eq!(keyed(&keys, 10.0), 0.0);
+        assert!((keyed(&keys, 30.0) - 1.0 / 3.0).abs() < 1e-6);
+        assert_eq!(keyed(&keys, 100.0), 1.0);
+        assert_eq!(keyed(&keys, 105.0), 0.0, "two keys on one frame make a step");
+        assert_eq!(keyed(&keys, 500.0), 0.0);
+    }
+
+    #[test]
+    fn the_level_up_plate_rises_on_the_captures_spline() {
+        // `synth-atelier` 4130 to 4190: the plate's top over its rest, in layout pixels (the quads' y over 1.5 less 224).
+        for (frame, want) in [(30.0, 71.2), (40.0, -24.4), (50.0, -47.94), (60.0, 7.75), (70.0, 18.81), (80.0, -13.0), (90.0, -5.26), (100.0, 0.0)] {
+            let got = spline(&PLATE_RISE, frame);
+            assert!((got - want).abs() < 0.01, "{frame}: {got} against {want}");
+        }
+    }
+
+    #[test]
+    fn the_whiteout_and_the_cards_rise_follow_the_capture() {
+        // 3830 to 3880 (the frames since 3819): the full-screen white's opacity in bytes, 252, 146, 74, 31, 9 and 1.
+        for (frames, byte) in [(11.0, 252.0), (21.0, 146.0), (31.0, 74.0), (41.0, 31.0), (51.0, 9.0), (61.0, 1.0)] {
+            assert!((whiteout_all(frames) * 255.0 - byte).abs() < 1.0, "{frames}");
+        }
+        // The card's two rises at 3840 to 3870: 34, 22.2, 14.8 and 10.2 layout pixels low (the capture's 51, 33.3, 22.1 and 15.2 pixels over 1.5).
+        let rise = |clock: f32| CARD_RISE * (1.0 - out_cubic((clock - 20.0) / 120.0));
+        for (clock, want) in [(21.0, 34.1), (31.0, 22.3), (41.0, 14.8), (51.0, 10.2)] {
+            let got = rise(clock) + rise(clock * PANEL_SPEED);
+            assert!((got - want).abs() < 0.2, "{clock}: {got} against {want}");
+        }
+    }
 }
