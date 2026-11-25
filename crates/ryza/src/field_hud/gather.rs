@@ -7,7 +7,7 @@
 
 use barrel_formats::table::Element;
 
-use super::{label, node, picture, Hud, Label, Pen, Sources, FIELD, ITEM_L, ITEM_S};
+use super::{item_texture, label, node, picture, Hud, Label, Pen, Sources, FIELD};
 use crate::title::{curve, numbers, pair, Curve};
 
 /// The layout's nodes sit two layout pixels higher on the screen than their `pos` add up to
@@ -31,18 +31,35 @@ const DISCOVERY_AT: f32 = 87.0;
 const NOTICE_AT: f32 = 88.0;
 const NOTICE_HOLD: f32 = 141.0;
 const DISCOVERY_HOLD: f32 = 211.0;
+// STAND-INs read off `gather-rasen2` (A at 2500: a comb, two items): the second item's notice starts 22 frames after the
+// first's (2588, 2610); the first notice moves up by the second's slot (66 screen pixels, 44 of the layout's) over the 21
+// frames of the fade-in from the second's start (47.6 % of the way on 2620, 95.2 % on 2630); all the notices fade out
+// together, the hold counted from the last one's start (the fade-out began on 2751 = 2610 + 141). A third item's gap is taken
+// as the same.
+const ITEM_GAP: f32 = 22.0;
+const NOTICE_STEP: f32 = 44.0;
+const NOTICE_UP_FRAMES: f32 = 21.0;
 /// The frames the prompt takes to slide in (`anm_common_slide_in_bottom`'s 30).
 const SLIDE_FRAMES: f32 = 30.0;
 
 /// What the gathering shows at a frame.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Gathering {
     /// Frames since the prompt began to slide in (a point in reach, faced), if one is.
     pub near: Option<f32>,
     /// Frames since A was pressed at the point.
     pub pressed: Option<f32>,
-    /// What came of it: the item's name (a string number) and whether the library did not know it.
-    pub found: Option<(u32, bool)>,
+    /// What came of it: the items in the order gathered.
+    pub found: Vec<Found>,
+}
+
+/// An item gathered.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Found {
+    /// Its name (a string number).
+    pub name: u32,
+    /// Whether the library did not know it.
+    pub new: bool,
 }
 
 /// The layout's pieces the popups are drawn from.
@@ -164,22 +181,30 @@ impl Hud {
                 pen.text(&p.prompt_text, [0.0, ROOT_SHIFT + shift], self.word(PROMPT_WORD), [ink[0], ink[1], ink[2], color[3]]);
             }
         }
-        let (Some(since), Some((name, new))) = (g.pressed, g.found) else { return };
+        let Some(since) = g.pressed.filter(|_| !g.found.is_empty()) else { return };
         let first = pen.out.len();
-        // The discovery log (an item the library did not know).
-        if let Some((tint, shift)) = log_state(&p.discovery_in_color, &p.discovery_in_pos, &p.discovery_out, since - DISCOVERY_AT, DISCOVERY_HOLD).filter(|_| new) {
-            let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT];
-            pen.picture(FIELD, p.back.0, at(p.back.1), 1.0, tint);
-            pen.dropped(&p.index, [shift, ROOT_SHIFT], self.string(280), under(p.index.color.unwrap_or([1.0; 4]), tint), p.index_bold, tint);
-            pen.sized(ITEM_L, [0.0, 0.0, 512.0, 512.0], at(p.large), p.large_size, tint);
-            pen.text(&p.name, [shift, ROOT_SHIFT], self.word(name), under(p.name.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
+        // The discovery log (the first item the library did not know).
+        if let Some((k, f)) = g.found.iter().enumerate().find(|(_, f)| f.new) {
+            let age = since - DISCOVERY_AT - k as f32 * ITEM_GAP;
+            if let Some((tint, shift)) = log_state(&p.discovery_in_color, &p.discovery_in_pos, &p.discovery_out, age, DISCOVERY_HOLD) {
+                let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT];
+                pen.picture(FIELD, p.back.0, at(p.back.1), 1.0, tint);
+                pen.dropped(&p.index, [shift, ROOT_SHIFT], self.string(280), under(p.index.color.unwrap_or([1.0; 4]), tint), p.index_bold, tint);
+                pen.sized(item_texture(k, true), [0.0, 0.0, 512.0, 512.0], at(p.large), p.large_size, tint);
+                pen.text(&p.name, [shift, ROOT_SHIFT], self.word(f.name), under(p.name.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
+            }
         }
-        // The item notice.
-        if let Some((tint, shift)) = log_state(&p.notice_in_color, &p.notice_in_pos, &p.notice_out, since - NOTICE_AT, NOTICE_HOLD) {
-            let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT];
+        // The item notices, each pushed up a slot by the next one's coming; they leave together.
+        let start = |k: usize| NOTICE_AT + k as f32 * ITEM_GAP;
+        let last = start(g.found.len() - 1);
+        for (k, f) in g.found.iter().enumerate() {
+            let hold = last - start(k) + NOTICE_HOLD;
+            let Some((tint, shift)) = log_state(&p.notice_in_color, &p.notice_in_pos, &p.notice_out, since - start(k), hold) else { continue };
+            let up: f32 = (k + 1..g.found.len()).map(|j| ((since - start(j)) / NOTICE_UP_FRAMES).clamp(0.0, 1.0) * NOTICE_STEP).sum();
+            let at = |a: [f32; 2]| [a[0] + shift, a[1] + ROOT_SHIFT - up];
             pen.picture(FIELD, p.plate.0, at(p.plate.1), 1.0, tint);
-            pen.sized(ITEM_S, [0.0, 0.0, 256.0, 256.0], at(p.small), p.small_size, tint);
-            pen.text(&p.line, [shift, ROOT_SHIFT], self.word(name), under(p.line.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
+            pen.sized(item_texture(k, false), [0.0, 0.0, 256.0, 256.0], at(p.small), p.small_size, tint);
+            pen.text(&p.line, [shift, ROOT_SHIFT - up], self.word(f.name), under(p.line.color.unwrap_or([0.0, 0.0, 0.0, 1.0]), tint));
         }
         // The game draws nothing that falls wholly off the screen (the notices come in from the left).
         let (from, to) = (pen.left, pen.left + 1280.0 * pen.k);

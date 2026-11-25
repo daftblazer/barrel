@@ -112,6 +112,8 @@ struct Args {
     hud_stick: Vec<(f32, f32)>,
     /// `--gather NEAR:PRESS`: the capture's frames a gathering point came in reach (its prompt began to slide in) and A was pressed at it; the HUD shows the gathering's popups by them (`BARREL_RANDOM_STATE` is the generator they draw from).
     gather: Option<(f32, f32)>,
+    /// `--learned ITEM,...`: items the library knows in full from before the capture's start (an earlier gathering's).
+    learned: Vec<i32>,
     /// The camera's yaw in the game's terms, when a run is given it (`--camera-yaw`), instead of behind her.
     camera_yaw: Option<f32>,
     /// `--no-skyline`: objects behind the ground are drawn too.
@@ -195,7 +197,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), gather: None, camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, hud_stick: Vec::new(), gather: None, learned: Vec::new(), camera_yaw: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -307,6 +309,7 @@ fn args(args: Vec<String>) -> Result<Args> {
                 let (near, press) = v.split_once(':').ok_or("--gather NEAR:PRESS")?;
                 a.gather = Some((near.parse()?, press.parse()?));
             }
+            "--learned" => a.learned = value()?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
             "--hud-stick" => {
                 for span in value()?.split(',') {
                     let (from, to) = span.split_once('-').ok_or("--hud-stick FROM-TO,...")?;
@@ -581,7 +584,7 @@ fn replay_help(arrival: f32, tick: f32, spans: &[(f32, f32)], mut bar: barrel_ry
 }
 
 /// The field HUD's layer (the textures of `barrel_ryza::field_hud`) and its view.
-fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, item: Option<usize>) -> Result<(text::Layer, barrel_ryza::field_hud::Hud)> {
+fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, items: &[usize]) -> Result<(text::Layer, barrel_ryza::field_hud::Hud)> {
     use barrel_ryza::field_hud as fh;
     let exe = barrel_files::read(install.root.join("Atelier_Ryza_DX.exe"))?;
     let glyphs = |va| barrel_ryza::font::glyphs_at(&exe, va).ok_or("the executable's font table");
@@ -599,9 +602,9 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         ("\\data\\x64\\res_en\\ui\\a21_battle.g1t", 4),
         ("\\data\\x64\\res_cmn\\ui\\a21v2_saveload.g1t", 0),
     ];
-    // A gathered item's pictures: its small one is its own texture of `a21_item_s.g1t`, its large one `a21_item_l_<n>.g1t`'s only.
-    let item_files = [item.map(|n| ("\\data\\x64\\res_cmn\\ui\\a21_item_s.g1t".to_string(), n)), item.map(|n| (format!("\\data\\x64\\res_cmn\\ui\\a21_item_l_{n:03}.g1t"), 0))];
-    let wanted: Vec<(String, usize)> = wanted.iter().map(|(n, i)| (n.to_string(), *i)).chain(item_files.into_iter().flatten()).collect();
+    // The gathered items' pictures, two each: the small one is the item's own texture of `a21_item_s.g1t`, the large one `a21_item_l_<n>.g1t`'s only.
+    let item_files = items.iter().flat_map(|&n| [("\\data\\x64\\res_cmn\\ui\\a21_item_s.g1t".to_string(), n), (format!("\\data\\x64\\res_cmn\\ui\\a21_item_l_{n:03}.g1t"), 0)]);
+    let wanted: Vec<(String, usize)> = wanted.iter().map(|(n, i)| (n.to_string(), *i)).chain(item_files).collect();
     let files = wanted.iter().map(|(n, _)| install.read(n)).collect::<Result<Vec<_>>>()?;
     let parsed = files.iter().zip(&wanted).map(|(b, (n, _))| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("{n}: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
     let tex = parsed.iter().zip(&wanted).map(|(g, (n, i))| g.textures.get(*i).ok_or(format!("{n}: no texture {i}"))).collect::<std::result::Result<Vec<_>, _>>()?;
@@ -626,7 +629,7 @@ fn hud_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Rend
         glyphs: [glyphs(barrel_ryza::font::MAIN_FONT_01_HD1080)?, glyphs(barrel_ryza::font::MAIN_FONT_00_HD1080)?],
         sizes: [size(2), size(3), size(4), size(5), size(6), size(7), size(8), size(9), size(10)],
         field_anims: &install.read("\\saves\\ui_en\\a21_field\\uia_a21_fm01.xml")?,
-        item_sizes: item.map(|_| [size(fh::ITEM_S), size(fh::ITEM_L)]),
+        item_sizes: (!items.is_empty()).then(|| [size(fh::item_texture(0, false)), size(fh::item_texture(0, true))]),
     })?;
     let layer = text::Layer::new(gpu, renderer.pool, renderer.post_pass, &tex[..])?;
     Ok((layer, hud))
@@ -2301,9 +2304,12 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         (false, true) => barrel_files::read(install.root.join("Atelier_Ryza_DX.exe")).ok().and_then(|exe| gathering::Points::read(&install, &exe, &a.field, &a.story)),
         _ => None,
     };
+    for &item in &a.learned {
+        barrel_ryza::gather::know(&mut know_items, item);
+    }
     let mut gather_rng = gathering::generator();
     let gather_plan = match (a.gather, &gather_points, &rig) {
-        (Some(frames), Some(points), Some(r)) => points.plan(r.player.at.into(), r.player.turn.to_degrees(), frames, &mut gather_rng, &know_items, &played_events),
+        (Some(frames), Some(points), Some(r)) => points.plan(r.player.at.into(), r.player.turn.to_degrees(), frames, &mut gather_rng, &mut know_items, &played_events),
         _ => None,
     };
     if let Some(plan) = &gather_plan {
@@ -2313,7 +2319,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     }
     // The field's HUD, over a field she walks (a save puts her there; `--hud` asks for it).
     let mut hud = match (a.hud || a.save.is_some()) && !a.title && !a.boot && rig.is_some() {
-        true => Some(hud_layer(&install, &gpu, &renderer, gather_plan.as_ref().map(|g| g.image))?),
+        true => Some(hud_layer(&install, &gpu, &renderer, gather_plan.as_ref().map_or(&[][..], |g| &g.images))?),
         false => None,
     };
     // The field's menu (Y): its layer where there is a field HUD to leave, and the blurred picture of it the Settings
@@ -2437,7 +2443,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         use barrel_ryza::sound::{Cue, GATHER_REACH, GATHER_SOUND_AT, GATHER_TAKE, NEW_DISCOVERY};
         let press = plan.press as i64;
         for (hash, after) in [(GATHER_REACH, GATHER_SOUND_AT[0]), (GATHER_TAKE, GATHER_SOUND_AT[1]), (NEW_DISCOVERY, GATHER_SOUND_AT[2])] {
-            if hash != NEW_DISCOVERY || plan.new {
+            if hash != NEW_DISCOVERY || plan.found.iter().any(|f| f.new) {
                 s.schedule(Cue::effect(press + after, hash));
             }
         }
@@ -2460,7 +2466,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let walk_script = a.walk_from.and_then(|_| barrel_render::pad::Script::load_env());
     // The gathering in a window: the prompt where a point is in reach, A gathers (the offscreen replay is `--gather`).
     let mut live_gather = gathering::Live::default();
-    let mut gather_hud_item: Option<usize> = None;
+    let mut gather_hud_items: Option<Vec<usize>> = None;
     let walk_start = rig.as_ref().map_or(Vec3::ZERO, |r| r.player.at);
     loop {
         // Last frame's joints, then the field's moving objects at this frame's moment (the
@@ -3557,13 +3563,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         } else if let (Some((layer, view)), Some(r)) = (hud.as_mut(), rig.as_ref()) {
             let tick = menu_tick - paused;
             if let (Some(points), true, None) = (&gather_points, pump.is_some(), &gather_plan) {
-                if let Some(image) = live_gather.step(points, r.player.at.into(), r.player.turn.to_degrees(), tick, confirm_pressed, &know_items, &played_events) {
-                    gather_hud_item = Some(image);
+                if let Some(image) = live_gather.step(points, r.player.at.into(), r.player.turn.to_degrees(), tick, confirm_pressed, &mut know_items, &played_events) {
+                    gather_hud_items = Some(image);
                     if let (Some(s), Some(plan)) = (sound.as_mut(), live_gather.plan()) {
                         use barrel_ryza::sound::{Cue, GATHER_REACH, GATHER_SOUND_AT, GATHER_TAKE, NEW_DISCOVERY};
                         let now = sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64;
                         for (hash, after) in [(GATHER_REACH, GATHER_SOUND_AT[0]), (GATHER_TAKE, GATHER_SOUND_AT[1]), (NEW_DISCOVERY, GATHER_SOUND_AT[2])] {
-                            if hash != NEW_DISCOVERY || plan.new {
+                            if hash != NEW_DISCOVERY || plan.found.iter().any(|f| f.new) {
                                 s.schedule(Cue::effect(now + after, hash));
                             }
                         }
@@ -3583,7 +3589,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
                 place: barrel_ryza::field_hud::place_names(&a.field).filter(|_| !a.no_banner),
                 arrival: a.no_banner,
                 gather: match &gather_plan {
-                    Some(g) => barrel_ryza::field_hud::Gathering { near: (tick >= g.near).then(|| tick - g.near), pressed: (tick >= g.press).then(|| tick - g.press), found: Some((g.name, g.new)) },
+                    Some(g) => barrel_ryza::field_hud::Gathering { near: (tick >= g.near).then(|| tick - g.near), pressed: (tick >= g.press).then(|| tick - g.press), found: g.found.clone() },
                     None => live_gather.show(tick),
                 },
                 help: if let (Some(back), true) = (resumed, pump.is_none()) {
@@ -3603,8 +3609,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             layer.set_blended(&gpu, &quads, &clips, glows)?;
         }
         // The item gathered brings its pictures: the HUD's layer is made again with them.
-        if let Some(image) = gather_hud_item.take() {
-            hud = Some(hud_layer(&install, &gpu, &renderer, Some(image))?);
+        if let Some(images) = gather_hud_items.take() {
+            hud = Some(hud_layer(&install, &gpu, &renderer, &images)?);
         }
         let layers: Vec<&text::Layer> = match (showing_load, load_screen.as_ref(), showing_options, options_screen.as_ref()) {
             (true, Some((l, _, _)), _, _) => vec![l],

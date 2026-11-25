@@ -30,6 +30,8 @@ const LISTS: i32 = 0x730;
 const PLACE_PREFIX: &str = "FIELDMAP_COLLECT_PLACE_";
 /// Items above this number are not in the library's table (the game treats them as always new).
 const LIBRARY_ITEMS: i32 = 0x2fc;
+/// The library level of an item known in full (the save's `knowledge/item`: 0 unknown, 2 seen, 10 known).
+pub const KNOWN_IN_FULL: i32 = 10;
 /// A library level above this is known: the game picks the items at or below it first.
 const KNOWN_ABOVE: i32 = 2;
 /// The kinds' (`ITEM_KIND_*`, in the executable's order) group in the potentials' table of which
@@ -240,6 +242,26 @@ pub struct Gathered {
     pub potentials: Vec<(usize, i32)>,
     /// Whether the library did not know it (it shows as a new discovery).
     pub new: bool,
+}
+
+/// The library after a gathering: every item gathered is known in full (a second gathering of it is no discovery, and the
+/// places stop favouring it: `gather-rasen2`, where the second comb drew its pick from the one item not gathered yet).
+pub fn learn(knowledge: &mut Vec<i32>, gathered: &[Gathered]) {
+    for g in gathered {
+        know(knowledge, g.item);
+    }
+}
+
+/// An item the library knows in full from now on (items past the library's table have no entry).
+pub fn know(knowledge: &mut Vec<i32>, item: i32) {
+    let at = item as usize;
+    if item < 0 || item > LIBRARY_ITEMS {
+        return;
+    }
+    if knowledge.len() <= at {
+        knowledge.resize(at + 1, 0);
+    }
+    knowledge[at] = knowledge[at].max(KNOWN_IN_FULL);
 }
 
 impl Context<'_> {

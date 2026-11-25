@@ -2,6 +2,7 @@
 //! tables are `barrel_ryza::gather`; the popups are the HUD's). Docs: docs/ryza/open.md,
 //! "Gathering (P6)".
 
+use barrel_ryza::field_hud::Found;
 use barrel_ryza::gather::{Boost, Context, Gathered, Tables};
 use barrel_ryza::gimmick::{self, Spot};
 use barrel_ryza::install::Install;
@@ -73,11 +74,10 @@ impl Points {
 pub(super) struct Plan {
     pub near: f32,
     pub press: f32,
-    /// The item's name (a string number) and whether the library did not know it.
-    pub name: u32,
-    pub new: bool,
-    /// The item's picture number.
-    pub image: usize,
+    /// The items' names (string numbers) and whether the library did not know each.
+    pub found: Vec<Found>,
+    /// The items' picture numbers.
+    pub images: Vec<usize>,
     /// The items the gathering gave, each with its quality and potentials, for the log.
     pub gave: Vec<Gathered>,
 }
@@ -85,16 +85,18 @@ pub(super) struct Plan {
 impl Points {
     /// The gathering at the point nearest `at`, from the generator `rng`: what the first item looks
     /// like in the HUD. `None` where no point is in reach or it gives nothing.
-    pub(super) fn plan(&self, at: [f32; 3], turn: f32, frames: (f32, f32), rng: &mut Random, knowledge: &[i32], events: &[usize]) -> Option<Plan> {
+    pub(super) fn plan(&self, at: [f32; 3], turn: f32, frames: (f32, f32), rng: &mut Random, knowledge: &mut Vec<i32>, events: &[usize]) -> Option<Plan> {
         let spot = self.in_reach(at, turn, false)?;
         self.plan_at(spot, frames, rng, knowledge, events)
     }
 
     /// The gathering at `spot`.
-    fn plan_at(&self, spot: &Spot, frames: (f32, f32), rng: &mut Random, knowledge: &[i32], events: &[usize]) -> Option<Plan> {
+    fn plan_at(&self, spot: &Spot, frames: (f32, f32), rng: &mut Random, knowledge: &mut Vec<i32>, events: &[usize]) -> Option<Plan> {
         let gave = self.gather(spot, rng, knowledge, events);
-        let first = gave.first()?;
-        Some(Plan { near: frames.0, press: frames.1, name: barrel_ryza::item_info::NAME_BASE + first.item as u32, new: first.new, image: self.image(first.item)?, gave })
+        barrel_ryza::gather::learn(knowledge, &gave);
+        let found = gave.iter().map(|g| Found { name: barrel_ryza::item_info::NAME_BASE + g.item as u32, new: g.new }).collect();
+        let images = gave.iter().map(|g| self.image(g.item)).collect::<Option<Vec<_>>>().filter(|i| !i.is_empty())?;
+        Some(Plan { near: frames.0, press: frames.1, found, images, gave })
     }
 }
 
@@ -114,8 +116,8 @@ pub(super) struct Live {
 
 impl Live {
     /// One frame at `tick` (capture-style frames): her feet `at`, her turn, and whether A went down. Returns
-    /// the picture number of the item gathered when this frame's A gathered one.
-    pub(super) fn step(&mut self, points: &Points, at: [f32; 3], turn: f32, tick: f32, confirm: bool, knowledge: &[i32], events: &[usize]) -> Option<usize> {
+    /// the picture numbers of the items gathered when this frame's A gathered some.
+    pub(super) fn step(&mut self, points: &Points, at: [f32; 3], turn: f32, tick: f32, confirm: bool, knowledge: &mut Vec<i32>, events: &[usize]) -> Option<Vec<usize>> {
         if self.plan.as_ref().is_some_and(|p| tick - p.press > POPUPS_OVER) {
             self.plan = None;
         }
@@ -136,15 +138,15 @@ impl Live {
             eprintln!("gathered: item {} quality {} potentials {:?}{}", g.item, g.quality, g.potentials, if g.new { " (new discovery)" } else { "" });
         }
         self.spent.push(spot.id);
-        let image = plan.image;
+        let images = plan.images.clone();
         self.plan = Some(plan);
-        Some(image)
+        Some(images)
     }
 
     /// The popups at `tick`.
     pub(super) fn show(&self, tick: f32) -> barrel_ryza::field_hud::Gathering {
         match &self.plan {
-            Some(g) => barrel_ryza::field_hud::Gathering { near: Some(tick - g.near), pressed: Some(tick - g.press), found: Some((g.name, g.new)) },
+            Some(g) => barrel_ryza::field_hud::Gathering { near: Some(tick - g.near), pressed: Some(tick - g.press), found: g.found.clone() },
             None => barrel_ryza::field_hud::Gathering { near: self.near.map(|n| tick - n), ..Default::default() },
         }
     }

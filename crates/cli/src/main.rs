@@ -48,7 +48,8 @@ usage:
                                in PAK archives: Sophie 2, the Ryza games)
   barrel-tool ryza-save-events INSTALL SAVE OUT EVENT...  a copy of a Ryza DX save (data.dat) with the story events
       named (EVENT_MM01_111 ...) marked as played, coded as the game codes saves; for answer keys (never the game's own saves)
-  barrel-tool ryza-gather INSTALL STATE.bin PLACE [--save FILE] [--rank N] [--difficulty N] [--draws]  a gathering at a place
+  barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
+  barrel-tool ryza-gather INSTALL STATE.bin PLACE [--save FILE] [--known ITEM,..] [--rank N] [--difficulty N] [--draws]  a gathering at a place
       (FIELDMAP_COLLECT_PLACE_S06_T_RASEN_COMB_HAND or without the prefix) from the game's random generator state
       (a dump of its window; ryza-recomp's dumps/F.1.bin): each draw (`irand a b`, hex, `frand a b` -> value) and the items;
       --draws prints only the calls (to diff against a hook log); --save gives the library's levels and the events played
@@ -279,6 +280,7 @@ fn main() -> ExitCode {
         ["stream-check", kvs] => stream_check(Path::new(kvs)),
         ["voice-wav", fpl, clip, out, rest @ ..] if rest.len() <= 1 => voice_wav(Path::new(fpl), clip, Path::new(out), rest.first().map(Path::new)),
         ["save", file] => save(Path::new(file)),
+        ["ryza-file", install, name, out] => ryza_file(Path::new(install), name, Path::new(out)),
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
@@ -1780,11 +1782,12 @@ fn ryza_save(file: &Path, out: &Path) -> Result<()> {
 /// must not exist: never the game's own saves). Checked by decoding it back.
 /// `ryza-gather`: one gathering at a place from a generator state (`barrel_ryza::gather`).
 fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Result<()> {
-    let (mut save, mut rank, mut difficulty, mut calls_only) = (None, 0usize, 1i32, false);
+    let (mut save, mut rank, mut difficulty, mut calls_only, mut known) = (None, 0usize, 1i32, false, Vec::<usize>::new());
     let mut it = rest.iter();
     while let Some(&flag) = it.next() {
         match flag {
             "--save" => save = Some(PathBuf::from(it.next().ok_or("--save FILE")?)),
+            "--known" => known = it.next().ok_or("--known ITEM,..")?.split(',').map(str::parse).collect::<std::result::Result<_, _>>()?,
             "--rank" => rank = it.next().ok_or("--rank N")?.parse()?,
             "--difficulty" => difficulty = it.next().ok_or("--difficulty N")?.parse()?,
             "--draws" => calls_only = true,
@@ -1803,6 +1806,13 @@ fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Resu
         knowledge = barrel_ryza::save::knowledge(&state, "item").ok_or("the save has no item knowledge")?;
         played = barrel_ryza::save::events_done(&state)?;
     }
+    // Items the library knows in full besides the save's (what an earlier gathering taught).
+    for &k in &known {
+        if knowledge.len() <= k {
+            knowledge.resize(k + 1, 0);
+        }
+        knowledge[k] = barrel_ryza::gather::KNOWN_IN_FULL;
+    }
     let flag = |f: i32| usize::try_from(f).is_ok_and(|f| played.contains(&f));
     let ctx = barrel_ryza::gather::Context { difficulty, rank, knowledge: &knowledge, flag: &flag, more_items: 0, boost: Default::default() };
     let start = rng.index();
@@ -1820,6 +1830,12 @@ fn ryza_gather(install: &Path, state: &Path, place: &str, rest: &[&str]) -> Resu
             println!("item {} quality {} potentials {:?} effects {:?}{}", g.item, g.quality, g.potentials, g.effects, if g.new { " (new discovery)" } else { "" });
         }
     }
+    Ok(())
+}
+
+/// `ryza-file`: one file of the game's archives, written out as it is.
+fn ryza_file(install: &Path, name: &str, out: &Path) -> Result<()> {
+    std::fs::write(out, barrel_ryza::install::Install::open(install)?.read(name)?)?;
     Ok(())
 }
 

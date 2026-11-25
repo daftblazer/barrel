@@ -23,7 +23,7 @@ mod arrival;
 mod gather;
 use arrival::Arrival;
 pub use arrival::SOUND_AT as MARQUEE_SOUND_AT;
-pub use gather::Gathering;
+pub use gather::{Found, Gathering};
 use gather::Popups;
 
 /// The textures of the HUD's layer, in this order.
@@ -43,10 +43,15 @@ pub const BATTLE: usize = 9;
 pub const SAVELOAD: usize = 10;
 /// How many textures the layer has.
 pub const TEXTURES: usize = 11;
-/// The two textures of a gathered item's pictures, when the layer has them (after the others): the
-/// small picture (`a21_item_s.g1t`, the item's own texture) and the large one (`a21_item_l_<n>.g1t`).
-pub const ITEM_S: usize = 11;
-pub const ITEM_L: usize = 12;
+/// The textures of the gathered items' pictures, when the layer has them (after the others), two for
+/// each item in the order gathered: the small picture (`a21_item_s.g1t`, the item's own texture) and
+/// the large one (`a21_item_l_<n>.g1t`).
+pub const ITEM_PICTURES: usize = 11;
+
+/// The layer's texture of the `k`th gathered item's small or large picture.
+pub const fn item_texture(k: usize, large: bool) -> usize {
+    ITEM_PICTURES + 2 * k + large as usize
+}
 
 /// The styles' pixels count three to a layout pixel (`load_view::ATLAS_PER_LAYOUT`).
 const PER_LAYOUT: f32 = 3.0;
@@ -217,7 +222,7 @@ pub const BASKET: u32 = 225;
 pub const MAP_FIELD: &str = "s06_t_rasen";
 
 /// What the HUD shows of the play.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct State {
     /// Her feet in game units (x not mirrored).
     pub at: [f32; 3],
@@ -289,7 +294,7 @@ pub struct Sources<'a> {
     pub sizes: [(u32, u32); TEXTURES - 2],
     /// `uia_a21_fm01.xml` (the item notices' fades).
     pub field_anims: &'a [u8],
-    /// The sizes of the gathered item's two pictures' textures (`ITEM_S`, `ITEM_L`), when the layer has them.
+    /// The sizes of a gathered item's small and large pictures' textures (the same for every item), when the layer has them.
     pub item_sizes: Option<[(u32, u32); 2]>,
 }
 
@@ -769,9 +774,8 @@ impl Pen<'_> {
 
     fn uv(&self, texture: usize, p: [f32; 4]) -> [f32; 4] {
         // The atlases follow the two fonts; the item pictures' after the others.
-        let (aw, ah) = match (texture, self.hud.item_atlases) {
-            (ITEM_S, Some(a)) => a[0],
-            (ITEM_L, Some(a)) => a[1],
+        let (aw, ah) = match self.hud.item_atlases {
+            Some(a) if texture >= ITEM_PICTURES => a[(texture - ITEM_PICTURES) % 2],
             _ => self.hud.atlases[texture - FIELD],
         };
         [p[0] / aw, p[1] / ah, (p[0] + p[2]) / aw, (p[1] + p[3]) / ah]
