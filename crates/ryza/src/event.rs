@@ -59,9 +59,18 @@ pub type Taken = (f32, usize, Vec<u32>);
 
 /// [`schedule_drawn`] with the commands taken ([`Taken`]) from the same run.
 pub fn schedule_drawn_taken<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Result<(Vec<Timed<'a>>, Vec<Taken>), String> {
+    schedule_drawn_taken_with(event, given, clock, until, None)
+}
+
+/// [`schedule_drawn_taken`] with `lengths` (see [`motion_lengths`]): `s36` then waits for its motion.
+pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32, lengths: Option<barrel_engine::event::MotionLength<'a>>) -> Result<(Vec<Timed<'a>>, Vec<Taken>), String> {
     let table = OperandTable::ryza();
     let scripts: Vec<_> = event.actions.iter().map(|a| barrel_formats::ebd::decode(&a.words, &table)).collect::<Result<_, _>>().map_err(|e| format!("{e}"))?;
-    let (steps, taken) = drawn_player(event, given, clock, until)?.schedule_traced();
+    let player = drawn_player(event, given, clock, until)?;
+    let (steps, taken) = match lengths {
+        Some(l) => player.motion_length(l).schedule_traced(),
+        None => player.schedule_traced(),
+    };
     let taken = taken
         .into_iter()
         .filter_map(|(time, action, at)| {
@@ -103,8 +112,31 @@ fn drawn_player<'a>(event: &'a Ebd, given: &[f32], clock: u32, until: f32) -> Re
 /// (ryza-recomp's `tools/cmdlog.py --hex`): the time in seconds, the action, and the command's
 /// words as the script has them (the word, then its operands). `given` are the random commands'
 /// numbers in the order asked for (the lowest after them) and `until` where a looping event stops.
-pub fn commands(event: &Ebd, given: &[f32], until: f32) -> Result<Vec<Taken>, String> {
-    Ok(schedule_drawn_taken(event, given, 0, until)?.1)
+pub fn commands(event: &Ebd, given: &[f32], until: f32, lengths: Option<barrel_engine::event::MotionLength<'_>>) -> Result<Vec<Taken>, String> {
+    Ok(schedule_drawn_taken_with(event, given, 0, until, lengths)?.1)
+}
+
+/// How long the motions of the event's characters last, for the player's `s36` waits: a
+/// character's row of `chara.xml` names a player character (`PC..A`) whose motion sets (the
+/// character's own, then the shared ones) hold the motion's clip; its length is the clip's. Any
+/// other character, or a motion not found, gives none (the wait takes no time). The clip's own
+/// speed is the player's to apply.
+pub fn motion_lengths(install: &crate::install::Install) -> barrel_engine::event::MotionLength<'_> {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let cache: RefCell<HashMap<(u32, u32), Option<f32>>> = RefCell::new(HashMap::new());
+    Box::new(move |character, motion, _| {
+        let seconds = *cache.borrow_mut().entry((character, motion)).or_insert_with(|| {
+            let (chara, base) = (install.read("\\saves\\chara\\chara.xml").ok()?, install.read("\\saves\\chara\\charabase.xml").ok()?);
+            let tag = crate::chara::row_tag(&chara, character as usize).ok().filter(|t| t.starts_with("PC") && t.len() == 5)?;
+            let folders = crate::chara::motion_sets(&base, &install.read("\\saves\\chara\\charamotionset.xml").ok()?, &tag).ok()?;
+            let bytes = folders.iter().find_map(|f| install.read(&crate::motion::path(&f.dir, motion)).ok())?;
+            let container = barrel_formats::elixir::Elixir::parse(&bytes).ok()?;
+            let entry = container.entries.iter().find(|e| !e.is_dummy())?;
+            Some(barrel_formats::g1a::parse(container.data(entry)).ok()?.duration)
+        });
+        seconds.map(|s| (s, false))
+    })
 }
 
 /// `q5` (`ECT_FIELDMAP_CHARA_ADDITION_EX`): `{slot, 0, 0, 0, x, y, z, rx, ry, rz, 0, 0, 2}`, adds

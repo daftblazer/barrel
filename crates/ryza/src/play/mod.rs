@@ -1359,7 +1359,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         Some(e) => {
             let given: Vec<f32> = std::env::var("BARREL_EVENT_DRAWS").ok().map(|v| v.split(',').filter_map(|n| n.trim().parse().ok()).collect()).unwrap_or_default();
             let clock = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as u32);
-            Some(barrel_ryza::event::schedule_drawn_taken(e, &given, clock, 3600.0)?)
+            Some(barrel_ryza::event::schedule_drawn_taken_with(e, &given, clock, 3600.0, a.opening.then(|| barrel_ryza::event::motion_lengths(&install)))?)
         }
         None => None,
     };

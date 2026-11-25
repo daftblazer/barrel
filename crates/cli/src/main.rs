@@ -3526,7 +3526,7 @@ fn ryza_commands(root: &Path, event: &str, draws: &str) -> Result<()> {
     let install = barrel_ryza::install::Install::open(root)?;
     let path = barrel_ryza::event::path(event).ok_or(format!("{event}: not an event name"))?;
     let e = Ebd::parse(&install.read(&path)?).map_err(|err| format!("{path}: {err}"))?;
-    for (time, action, words) in barrel_ryza::event::commands(&e, &given, 600.0)? {
+    for (time, action, words) in barrel_ryza::event::commands(&e, &given, 600.0, Some(barrel_ryza::event::motion_lengths(&install)))? {
         let words: Vec<String> = words.iter().map(|w| format!("{w:x}")).collect();
         println!("{} a{action} {}", (time * 60.0).round() as i64, words.join(" "));
     }

@@ -844,8 +844,8 @@ opening's first 132 of 135, each group at one offset. Left:
   the game's; the wait's generator is the game's shared one (`0x1406ae6b0`), which Barrel
   does not follow, so a parity run gives the numbers (`BARREL_EVENT_DRAWS`).
 - **`s69`** carries -4300 in its 14th operand in the game's queue where the script has 0, and
-  `s36` (wait for the motion) takes no time in `ryza-commands`, which gives the player no
-  motion lengths (the play does).
+  `s36` (wait for the motion) now lasts the clip's length in `ryza-commands` and the opening's
+  play (`event::motion_lengths`; the title's play still gives it no lengths).
 
 ## File bytes Barrel never uses
 
@@ -928,21 +928,25 @@ one Barrel run of 4,400 frames; the 2D layer only):
   (`ECT_CAMERA_EYEAT_POS_SET`: target first, then eye), `t7`/`t8` (the target's point and move)
   and `t26` (`ECT_CAMERA_FOV_MOVE`, `{hundredths of a degree}`, taken as set at once:
   `Stage::manual_fov`). Later shots (3805 on) are not all there.
-- **The commands** (`barrel-tool ryza-commands`, `tools/cmddiff.py --from 1600`): all of p, q, t, u
-  and w pair at 1600 exactly; s pairs at 1600 but for the two `s40`/`s43` of the key's 2711
-  (the motion waits take no time in `ryza-commands`).
+- **The commands** (`barrel-tool ryza-commands`, `tools/cmddiff.py --from 1600`): every group
+  (p, q, s, t, u, w: 280 commands) pairs at 1600 exactly. The `s36` waits last the clip's length
+  at the motion's speed (`event::motion_lengths`: a character's row of `chara.xml`, its motion
+  sets, the first clip's duration; 122 frames for 2282 at 50%, as the key's 2589 to 2711).
 
 3D (`diff3d`, as time allows): the field (s06_t_rasen) and the camera match; Ryza, Lent, Tao
 and one more person are staged (`opening_slots`: the stage run through once, every slot's model
 loaded up front, a person off the stage drawn at scale 0). Ryza's `s8` motion 2281 with `s38`
 (`ECT_CHARA_MOTION_SET_DIV` here `{character, from, to}` in hundredths of a 60 Hz frame:
-130 to 181) and `s39` (speed 20) is read (`Playing::range`, `position`): her bones at 2405 are
-within 0.2 of the key's. Left:
+130 to 181) and `s39` (speed 20, Ryza's own word) is read (`Playing::range`, `position`): her
+bones at 2405 are within 0.2 of the key's, at 2605 and 2705 within 1.5 except the head. Left:
 
-- Ryza's head follows a look-at (`s90`, `ECT_CHARA_LOOK_MOVE_SET`, at 2469): bone 14 is 42
-  units off at 2505; the motion that follows (`s40` loop of 2282 at 2589, waited out by `s36`)
-  is a whole pose off (1.8 rad at 2605): the reading of `s40`'s operands as an auto-loop
-  `{character, motion, division, flag, blend}` is a guess.
+- Ryza's head follows a look-at (`s90`, `ECT_CHARA_LOOK_MOVE_SET`, at 2469 and 2589): bone 14 is
+  42 units off at 2505. After 2711 her pose is the end of motion 2282 held (the key at 2805
+  matches Barrel's frame at 2708): `s40 0 0 3000 1 0` (motion 0) is read as no change
+  (`CHARA_MOTION_LOOP_RYZA`, a STAND-IN); from 2805 on her bones are 35 (head) to 100 units off,
+  the later commands (`s40` of other motions, `s43` speed moves, look-ats) not read.
+- The camera of the shot at 3701 to 4227 (`t16`/`t17` `0x74000010`/`0x74000011`, an orbit by the
+  words' operands, not read: 3805 to 4205 are 1e5 off) and from 5405 on.
 - The other people (the key has 36 to 89 skinned draws from 4355) and their props, the effects
   (the particles at 4305-4525, 5375-5485 and 5965 on are 190 quads Barrel does not draw), the
   shell on the sand, name cards (telops 1 to 14), the sound (the title's music stops as the

@@ -152,6 +152,11 @@ pub const EVENT_WAIT_POST_EFFECT: u32 = 0x7500_000e;
 /// `t14` (`ECT_CAMERA_QUAKE_SET`): `{quake, seconds × 100}`, camera quake `cq_obj_<quake>`
 /// (`barrel_formats::quake`; `docs/events.md`, "Camera quakes").
 pub const CAMERA_QUAKE_SET: u32 = 0x7400_000e;
+/// Ryza's `s40` (`ECT_CHARA_MOTION_SET_LOOP`, 0x73000028, read here as the engine's own word): `{character, motion,
+/// division, flag, blend}` as [`CHARA_MOTION_AUTO_LOOP`], except that motion 0 asks for no change: the
+/// opening's `s40 0 0 3000 1 0` after a motion that is waited out leaves its last pose on (STAND-IN: the
+/// key's pose at 2805 is the end of motion 2282; the real meaning of motion 0 and 3000 is not read).
+pub const CHARA_MOTION_LOOP_RYZA: u32 = 0x73ee_0004;
 /// Ryza's `s39` (`ECT_CHARA_MOTION_SET_SPEED`, 0x73000027, read here as the engine's own word): `{character,
 /// percent}`, as [`CHARA_MOTION_SPEED`] (the word's operand count differs from Escha's).
 pub const CHARA_MOTION_SPEED_RYZA: u32 = 0x73ee_0003;
@@ -801,6 +806,11 @@ impl<'a> Player<'a> {
             (CHARA_MOTION_LOOP, [character, motion, rest @ ..]) => {
                 let blend = rest.first().map_or(0.0, |&b| f(b) / 100.0);
                 out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: None });
+            }
+            (CHARA_MOTION_LOOP_RYZA, [_, 0, ..]) => {}
+            (CHARA_MOTION_LOOP_RYZA, [character, motion, division, rest @ ..]) => {
+                let blend = rest.get(1).map_or(0.0, |&b| f(b) / 100.0);
+                out.push(Step::Motion { action, character: self.slot(*character), motion: *motion, blend, looping: true, division: Some(*division) });
             }
             (CHARA_MOTION_RANGE, [character, from, to, ..]) => {
                 out.push(Step::MotionRange { action, character: self.slot(*character), from: f(*from) / 6000.0, to: f(*to) / 6000.0 });
