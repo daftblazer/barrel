@@ -2479,6 +2479,8 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
     let mut gather_hud_items: Option<Vec<usize>> = None;
     // Whether the gathering holds the help bar's rest count (as of the last frame).
     let mut gather_busy = false;
+    // The point just gathered from: its body stops being a wall.
+    let mut gather_gone: Option<u32> = None;
     let walk_start = rig.as_ref().map_or(Vec3::ZERO, |r| r.player.at);
     loop {
         // Last frame's joints, then the field's moving objects at this frame's moment (the
@@ -2624,6 +2626,13 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             }
             if a.title {
                 sticks.right = [0.0; 2];
+            }
+            if let (Some(id), Some(r)) = (gather_gone.take(), rig.as_mut()) {
+                for (_, body) in r.bodies.iter().filter(|(b, _)| *b == id) {
+                    if let Some(w) = r.walls.as_mut() {
+                        w.remove(body);
+                    }
+                }
             }
             match rig.as_mut() {
                 Some(r) => barrel_ryza::walk::step(&mut r.player, &mut cam, &sticks, dt, r.ground.as_ref(), r.walls.as_ref()),
@@ -3579,6 +3588,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
             if let (Some(points), true, None) = (&gather_points, pump.is_some(), &gather_plan) {
                 if let Some(image) = live_gather.step(points, r.player.at.into(), r.player.turn.to_degrees(), tick, (confirm_pressed, swing_pressed), &mut know_items, &played_events) {
                     gather_hud_items = Some(image).filter(|i| !i.is_empty());
+                    gather_gone = live_gather.plan().and_then(|p| p.spot);
                     if let (Some(s), Some(plan)) = (sound.as_mut(), live_gather.plan()) {
                         let now = sound_base + (started.elapsed().as_secs_f32() * barrel_ryza::sound::FPS) as i64;
                         for cue in plan.cues(now) {
