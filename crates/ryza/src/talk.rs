@@ -399,7 +399,8 @@ impl Talk {
         for (i, row) in rows.iter().enumerate() {
             let mut pen = TUTORIAL_PEN;
             for ch in row.chars() {
-                let color = runs.iter().rev().find(|r| r.0 <= at).map_or(TUTORIAL_TEXT, |r| r.1);
+                // a button's icon keeps its own colours
+                let color = if ('\u{4d0}'..='\u{4ff}').contains(&ch) { [1.0; 3] } else { runs.iter().rev().find(|r| r.0 <= at).map_or(TUTORIAL_TEXT, |r| r.1) };
                 self.glyph_quads(&ch.to_string(), (pen, top + TUTORIAL_PITCH * i as f32), TUTORIAL_SCALE, [color[0], color[1], color[2], alpha], &to, &mut out);
                 pen += self.advance(&ch.to_string(), TUTORIAL_SCALE);
                 at += 1;

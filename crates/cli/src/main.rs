@@ -3524,12 +3524,27 @@ fn ryza_actions(root: &Path, event: &str) -> Result<()> {
 fn ryza_commands(root: &Path, event: &str, draws: &str) -> Result<()> {
     let given: Vec<f32> = draws.split(',').filter_map(|n| n.trim().parse().ok()).collect();
     let install = barrel_ryza::install::Install::open(root)?;
+    // `opening`: the opening and the help event after it as one run (the frames are the opening's, from its first command).
+    if event == "opening" {
+        let read = |name: &str| -> Result<Ebd> {
+            let path = barrel_ryza::event::path(name).ok_or(format!("{name}: not an event name"))?;
+            Ok(Ebd::parse(&install.read(&path)?).map_err(|err| format!("{path}: {err}"))?)
+        };
+        let (first, then) = (read(barrel_ryza::opening::EVENT)?, read(barrel_ryza::opening::FOLLOWING)?);
+        let (m1, m2) = (barrel_ryza::event::messages(&install, barrel_ryza::opening::EVENT)?, barrel_ryza::event::messages(&install, barrel_ryza::opening::FOLLOWING)?);
+        let (_, taken, _) = barrel_ryza::opening::schedule(&install, &first, &then, [&m1, &m2], barrel_ryza::event::buttons_from_env(), &given, 0, 600.0)?;
+        for (time, action, words) in taken {
+            let words: Vec<String> = words.iter().map(|w| format!("{w:x}")).collect();
+            println!("{} a{action} {}", (time * 60.0).round() as i64, words.join(" "));
+        }
+        return Ok(());
+    }
     let path = barrel_ryza::event::path(event).ok_or(format!("{event}: not an event name"))?;
     let e = Ebd::parse(&install.read(&path)?).map_err(|err| format!("{path}: {err}"))?;
     // BARREL_EVENT_PRESSES=FIRST:STEP:LAST@START plays the lines with the button pressed at those capture frames.
     let name = path.rsplit('\\').next().and_then(|n| n.strip_prefix("event_")).and_then(|n| n.strip_suffix(".ebd")).unwrap_or(event);
     let messages = barrel_ryza::event::messages(&install, name).unwrap_or_default();
-    let talk = barrel_ryza::event::Talk { messages: &messages, buttons: barrel_ryza::event::buttons_from_env() };
+    let talk = barrel_ryza::event::Talk { messages: &messages, buttons: barrel_ryza::event::buttons_from_env(), fade_late: 0.0 };
     for (time, action, words) in barrel_ryza::event::commands(&e, &given, 600.0, Some(barrel_ryza::event::motion_lengths(&install)), talk)? {
         let words: Vec<String> = words.iter().map(|w| format!("{w:x}")).collect();
         println!("{} a{action} {}", (time * 60.0).round() as i64, words.join(" "));

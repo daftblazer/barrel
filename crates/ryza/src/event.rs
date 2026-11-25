@@ -20,6 +20,8 @@ pub fn path(name: &str) -> Option<String> {
 pub struct Talk<'a> {
     pub messages: &'a [Message],
     pub buttons: Option<barrel_engine::event::Buttons>,
+    /// Frames the event's fades hold it longer than the opening's rule ([`barrel_engine::event::Player::fade_late`]).
+    pub fade_late: f32,
 }
 
 /// The game's closing time of a line after the button, in frames: the line's fade out and a few
@@ -128,7 +130,8 @@ pub fn schedule_drawn_taken_with<'a>(event: &'a Ebd, given: &[f32], clock: u32, 
     let player = match talk.buttons {
         Some(b) => player.buttons(b),
         None => player,
-    };
+    }
+    .fade_late(talk.fade_late);
     let (steps, taken) = match lengths {
         Some(l) => player.motion_length(l).schedule_traced(),
         None => player.schedule_traced(),

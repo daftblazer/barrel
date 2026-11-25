@@ -130,6 +130,12 @@ impl HelpBar {
         HelpBar { idle: HELP_IDLE_AT_ARRIVAL, alpha: 0.0, shown: 0.0, back: false }
     }
 
+    /// The bar at the arrival after the opening: no rest to wait for, it fades in from the first frame (`opening-key3` 14865).
+    // STAND-IN: that the bar needs no rest here is read off the key's first HUD frame (14865, 3 frames in: the short plate); the game's own count at a new game's arrival is not read.
+    pub fn arriving_at_once() -> HelpBar {
+        HelpBar { idle: HELP_IDLE, ..HelpBar::arriving() }
+    }
+
     /// The bar as the field comes back from the menu: it fades in a frame later than at an
     /// arrival, with its full line (it has shown before) and a plate that grows over `BACK_GROW_FRAMES`,
     /// from 0.4 frames before the fade (`field-menu` 2575 to 2585: opacity 2/15 and the plate 0.375 of

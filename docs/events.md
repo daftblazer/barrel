@@ -1911,3 +1911,9 @@ runner's are `0x140479820` and `0x14047c660`):
   `p2` waits for the camera's latest move (3 frames after its length) and `p3 {character}` for
   the character's queue to be empty (two frames after its last command ends); `s46 {character,
   motion, ...}` plays a motion once (read as `s5`) and `s36` waits it out at its `s39` speed.
+  **The event after the opening** (`opening-key3`, docs/ryza/open.md, "part 3"): when `mm00_010`'s last fade ends (13845) the queue runs
+  `xx01_150`, the help event: `u17` lines of messages of kind 3 (speaker -1) are help boxes (the tutorial box, dark red text, the hints
+  without skip), take no press until 30 frames after they come up and close like a tutorial's (31 frames after the press); its
+  half-second `u49` fades hold 33 frames (the opening's hold 32); `u76 {1, 0, 163, ...}` shows the picture `ipu\help_h_075` (numbers from
+  163 on read as `help_h_<n - 88>`; the table that names them is not read). The field is then free play from 14862 (the opening's last
+  `q5` for slot 0 is her start).

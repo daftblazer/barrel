@@ -598,6 +598,8 @@ pub struct Player<'a> {
     counted_waits: bool,
     /// [`Player::inline_actions`].
     inline_actions: bool,
+    /// Frames a screen fade holds its event longer than [`fade_hold`] (see [`Player::fade_late`]).
+    fade_late: f32,
     /// The random commands' numbers; see [`Player::chance`].
     chance: Option<Chance<'a>>,
     /// Where [`Player::schedule`] stops an event that loops; see [`Player::until`].
@@ -671,7 +673,7 @@ impl<'a> Player<'a> {
         // `t2/0x30` (`ECT_VARIINDEX_INDEX_SETTING`, `{slot, row}`): the slots' rows (the event's
         // setup binds them once, before anything names them).
         let slots = actions.iter().flatten().filter(|c| c.word == SLOT_SET).filter_map(|c| Some((*c.operands.first()?, *c.operands.get(1)?))).collect();
-        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, buttons: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, chance: None, until: None })
+        Ok(Player { names: barrel_formats::ebd_names::ESCHA.iter().copied().collect(), actions, running, started, messages, pending: Default::default(), reading: None, buttons: None, motion_length: None, slots, hero: 0, vars: [0; 20], replay: false, anchored_places: false, finishing_waits: true, motion_speeds: true, counted_waits: false, inline_actions: false, fade_late: 0.0, chance: None, until: None })
     }
 
     /// A player for another game's event (decoded with that game's `table`), its commands
@@ -734,6 +736,13 @@ impl<'a> Player<'a> {
 
     /// Waits last the frames of the game's countdown ([`counted_wait`]): Ryza DX's. Off by
     /// default: the other games' waits are their lengths.
+    /// A fade holds its event `frames` longer than [`fade_hold`] says (Ryza DX's help event holds its half-second fades 33 frames where
+    /// the opening's hold 32: the game's own test of a fade's end is not read).
+    pub fn fade_late(mut self, frames: f32) -> Self {
+        self.fade_late = frames;
+        self
+    }
+
     pub fn counted_waits(mut self) -> Self {
         self.counted_waits = true;
         self
@@ -1225,6 +1234,12 @@ impl<'a> Player<'a> {
             }
             if c.word & !UNMAPPED == TUTORIAL_PICTURE {
                 tutorial = c.operands.first() == Some(&1);
+                // STAND-IN: the wait after the help page's picture comes up holds 30 frames where a half second holds 29 (`opening-key3` 14080 to 14110);
+                // a frame is added after a shown picture (Ryza's events only; the room tutorial's picture has no wait after it to compare).
+                if tutorial && self.counted_waits {
+                    threads[t].0 += 1.0 / 60.0;
+                    event_clock[t] += 1.0 / 60.0;
+                }
             }
             if let Some(n) = self.translate(action, c, &mut steps)
                 && n < self.actions.len() && !self.started[n] {
@@ -1290,7 +1305,7 @@ impl<'a> Player<'a> {
                     // Ryza DX's events wait on their fades.
                     Step::Fade { seconds, preset, .. } if self.counted_waits => {
                         // STAND-IN: the one fade of preset 1 (the opening's 7241, 1.5 s) held 93 frames where the rule gives 94 (the title's 1.5 s of preset 3 held 94); the real thing is the game's own test.
-                        let hold = fade_hold(*seconds) - if *preset == 1 { 1.0 / 60.0 } else { 0.0 };
+                        let hold = fade_hold(*seconds) - if *preset == 1 { 1.0 / 60.0 } else { 0.0 } + self.fade_late / 60.0;
                         threads[t].0 += hold;
                         event_clock[t] += hold;
                     }
@@ -1794,6 +1809,24 @@ mod tests {
         assert_eq!(timed.iter().filter(|t| matches!(t.step, Step::Message { .. })).count(), 3);
         // "c" comes up after "b" ends (2.3) and the wait (2.4), and no press follows: it stays
         assert!(timed.iter().all(|t| t.time < 2.5));
+    }
+
+    /// A system line (speaker -1: a help box) takes no press until its box is up (`ready`) and closes like a tutorial's.
+    #[test]
+    fn a_help_box_takes_a_press_once_it_is_up() {
+        let words = vec![SHOW_MESSAGES, 0, 0, TIME_WAIT, 10, END];
+        let event = Ebd { actions: vec![Action { flags: 0, name: vec![], description: vec![], words }], resources: vec![] };
+        let system = Message { kind: 3, speaker: -1, fields: vec![0; 6], after: Vec::new(), text: "help".into() };
+        let table = OperandTable::new(&[(SHOW_MESSAGES, Some(2)), (TIME_WAIT, Some(1))]);
+        // presses at 20 and 140 frames; the box takes 30 frames to come up and 32 to close
+        let buttons = Buttons { presses: vec![20.0 / 60.0, 140.0 / 60.0], close: 18.0 / 60.0, tutorial_close: 32.0 / 60.0, tutorial_between: 1.0 / 60.0, ready: 30.0 / 60.0 };
+        let timed = Player::new(&event, std::slice::from_ref(&system), &table).unwrap().buttons(buttons.clone()).schedule();
+        let close = timed.iter().find(|t| matches!(t.step, Step::LineClose { .. })).unwrap();
+        assert!((close.time - 139.0 / 60.0).abs() < 1e-4, "{}", close.time);
+        // the next command starts 32 frames after the press that took
+        assert!((buttons.line_end(0.0, false, true, true) - 172.0 / 60.0).abs() < 1e-4);
+        // a story line takes the first press at once and closes in 18
+        assert!((buttons.line_end(0.0, false, false, true) - 38.0 / 60.0).abs() < 1e-4);
     }
 
     #[test]

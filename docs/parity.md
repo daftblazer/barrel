@@ -410,3 +410,9 @@ time. `opening-key2`'s commands (`ryza-recomp/work/scenarios/opening-key2/comman
 1600 over 1600 to 14000: 908 pairs of 1106 game commands, 61 of them more than a frame off
 (p 2, s 38, t 9, u 3, w 9); the unpaired are `s9` (the characters' walks, not read), the next
 event's start and a few waits (docs/ryza/open.md, "The opening (P5b)", part 2).
+
+`barrel-tool ryza-commands INSTALL opening` plays the opening and the help event after it (`xx01_150`) as one run, the frames
+the opening's: against `opening-key3` (A every 120 frames to 23975, `BARREL_EVENT_PRESSES=2135:120:23975@1600`) 926 of 1118 commands
+through 15000 pair at 1600 with the same 61 off (`opening-commands3`; the help event's 19 are all on the offset). The 2D frames from
+the help event's lines to free play (13995 to 23995) are the `opening-help-*` and `opening-free-play-*` rows; `--opening --opening-at F`
+with F from 14862 is the free play (docs/ryza/open.md, part 3).

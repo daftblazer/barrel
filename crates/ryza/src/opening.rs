@@ -17,6 +17,10 @@ pub const START: i32 = 1535 + new_game::OPENING_AFTER;
 /// the stage, then two pictures' worth of explanation; `opening-key3`, 13846 on).
 pub const FOLLOWING: &str = "xx01_150";
 
+/// The help event's half-second fades hold it 33 frames (14047 to 14080, 14110 to 14143, 14829 to 14862 in the key) where the opening's hold
+/// 32: one frame more. STAND-IN: the rule behind the difference (the game's own test of a fade's end) is not read.
+pub const HELP_FADE_LATE: f32 = 1.0;
+
 /// The frames the following event starts after the opening's last command's wait: its first commands run
 /// a frame after the queue ends (the last fade, preset 3 half a second, is on 13813 and holds
 /// [`barrel_engine::event::fade_hold`]; the next event's first commands are on 13846 in the key).
@@ -37,13 +41,13 @@ pub fn schedule<'a>(
     clock: u32,
     until: f32,
 ) -> Result<(Vec<Timed<'a>>, Vec<Taken>, f32), String> {
-    let talk = |m, b| Talk { messages: m, buttons: b };
-    let (mut steps, mut taken) = event::schedule_drawn_taken_with(opening, given, clock, until, Some(event::motion_lengths(install)), talk(messages[0], buttons.clone()))?;
+    let talk = |m, b, late| Talk { messages: m, buttons: b, fade_late: late };
+    let (mut steps, mut taken) = event::schedule_drawn_taken_with(opening, given, clock, until, Some(event::motion_lengths(install)), talk(messages[0], buttons.clone(), 0.0))?;
     // the opening is over when its last command's wait is (it ends on a fade of half a second)
     let last = taken.iter().map(|t| t.0).fold(0.0f32, f32::max);
     let end = last + barrel_engine::event::fade_hold(0.5) + HAND_OVER_FRAMES / 60.0;
     let then = buttons.map(|b| Buttons { presses: b.presses.iter().map(|p| p - end).collect(), ..b });
-    let (next_steps, next_taken) = event::schedule_drawn_taken_with(following, &[], clock, until, Some(event::motion_lengths(install)), talk(messages[1], then))?;
+    let (next_steps, next_taken) = event::schedule_drawn_taken_with(following, &[], clock, until, Some(event::motion_lengths(install)), talk(messages[1], then, HELP_FADE_LATE))?;
     let shift = opening.actions.len();
     steps.extend(next_steps.into_iter().map(|t| Timed { time: t.time + end, action: t.action + shift, step: t.step }));
     taken.extend(next_taken.into_iter().map(|(time, action, words)| (time + end, action + shift, words)));
@@ -75,6 +79,12 @@ pub fn free_play(_install: &crate::install::Install, story: &mut crate::story::S
     Ok(())
 }
 
+/// When the help event is over and the field's HUD arrives, in seconds from the opening's first command: its last command (a fade of half
+/// a second) has held its event (infinity while a line still waits for its button).
+pub fn over_at(taken: &[Taken]) -> f32 {
+    taken.iter().map(|t| t.0).fold(0.0f32, f32::max) + barrel_engine::event::fade_hold(0.5) + HELP_FADE_LATE / 60.0
+}
+
 /// The event's stage clock, in seconds, for the picture drawn on capture frame `frame`: the
 /// picture shows the stage a tick on from the commands' own frame (as the title's event does,
 /// `play::actors::EVENT_START`).
@@ -85,6 +95,17 @@ pub fn stage_seconds(frame: i32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_help_event_ends_the_opening() {
+        // the last command's wait is half a second's fade (32 frames), and the HUD arrives a frame on
+        let taken: Vec<Taken> = vec![(100.0, 0, vec![0x7500_0031]), (221.0 - 33.0 / 60.0, 1, vec![0x7500_0031])];
+        let over = over_at(&taken);
+        assert!((over - 221.0).abs() < 1e-4, "{over}");
+        // the free play's first frame (14862 = 1600 + 13262)
+        assert_eq!(FREE_PLAY, START + 13262);
+        assert!(over_at(&[(f32::INFINITY, 0, vec![])]).is_infinite());
+    }
 
     #[test]
     fn the_events_clock() {

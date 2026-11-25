@@ -1002,6 +1002,57 @@ Left (all STAND-INs named in the code):
 - Next capture wanted: every frame (not every 10th) of 8195 to 8290 and 13130 to 13190 (the first frames of a line and of the
   tutorial's box, and the hints' first frame), and a run with other press times (the arrow's clock and the line rules).
 
+### The opening, part 3: the help event, free play and the window (13846 to 23995)
+
+`opening-key3` (ryza-recomp `scenarios/opening-key3.sh`: the same input, A every 120 frames from 2135 to 23975; 1001 frames every
+10 from 13995 to 23995, `commands.txt`, `hooks.log`) is the key; its first captured frame is 13995 (earlier frames are empty here).
+`barrel-tool ryza-commands INSTALL opening` plays the opening and the event after it as one run
+(`barrel_ryza::opening::schedule`).
+
+**What follows the opening.** The queue after the opening's last fade (13813, held to 13845) is the event `xx01_150` (the help event
+the game shows when a feature unlocks; its first commands are `dx00_010`'s too), which starts on 13846: a system line (message kind
+3, speaker -1), a help page (`u76` with picture 163, `ipu\help_h_075.g1t`, shown over the stage) with five lines, then a fade. Its end
+(14861) is the field's: from 14862 the same field (`s06_t_rasen`, the opening's `q2` 5) is free play, she standing where the
+opening's last `q5` put her (slot 0: 33488, 5951, 31691, yaw -327 degrees = 33).
+
+- **Commands.** All 19 of the help event's commands and the opening's pair at one offset (1600): `opening-commands3` counts 926
+  of 1118 pairs through 15000 with the same 61 more than a frame off as `opening-commands2` (the help event adds none). Rules
+  learned: a system line (speaker -1) is a help box: it closes like a tutorial's (31 frames after its press) and takes no press until
+  its box is up (a press 20 frames in is lost, one 140 in counts: `Buttons::ready`, 30 frames, STAND-IN: any value from 21 up fits
+  the one line); its half-second fades hold 33 frames where the opening's hold 32 (`HELP_FADE_LATE`, STAND-IN, three fades); a
+  shown tutorial picture holds the next command a frame (`u76` 14080 to the wait's end 14110, STAND-IN, one case).
+- **2D at 0** (`opening-help-*`, `-end-*`: 14045 to 14165 every 10, 14765 to 14855): the box of a system line (the tutorial box, its
+  text in one row 7/3 pixels higher than the block rule gives a lone row, STAND-IN), the hints (the event log, fast forward and
+  auto-play: `Hint::NoSkip`), the button's icon in the text (`<KEY_ASSIGN_FIELD_PHOTO_MODE>`, the font's icon 4f4, white),
+  the help page (`picture_file`: ids from 163 read as `help_h_<id - 88>`, STAND-IN from the one page the key shows), the fades.
+- **Free play** (`opening-free-play-*`: 15255 on, every captured frame 15255 to 23995 is 0 in 2D: 134 quads): `--opening --opening-at F`
+  with F from `opening::FREE_PLAY` (14862) is the field with the HUD from her start (`opening::player_start`, `free_play`): the
+  story at "the opening has played" (the minimap's marker and its glow), the basket 200 (a new game's; a save's is its own), the
+  hour 10, no area banner, the help bar fading in at once (`HelpBar::arriving_at_once`, STAND-IN), the glow's loop phase from the
+  arrival (2 frames before it: `hud-walk` 1728 and this 14862 both fit it). In a window the opening goes on into it by itself
+  (`Next::FreePlay`).
+- **Live play in a window.** The real confirm (Enter or the pad's A) is a press at the stage's moment and the schedule is laid out
+  again from it (`Playback::relay`; the steps already applied do not change; `Cues` and the hand-over time are rebuilt). Without a
+  window or with `BARREL_EVENT_PRESSES` the scripted presses give the rows above; the window path (no env var) needs the real time.
+  Checked with `BARREL_PAD_SCRIPT` and `BARREL_WINDOW_SHOT` (see the report): New Game -> opening -> help page -> free play in one
+  window.
+
+Left (STAND-INs named in the code):
+
+- **The arrival's popups, 14862 to about 15205**: the game shows, over the field's HUD, a panel (`a21_battle.g1t#4`, a nine-patch of 24
+  quads from 534 to 1392 across and -109 to 261 down at 14955, sliding), its text (up to 137 glyphs) and the autosave mark (a spinner of
+  12 quads of `a21v2_saveload.g1t` at the top left); Barrel draws none of them (no area banner either: the game has none here). Rows
+  at those frames are not at 0 (118 mismatches at 14865, 25 at 15205). The help bar's first plate (14865: 5 quads) is a frame or two
+  off.
+- **The arrow's clock in the help event** (two quads in every frame with a line: 2 mismatches in 14005 to 14035, 14175 to 14765): with
+  the clock 13 frames earlier the positions agree to 0.002 pixels but the quads' corner forms (the capture's uv order) differ, and
+  the offset seems to grow by about a frame per line from the fourth (13 to 16 measured at 10-frame steps; the first line's arrow
+  stands unturned at 13995). A capture of every frame is wanted.
+- **The line changes** (14275, 14305, 14365: 3 or 4 mismatches, the arrow and one more quad) and 13995 (4: the arrow stands unturned).
+- **3D** of the help event and free play: her place and the camera are the field's default from `--ryza` (the key's camera at 15255 is
+  the free camera's behind her); `diff3d` not run in this part.
+- 12265's text opacity and 13145's fade a frame late (part 2) are not touched.
+
 ## Loops that take 50 or 51 frames
 
 The game adds `speed x frame time` to a looping animation's time each frame, in 32-bit floats,
