@@ -1960,7 +1960,7 @@ fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str,
     let pe = barrel_formats::pe::Pe::parse(&exe)?;
     // The enum's array has an entry before item 0.
     let item = pe.enum_names(&tables.recipes[n].tag).and_then(|(_, at)| at.checked_sub(1)).ok_or("the recipe's item")? as u16;
-    let world = World { clock: barrel_ryza::save::clock(&data).unwrap_or(0), container: container.clone(), level: barrel_ryza::mix::alchemy(&data).map_or(1, |l| l.0) };
+    let world = World { clock: barrel_ryza::save::clock(&data).unwrap_or(0), container: container.clone(), level: barrel_ryza::mix::alchemy(&data).map_or(1, |l| l.0), exp: barrel_ryza::mix::alchemy(&data).map_or(0, |l| l.1) };
     let fields = barrel_ryza::rings::Rings::read(&game.read("\\saves\\mix\\mixfielddata.xml")?)?;
     let recipe = &tables.recipes[n];
     let field = fields.get(&recipe.tag).ok_or_else(|| format!("no field for {}", recipe.tag))?;
@@ -2013,7 +2013,15 @@ fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str,
         *made_last.borrow_mut() = Some(o);
         vec![barrel_ryza::save::Worn { item, quality, level: 1, effects: [0xffff; 4], potentials: [290; 3], potential_levels: [0; 3], slots: 0 }; made.count as usize]
     };
+    let levels = barrel_ryza::alchemy::Levels::from_exe(&pe);
+    let item_level = barrel_ryza::item_info::Items::read(&game.read("\\saves\\item\\itemdata.xml")?, &game.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?
+        .row(item)
+        .map_or(1, |r| r.level as u32);
     let mut m = Machine::new(&tables, n, world, &maker, barrel_ryza::synthesis::KeyPicks);
+    if let Some(levels) = levels.clone() {
+        // The key's first synthesis of the recipe: one batch.
+        m = m.with_alchemy(barrel_ryza::synthesis::Alchemy { levels, item_level, batches: 1, made_before: 0 });
+    }
     m.start_at(from);
     let script = std::fs::read_to_string(pad)?;
     let mut last = None;
@@ -2035,6 +2043,10 @@ fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str,
     }
     println!("her place {:.2} {:.2} facing {:.1} degrees", m.at[0], m.at[1], m.turn.to_degrees());
     let w = m.world();
+    match &levels {
+        Some(l) => println!("alchemy exp {} next {}", w.exp, l.next(w.level, w.exp).map_or("--".into(), |n| n.to_string())),
+        None => println!("alchemy level table not found in the executable"),
+    }
     println!("clock {} level {} container {} units", w.clock, w.level, w.container.len());
     Ok(())
 }

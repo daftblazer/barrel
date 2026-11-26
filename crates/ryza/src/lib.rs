@@ -58,6 +58,7 @@ pub mod music;
 pub mod random;
 pub mod gather;
 pub mod mix;
+pub mod alchemy;
 pub mod synthesis;
 pub mod sound;
 

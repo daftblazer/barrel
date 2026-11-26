@@ -640,6 +640,20 @@ log's own words and `barrel-tool ryza-lockstep` takes them as `FRAME draw irand 
 Deliberate difference: none (the numbers are the game's). `ryza-synth` takes the key's placements from a file (`--placements`); the game's cursor and loops that choose them are not
 modelled.
 
+## Ryza DX: the alchemy level
+
+`barrel_ryza::alchemy` (with `synthesis::Machine::with_alchemy`). Found in the recomp at `synth-atelier`'s Complete screen (A at 4060):
+- The result state's handler `0x1402dd120` gives the experience: below level 99, `n` = the synthesis's batches (state `+0xac`, the same
+  count the product's numbers are multiplied by) times the made item's level (item `+0x4a`, `itemdata.xml`'s `lv`). If the recipe was made
+  fewer than 10 times (`0x1401cabb0` / `0x1401cab30` on the state's recipe list; the count is raised at the synthesis, `0x1401cd7e0`, cap
+  10) the gain is `max(1, n)`; otherwise `max(1, n + trunc(level * -0.2))` (f32 at `0x140e73080`). At level 99 it is 0.
+- The Level UP window (`WinMixLevelResult`, `0x1402e65c0`) shows the gain, the level (global `0x141aae83c`, its experience at
+  `0x141aae840`) and "next" = the table's experience for level + 1 minus the experience (`0x1405996f0`; `--` past the top).
+- The table (`0x140491420(kind, level)`): 99 rows of three i32 in the executable's data; the alchemy's experience is the second word of
+  row `level - 1`. Barrel reads it from the player's executable, finding it by the lookup's code (`alchemy::LOOKUP`), never a copy.
+- Checked: the key's first Red Supplement (item level 1, one batch) gives 1, level 1 to 2, next 3, as its Level UP screen
+  (row `synth-level`). STAND-IN: the recipe's made count before (`Alchemy::made_before`, 0 in the tool); for the key both paths give 1.
+
 ## Movies
 
 Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":

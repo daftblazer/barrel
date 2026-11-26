@@ -152,8 +152,18 @@ const NOTICE_JINGLE_AFTER: i64 = 33;
 /// The frames from the room's notice up to the walk being accepted are not modelled: she moves from the stick's first frame.
 /// Her footsteps: the first sound a frame after the stick, then one every 22.5 frames while she moves (2161, 2183, 2206).
 const FOOTSTEP_EVERY: f32 = 22.5;
-/// The hours a synthesis moves the clock on and the Level UP's gain: the alchemy level goes up one (the experience rule is not read).
+/// The Level UP's gain without the game's level table (`Machine::with_alchemy` gives the rule): the alchemy level goes up one.
 pub const LEVEL_GAIN: u32 = 1;
+
+/// What the experience rule needs besides the save: the executable's level table, the made item's level (`itemdata.xml`'s `lv`), the
+/// synthesis's batches and how many times the recipe was made before. STAND-IN: `made_before` is the caller's (the game's count comes from
+/// the recipe list of the synthesis state, `0x1401cab30`; for the key's first synthesis both of its paths give 1).
+pub struct Alchemy {
+    pub levels: crate::alchemy::Levels,
+    pub item_level: u32,
+    pub batches: u32,
+    pub made_before: u32,
+}
 
 /// A second unit of what the machine changed in the save: the clock word, the container and the alchemy level.
 #[derive(Clone, Debug, PartialEq)]
@@ -161,6 +171,8 @@ pub struct World {
     pub clock: u32,
     pub container: Vec<Worn>,
     pub level: u32,
+    /// The alchemy experience (`mix_lv/m_exp`).
+    pub exp: u32,
 }
 
 /// The made item's units, as the caller builds them (their quality and effects are the rings' rules: `rings::Cauldron`).
@@ -176,6 +188,7 @@ pub struct Machine<'a> {
     tables: &'a mix::Tables,
     recipe: usize,
     maker: Maker<'a>,
+    alchemy: Option<Alchemy>,
     /// Her place (x, z) and facing (radians), from the walk.
     pub at: [f32; 2],
     pub turn: f32,
@@ -198,7 +211,13 @@ pub const ROOM_YAW: f32 = 45.95;
 
 impl<'a> Machine<'a> {
     pub fn new(tables: &'a mix::Tables, recipe: usize, world: World, maker: Maker<'a>, picks: impl Picks + 'a) -> Machine<'a> {
-        Machine { screen: Screen::Field, since: 0, frame: 0, picks: Box::new(picks), world, tables, recipe, maker, at: ARRIVAL, turn: 0.0, walk_from: None, steps_cued: 0, made: None, idle_from: None }
+        Machine { screen: Screen::Field, since: 0, frame: 0, picks: Box::new(picks), world, tables, recipe, maker, alchemy: None, at: ARRIVAL, turn: 0.0, walk_from: None, steps_cued: 0, made: None, idle_from: None }
+    }
+
+    /// The experience rule for the Level UP (without it the level goes up `LEVEL_GAIN`).
+    pub fn with_alchemy(mut self, alchemy: Alchemy) -> Machine<'a> {
+        self.alchemy = Some(alchemy);
+        self
     }
 
     /// Starts the clock at `frame` (the run's own frame count, so cues carry it).
@@ -395,7 +414,14 @@ impl<'a> Machine<'a> {
             container.extend((self.maker)(&made));
             self.world.container = container;
             self.world.clock = mix::clock_after(self.world.clock, made.hours);
-            self.world.level += LEVEL_GAIN;
+            match &self.alchemy {
+                Some(a) => {
+                    let w = &mut self.world;
+                    w.exp += crate::alchemy::gain(w.level, a.batches, a.item_level, a.made_before);
+                    w.level = w.level.max(a.levels.level_for(w.exp)).min(crate::alchemy::MAX_LEVEL);
+                }
+                None => self.world.level += LEVEL_GAIN,
+            }
         }
     }
 
@@ -487,7 +513,7 @@ mod tests {
     fn run(script: &str, to: i64) -> (Vec<Screen>, Vec<Cue>, World, [f32; 2]) {
         let tables = mix::Tables::read(RECIPES.as_bytes(), ITEMS.as_bytes()).unwrap();
         let unit = |item| Worn { item, ..Default::default() };
-        let world = World { clock: 493, container: vec![unit(1), unit(1), unit(0), unit(1)], level: 1 };
+        let world = World { clock: 493, container: vec![unit(1), unit(1), unit(0), unit(1)], level: 1, exp: 0 };
         let maker = |m: &mix::Made| vec![unit(7); m.count as usize];
         let mut machine = Machine::new(&tables, 0, world, &maker, KeyPicks);
         machine.start_at(1900);
