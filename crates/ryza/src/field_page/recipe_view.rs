@@ -44,6 +44,8 @@ pub struct RecipeLook {
     pub cursor_shown: bool,
     /// Frames since the screen's first.
     pub age: f32,
+    /// The ring graph behind the screen, from the cursor's move to the second recipe (its bars go over it).
+    pub graph: Option<FieldLook>,
 }
 
 /// The list's place: the layout's `recipe_menu` (2, 108) and its `menu_top` (0, 41).
@@ -67,6 +69,11 @@ impl Page {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: true, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        if let Some(graph) = &look.graph {
+            self.ring_graph(&mut w, &root, graph);
+            w.cull_outside(screen);
+            self.bars(&mut w, &root);
+        }
         self.recipe_list(&mut w, &root, look);
         // The panel on the right.
         if let Some(row) = look.rows.get(look.cursor) {

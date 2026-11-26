@@ -224,7 +224,7 @@ const LABEL_BASE: u32 = 10_092_545;
 
 impl Page {
     /// The bars of the field's screens (a gradation top and bottom over a white: the capture draws the set twice, under the ring graph and over it).
-    fn bars(&self, w: &mut Walker, root: &Xf) {
+    pub(super) fn bars(&self, w: &mut Walker, root: &Xf) {
         let gradation = self.gradation_texture();
         // (the top one is drawn turned: its picture's u runs backwards)
         w.piece(root.node([0.0, 0.0], 0.0, [1.0; 2]), [0.0; 2], [1280.0, 64.0], [1.0, 0.0, 0.0, 1.0], [1.0; 4], gradation);
@@ -300,7 +300,7 @@ const ADD_TITLE: u32 = 9_961_591;
 
 impl Walker<'_> {
     /// Drops the quads that lie wholly outside the screen (the game does not draw them: the capture has none).
-    fn cull_outside(&mut self, screen: (u32, u32)) {
+    pub(super) fn cull_outside(&mut self, screen: (u32, u32)) {
         let (w, h) = (screen.0 as f32, screen.1 as f32);
         let keep: Vec<bool> = self.out.iter().map(|q| q.rect[2] > 0.0 && q.rect[0] < w && q.rect[3] > 0.0 && q.rect[1] < h).collect();
         let mut at = 0;
