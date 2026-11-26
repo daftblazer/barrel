@@ -255,7 +255,7 @@ impl Page {
         // (the layout's `mix_param` comes between them, and the ring's own `ring_info` over the panel's frame and the quantity box)
         self.product_panel(&mut w, &root, &look.row, Some(&look.panel));
         if let (Some(popup), Some(ring)) = (&look.popup, look.field.rings.get(look.field.cursor)) {
-            self.ring_popup(&mut w, &root, [CENTRE[0] + look.field.shift[0] + ring.at[0] as f32 * GRID[0], CENTRE[1] + look.field.shift[1] + ring.at[1] as f32 * GRID[1] + POPUP_BELOW], ring, popup);
+            w.slid(Slide { alpha: popup.alpha, dx: 0.0, dy: 0.0 }, |w| self.ring_popup(w, &root, [CENTRE[0] + look.field.shift[0] + ring.at[0] as f32 * GRID[0], CENTRE[1] + look.field.shift[1] + ring.at[1] as f32 * GRID[1] + POPUP_BELOW], ring, popup));
         }
         if let Some(list) = &look.materials {
             self.material_list(&mut w, &root, list);
@@ -289,6 +289,8 @@ pub struct Popup {
     pub title: String,
     /// The element value each tier needs (the number of lights on its row) and what it gives.
     pub tiers: Vec<(i32, String)>,
+    /// Its opacity (it fades with the list's going).
+    pub alpha: f32,
 }
 
 /// The popup stands this far below the ring's centre (layout pixels: `ring_info` at (640, 454) under the ring at (640.75, 360) in `synth-atelier` 2900).

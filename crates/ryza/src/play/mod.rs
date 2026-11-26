@@ -921,6 +921,24 @@ fn ring_graph_pan(frame: f32) -> [f32; 2] {
     [x, -164.14 * ((frame - 3246.0) / 12.0).clamp(0.0, 1.0)]
 }
 
+/// The opacity of the ring popup on `frame`: whole from the ring phase and while a list is up, fading in over `POPUP_FADE` frames before the ring is chosen again and out
+/// over as many after A on a material.
+// STAND-IN: the capture's alphas on the sampled frames (`synth-atelier` 2990 and 3110 and 3350: one third, 3040: 0.4, 3260: one third) give the fade's 15 frames and the
+// starts at 3034 and 3255; the rule behind them is not read.
+fn popup_alpha(frame: f32) -> f32 {
+    const POPUP_FADE: f32 = 15.0;
+    const SHOWN_FROM: [f32; 3] = [2870.0, 3034.0, 3255.0];
+    SHOWN_FROM
+        .iter()
+        .zip(ADD_LISTS.iter())
+        .map(|(&from, &(_, out, ..))| {
+            let on = ((frame - from) / POPUP_FADE).clamp(0.0, 1.0);
+            let off = 1.0 - ((frame - (out + 1.0)) / POPUP_FADE).clamp(0.0, 1.0);
+            if frame < from { 0.0 } else { on * off }
+        })
+        .fold(0.0, f32::max)
+}
+
 /// The key's three materials, as `(the frame their rings light, container unit, ring, recipe row)`: the first flower, the second, the water.
 // STAND-IN: read off the capture (`synth-atelier`: A on a material at 2980, 3100 and 3340; `tools/synth_rules_events.txt` has the units and rings).
 const ADD_RUN: [(f32, usize, usize, u32); 3] = [(2981.0, 13, 0, 0), (3101.0, 14, 0, 0), (3341.0, 18, 3, 1)];
@@ -988,7 +1006,8 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     };
     // The popup of the ring under the cursor: its heading and a row for each of its steps.
     // STAND-IN: the effect numbers of `ITEM_EFF_CREATE_QUALITY_nn` (the enum's table is not read: n + 1332).
-    let popup = rings.get(cursor).filter(|_| (2870.0..2930.0).contains(&frame) || session.is_some_and(|s| frame < s.1)).map(|r| {
+    let popup_alpha = popup_alpha(frame);
+    let popup = rings.get(cursor).filter(|_| popup_alpha > 0.0).map(|r| {
         let row = recipe.rows.get(r.restrict as usize);
         let category = row.and_then(|row| row.category.as_ref()).and_then(|c| order.iter().position(|o| o == c));
         let title = category.and_then(|c| strings.get(&(barrel_ryza::item_info::CATEGORY_BASE + c as u32))).cloned().unwrap_or_default();
@@ -1002,7 +1021,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
                 (s.at, strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned().unwrap_or_default())
             })
             .collect();
-        fp::Popup { title, tiers }
+        fp::Popup { title, tiers, alpha: popup_alpha }
     });
     // Select Recipe's list goes out to the left over the 30 frames after A on 2860 (the slide-in played backwards; the cursor is on the second row).
     // STAND-IN: the two recipes of the capture's save, as `mix_recipe_layers`.
