@@ -11,6 +11,9 @@
 //! `field_menu::View::page_help`) the help bar, with the cursor's blink and the party icons' animations. Not drawn: the item card, the
 //! slides and fades of the page's coming and going (docs/ryza/open.md, "Field menu, part 7").
 
+mod recipe_view;
+pub use recipe_view::{RecipeLook, RecipeRow};
+
 use std::collections::{BTreeSet, HashMap};
 
 use barrel_formats::table::{self, Element};
@@ -297,6 +300,17 @@ struct Over {
     paint: Option<[f32; 4]>,
     /// A scroll bar's slider: its top and height in the bar's layout pixels.
     thumb: Option<[f32; 2]>,
+    /// A picture at its style's natural size whatever its node says (the game's code sets it).
+    natural: bool,
+}
+
+/// The layouts of the synthesis's Select Recipe and Add Materials screens.
+struct MixDocs {
+    recipe: Element,
+    field: Element,
+    tabs: Element,
+    cabinet: Element,
+    cell: Element,
 }
 
 pub struct Page {
@@ -330,6 +344,9 @@ pub struct Page {
     library_eff: Element,
     /// The synthesis's finished item card (`a21_mix/uil_a21_mix_item_sheet.xml`).
     mix_sheet: Element,
+    /// The synthesis's Select Recipe and ring graph layouts (`a21_mix/uil_a21_mix_recipe.xml`, `_field.xml`), its tab row (`a21_cabinet/uil_a21_item_tab_mix.xml`), the
+    /// material list's grid and cell (`uil_a21_cabinet_mix.xml`, `_cell.xml`).
+    mix_docs: MixDocs,
     /// The text styles the card's texts copy (`font_template`: the item card's and the common ones), by name.
     text_styles: HashMap<String, Vec<(String, String)>>,
     glyphs: [HashMap<char, Glyph>; 2],
@@ -379,6 +396,9 @@ impl Page {
         let (library_items, mut library_eff) = (library("uil_library_04_item_top.xml")?, library("uil_library_08_eff_esp.xml")?);
         stars_copy_the_first(&mut library_eff);
         let mix_sheet = table::parse(&read("ui_en\\a21_mix\\uil_a21_mix_item_sheet.xml")?).map_err(|e| format!("mix item sheet: {e}"))?;
+        let mix_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_mix\\{n}"))?).map_err(|e| format!("{n}: {e}"));
+        let cab_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_cabinet\\{n}"))?).map_err(|e| format!("{n}: {e}"));
+        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")? };
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -406,7 +426,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -469,9 +489,10 @@ impl Page {
                     || (LIBRARY_BASE..LIBRARY_BASE + LIBRARY_STRINGS).contains(n)
                     || *n == crate::library::UNKNOWN_NAME
                     || (3_538_945..3_538_945 + 2000).contains(n)
+                    || (9_961_000..9_962_000).contains(n)
             })
             .collect();
-        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, mix_sheet, text_styles, glyphs: files.glyphs })
+        Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, mix_sheet, mix_docs, text_styles, glyphs: files.glyphs })
     }
 
     /// The layer's texture of the help bar's plate (the menu's GUIDE).
@@ -487,7 +508,7 @@ impl Page {
     /// The page's quads in draw order on a `screen` of pixels, and which of them are drawn added to what is under them.
     pub fn quads(&self, look: &Look, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // Frames since A on the card: the Status page's parts come in by it (the Equipment page's are whole by the time it is shown).
         let clock = look.age;
@@ -685,7 +706,7 @@ impl Page {
     /// and the card of the tool under it (from the right) and the title plate.
     pub fn tools_quads(&self, look: &ToolsLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let (base, add, f) = cursor_colors(look.age);
@@ -727,7 +748,7 @@ impl Page {
             None => 1.0 - (s.since / GUIDE_FADE).clamp(0.0, 1.0),
         });
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let fade = |frames: f32| (frames / GUIDE_FADE).clamp(0.0, 1.0);
         let (back, top) = match look.leaving {
@@ -862,7 +883,7 @@ impl Page {
     /// plate (`uil_a21_cabinet.xml`'s `default`, which slides in from the left over 40 frames, and the card from the right).
     pub fn shelf_quads(&self, look: &ShelfLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let row = |s: &str, name: &str| s.strip_prefix(name).and_then(|n| n.strip_prefix(':')).and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
@@ -1044,26 +1065,36 @@ impl Page {
         Some((FIXED + slot, p, [tw as f32 * p.over_texture, th as f32 * p.over_texture]))
     }
 
-    /// The node a `copy` names: its first definition with children, in the equip or status layout.
-    fn template(&self, name: &str) -> Option<&Element> {
+    /// The node a `copy` names: its first definition with children, in the equip or status layout (or, walking a synthesis screen, in its own).
+    fn template(&self, name: &str, mix: bool) -> Option<&Element> {
         if name.contains('/') {
             // A path (`clone_targets/effect/node`): each name the first node of that name under the one before it.
             // (`template_cell` and `template_tab` are nodes that load a file: its root stands for them)
             let mut parts = name.split('/');
             let first = parts.next()?;
+            if mix {
+                return match first {
+                    "template_cell" => descend(&self.mix_docs.cell, parts),
+                    "template_tab" => descend(&self.mix_docs.tabs, parts),
+                    _ => [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
+                };
+            }
             return match first {
                 "template_cell" => descend(&self.cell, parts),
                 "template_tab" => descend(&self.tabs, parts),
                 _ => [&self.targets, &self.item, &self.cabinet].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
             };
         }
-        [&self.explore, &self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell, &self.library_items, &self.library_eff].into_iter().find_map(|doc| find_with_children(doc, name))
+        let own = [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs, &self.mix_docs.cell];
+        let shared = [&self.explore, &self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell, &self.library_items, &self.library_eff];
+        let docs: Vec<&Element> = if mix { own.into_iter().chain(shared).collect() } else { shared.to_vec() };
+        docs.into_iter().find_map(|doc| find_with_children(doc, name))
     }
 
     /// The children a node's `clone_child_tree` gives: the template's, which may be a clone of another (the Container grid's `cell`).
-    fn template_children<'a>(&'a self, e: &Element, depth: usize) -> Vec<&'a Element> {
-        let Some(template) = e.attr("clone_child_tree").filter(|_| depth < 4).and_then(|t| self.template(t)) else { return Vec::new() };
-        let mut children = self.template_children(template, depth + 1);
+    fn template_children<'a>(&'a self, e: &Element, depth: usize, mix: bool) -> Vec<&'a Element> {
+        let Some(template) = e.attr("clone_child_tree").filter(|_| depth < 4).and_then(|t| self.template(t, mix)) else { return Vec::new() };
+        let mut children = self.template_children(template, depth + 1, mix);
         children.extend(template.children.iter());
         children
     }
@@ -1145,7 +1176,7 @@ impl Page {
     /// The finished item's card, on a `screen` of pixels (the card is whole: its coming in, `mix_anm_finish_card_in`, is not drawn).
     pub fn sheet_quads(&self, look: &SheetLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let t = look.clock;
         // The effect under the card.
@@ -1260,7 +1291,7 @@ impl Page {
     /// title plate and the alchemy level panel. STAND-IN: the numbers are the capture's; the experience rule is not read.
     pub fn complete_quads(&self, look: &CompleteLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // The effects under the card and over it, then the level panel, then the plate (the layout's order).
         let age = look.age;
@@ -1299,7 +1330,7 @@ impl Page {
     /// `leaving`: the frames since A, which sends the card out to the right (the slide in played backwards) and brings the level panel in.
     pub fn result_quads(&self, card: &Card, leaving: Option<(f32, CompleteLook)>, entering: Option<(f32, SheetLook)>, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new() };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let slide = match (&leaving, entering) {
             (Some((out, _)), _) => Slide::in_from(SLIDE_FRAMES - out.max(0.0), [40.0, 0.0]),
@@ -1423,6 +1454,8 @@ struct Walker<'a> {
     /// The last stencil mask (`stencil_mask="create"`) and the clips of what `masked` nodes drew after it.
     mask: Option<usize>,
     clips: Vec<Clip>,
+    /// Walking one of the synthesis screens: clones name the synthesis layouts' templates first.
+    mix: bool,
 }
 
 /// An animation's hold on a part of the page: its opacity and its offset in layout pixels.
@@ -1558,7 +1591,7 @@ impl Walker<'_> {
             let mut children: Vec<&Element> = Vec::new();
             let mut cmds: HashMap<String, Vec<Element>> = commands.clone();
             let page = self.page;
-            children.extend(page.template_children(e, 0));
+            children.extend(page.template_children(e, 0, self.mix));
             for c in &e.children {
                 if c.name == "command" {
                     if let Some(t) = c.attr("target_node") {
@@ -1598,7 +1631,13 @@ impl Walker<'_> {
     fn node_size(&self, e: &Element) -> [f32; 2] {
         let natural = e.attr("style").and_then(|st| self.page.picture(st, 0)).map_or([0.0; 2], |(_, p, _)| [p.uvwh[2] / p.per_layout, p.uvwh[3] / p.per_layout]);
         let wh = numbers(e, "size_wh");
-        [numbers(e, "size_w").first().or(wh.first()).copied().unwrap_or(natural[0]), numbers(e, "size_h").first().or(wh.get(1)).copied().unwrap_or(natural[1])]
+        let mut size = [numbers(e, "size_w").first().or(wh.first()).copied().unwrap_or(natural[0]), numbers(e, "size_h").first().or(wh.get(1)).copied().unwrap_or(natural[1])];
+        for (axis, name) in ["parent_size_copy_w", "parent_size_copy_h"].into_iter().enumerate() {
+            if e.attr(name) == Some("true") && self.parent[axis] > 0.0 {
+                size[axis] = self.parent[axis];
+            }
+        }
+        size
     }
 
     fn image(&mut self, e: &Element, xf: Xf, o: &Over) {
@@ -1615,7 +1654,17 @@ impl Walker<'_> {
         let size = {
             let wh = numbers(e, "size_wh");
             let (w, h) = (numbers(e, "size_w").first().copied(), numbers(e, "size_h").first().copied());
-            [w.or(wh.first().copied()).unwrap_or(natural[0]), h.or(wh.get(1).copied()).unwrap_or(natural[1])]
+            let mut size = [w.or(wh.first().copied()).unwrap_or(natural[0]), h.or(wh.get(1).copied()).unwrap_or(natural[1])];
+            // (`parent_size_copy_w` and `_h`: the node takes its parent's size)
+            for (axis, name) in ["parent_size_copy_w", "parent_size_copy_h"].into_iter().enumerate() {
+                if e.attr(name) == Some("true") && self.parent[axis] > 0.0 {
+                    size[axis] = self.parent[axis];
+                }
+            }
+            if o.natural {
+                size = natural;
+            }
+            size
         };
         let from = self.out.len();
         let c = numbers(e, "color");
