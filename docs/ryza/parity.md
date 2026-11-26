@@ -48,6 +48,10 @@ list and press frames (open.md, "Synthesis", part 5). Its `synth-add-FRAME` rows
 the rest is drawn.
 Part 6 (open.md, part 6): 2930 to 3350 and 3360 to 3490 are at 1 to 30 a frame (2940 to 3040 at 1 to 4; 3050 to 3090 at 11, 3260 to 3280 at 2 or 3, 3290 to 3330 at 8), the prompt's frames 3500 to
 3530 at 40 to 49, the running synthesis 3570 to 3820 at 3 or 4; `synth-run-FRAME` rows (`--mix-run` with the key's pad, the presses from `synthesis::Machine`) give the same counts as `synth-add-FRAME`.
+Part 7 (open.md, part 7): the prompt before the synthesis 3500 to 3530 at 2, 1, 1, 1 (the ring's second light), 3540 at 1 (555 before), 3550 to 3700 at 0 (the banner and the plates leaving, the rings
+gone), 3710 to 3820 at 1 (a screen-sized quad of the font); the pinned `synth-add-3500` to `synth-add-3820` counts and `synth-run-3560` were lowered. `--mix-run PAD FRAME` now draws every screen from Select
+Recipe to Complete going out (the `Machine` picks the screen; 2320 to 4260 at 0, but for the Add Materials frames above): `synth-run-*` rows for a few frames of each screen and `synth-leave-4250`, `synth-leave-4260`
+(`--mix-complete LEVEL:NEXT:GAINED:AGE:LEAVING`, the level panel going out).
 
 **synth flow** (part 2): four rows run `barrel-tool ryza-synth` on the key's `pad.txt`: `synth-cues` (the machine's cues against the key's play lines, 1900 to 4400: 65 of 65
 within a frame, 0 extra), `synth-screens` (30 screen changes, the card 3820, the result 4000, Complete 4060, going out 4240, the room 4300), `synth-walk-end` (her end place

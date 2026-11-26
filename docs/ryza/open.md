@@ -3194,6 +3194,30 @@ unmatched `res_` quads against the key, the part-5 counts in brackets).
   right of Barrel's, and the item picture's pair. (4) 2310 (the autosave spinner, 13), 2800 and 2860 (one font quad over the screen, not reproduced), the ring (1083, 819)'s extra quads on 3570 on
   (3), `a21_battle#1` (1 on the list frames). (5) The rules still do not choose which materials go where: the key's units and rings are fixed.
 
+**Part 7: the prompt, the leaving plates, `--mix-run` through Complete** (2026-11-26; counts are unmatched `res_` quads against the key, part-6 counts in brackets).
+- **The prompt before the synthesis** (`field_page/prompt_view.rs`, `Prompt` in `AddLook`). The window is the balloon select the Settings screen's leave dialog asks with: `uil_mt_balloon_select.xml`'s
+  `__uimenu_window` and cursor and `uil_lf_balloon_select.xml`'s line, walked by the page's walker (the two layouts are read with the mix docs; their styles and textures come with the page's lists), with
+  "OK" (4194318) and "Start Over" (9961511), 225 layout pixels wide (the layout's 215: the capture's) at (540, 400). It fades in over 15 frames from 21 before the confirming A (`prompt_look`, 17/255 on 3500,
+  187/255 on 3510) and out as many from the frame before the A (238/255 on 3520, 68/255 on 3530); the cursor's colour is the grid cursor's (`cursor_colors`, its loop starts with the window) and goes white without the
+  glow once A has chosen; it is drawn right after the product panel (the capture's order). 3500 went from 41 to 2, 3510 from 49 to 1, 3520 and 3530 from 40 to 1.
+- **The screen leaving** (`AddLook::{panel_out, plates_out}`, `ring_view::plates`). The right panel slides out to the right from the A (the slide in played backwards, 40 pixels, 30 frames: 246/255 on 3530,
+  179/255 on 3540); the quantity box sinks and the title plate rises (30 pixels) from 14 frames after the A (216/255 on 3550, 89/255 on 3560); once the synthesis runs the rings are gone but for their discs and rims
+  (the capture's masks; `FieldLook::quiet` returns after the first pass). 3540 went from 555 to 1, 3550 and 3560 from 113 to 0, 3570 to 3700 from 3 to 0, 3710 to 3820 from 4 to 1.
+- **`--mix-run PAD FRAME` draws every screen** from Select Recipe to Complete going out (`play::mix_run_layers`): `run_from_pad` steps the `synthesis::Machine` over the pad to the frame and
+  keeps the screens' start frames; the screen is drawn by the flag forms' own code with the frames since it began (the opening, the tutorial pages, the list, Add Materials, the card with the capture's clock,
+  the made item's card with its quality and effect from `rings::Cauldron` (`made_result`), Complete with its panels). `--mix-complete` takes `:LEAVING`: Complete's level panel slides out to the right (opacity and
+  place on 4250 and 4260 are 15 and 25 frames into a 30 frame slide, begun 5 frames before the pad's A of 4240); 4260 went from 36 to 0. 2320 to 4260 are at 0 with `--mix-run` but for 2940 to 3820 at the
+  Add Materials counts. Rows: `synth-run-*` (27 new) and `synth-leave-4250/4260`, in the local checks file.
+- **STAND-INs** (named in the code): the prompt's start (21 before the A: `PROMPT_OPENS_BEFORE`), its fade (15), its place and width (`prompt_view::AT`, `WIDTH`); the plates' start (`PLATES_LEAVE_AFTER` 14); the
+  card's clock pairs (`CARD_CLOCK`); the opening's, the tutorial pages' and the list's offsets from the Machine's screens (`mix_run_layers`: 3, 10 and 30 frames); the made item's card coming in over 20 frames
+  and leaving over the first 30 of Complete, Complete's panels 40 frames in; `LEAVE_FRAMES` 30 and `LEAVE_BEFORE_A` 5; the first frame of the card (3820) is still Add Materials.
+- **Left.** (1) 4270 to 4300: the room's HUD back (the help bar fading, "AM 0", the moon, the arrival plate, the balloons, the minimap): 380, 526 (4280: 551) and 241 against `--mix-complete`; the room
+  scene is not a mix screen and needs the attic camera (see Left below): not started. (2) 3050 to 3090 (11 each): the ring-to-ring lines' flow (the capture's second quad of a line has opacity 0.98 and
+  a uv sliding along it, Barrel's 0.949 and still), the second light, and a pair of gradation quads that move right 20 pixels a frame from 3000 in the capture (1024 on 3050, 1824 on 3090) and stand
+  still in Barrel's help plate; 3150 to 3190 the same kind. (3) 2310 (the autosave spinner, 13), 2800 and 2860 (1: a font quad over the screen), 3500 to 3540 (1 or 2: the ring's second light), 3710 to 3820 (1: a
+  screen-sized quad of the font, a render-target pass). (4) DIFF lines (not counted by the rows): the effect rows' text is brown in the capture on 3500 to 3540 and green in Barrel (the colour follows the list's
+  preview), the quantity box's number on 3530. (5) A at the Complete screen: the leaving slide is only drawn from the Machine's `Leaving` (it begins 5 frames earlier in the capture: 4235 to 4239 are not sampled).
+
 Left.
 
 **Left.**
