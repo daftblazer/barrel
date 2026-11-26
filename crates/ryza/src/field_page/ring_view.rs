@@ -1,0 +1,251 @@
+//! The synthesis's ring graph (`uil_a21_mix_field.xml`): the rings of a recipe's field on their hexagonal grid, the lines between them, the cursor's
+//! glow and the plates that say what each ring gives. The game's code builds the graph from the layout's `clone_targets`; the rings are walked here
+//! from the layout's own parts, in the order the capture draws them (the masks, the lines, the focus, the rings, the labels).
+
+use super::*;
+
+/// The graph's centre in layout pixels (`field_root` (660, 360) and `center` (-20, 0)) and the grid's steps for a unit of a ring's `x` and `y`
+/// (the half of the width and the third of the height between two neighbours: `docs/ryza/open.md`, Synthesis part 3).
+const CENTRE: [f32; 2] = [640.0, 360.0];
+const GRID: [f32; 2] = [142.15, 82.07];
+/// The rings are drawn at this zoom (`synth-atelier` 2900: a ring's picture is 189 pixels of 1080 lines where the layout's is 168 layout pixels).
+const ZOOM: f32 = 0.75;
+/// The plate under a closed ring's lock stands this far below the ring's centre in unzoomed layout pixels (the layout's `dummy` says 31; the capture's plates stand 8.7 higher: STAND-IN).
+const PLATE_DY: f32 = 22.3;
+/// A ring's lines: from its centre to the line's start, the line's length and its width (layout pixels at the ring's zoom, measured on the
+/// capture's quads at 2900: 64.8 pixels, 126 and 45 of 1080 lines).
+const EDGE_FROM: f32 = 57.6;
+const EDGE_LENGTH: f32 = 112.0;
+const EDGE_WIDTH: f32 = 40.0;
+/// The light behind a ring turns, grows and fades in 480 frames (`anm_ring_bg_loop`); two sets of rings run 142.4 frames apart (STAND-IN: which
+/// rings are in which set is the capture's: the slots 0, 1, 2 and 4 are in the first).
+const GLOW_FRAMES: f32 = 480.0;
+const GLOW_SET_LAG: f32 = 142.4;
+const GLOW_FIRST_SET: [usize; 4] = [0, 1, 2, 4];
+/// The glow's size in layout pixels before the ring's zoom (520 style pixels).
+const GLOW_SIZE: f32 = 520.0 / 3.0;
+/// The cursor's glow turns once in about 375 frames (the capture's 12.1 degrees at 2850 and 60.0 at 2900), `GLOW_TURN_AT` frames into the graph's clock.
+const FOCUS_DEGREES_PER_FRAME: f32 = 0.958;
+const FOCUS_ZERO_AT: f32 = 2837.4;
+/// Where a ring's label plate stands from the ring's centre (measured on the capture's plates: STAND-IN).
+const LABEL_AT: [f32; 2] = [-96.5, -61.5];
+
+/// The layout's node a ring is walked from.
+const B: &str = "clone_tree_behind_node";
+
+/// One ring on the graph.
+#[derive(Clone, Debug)]
+pub struct RingShow {
+    pub at: [i32; 2],
+    /// Fire, ice, bolt or air.
+    pub elem: usize,
+    /// What the ring gives (0 to 3 an effect, 4 quality, 5 and up traits): its label.
+    pub kind: u32,
+    /// Open: lit and without its lock.
+    pub open: bool,
+    /// The category of the row whose materials the ring takes (by place in the category table).
+    pub restrict: Option<usize>,
+    /// The ring it hangs from and the direction of the line (0 up, then clockwise by sixths).
+    pub link: Option<(usize, u8)>,
+    /// The element value the lock asks of the ring above it: the lock's plate says "X n".
+    pub need: Option<(usize, i32)>,
+}
+
+/// What the graph shows.
+pub struct FieldLook {
+    pub rings: Vec<RingShow>,
+    /// The ring under the cursor (its focus glow turns).
+    pub cursor: usize,
+    /// The graph's clock: the frame of the capture's run (the lights and the glow run on it).
+    pub clock: f32,
+    /// The graph's shift in pixels of the layout (the capture pans it as the cursor moves).
+    pub shift: [f32; 2],
+}
+
+/// A ring's colours: the dark of its disc and the colour of its rim (the capture's bytes).
+fn tint(elem: usize) -> ([f32; 3], [f32; 3]) {
+    let (dark, rim) = match elem {
+        0 => ([82.0, 0.0, 0.0], [191.0, 0.0, 0.0]),
+        1 => ([0.0, 42.0, 82.0], [0.0, 144.0, 191.0]),
+        2 => ([112.0, 108.0, 0.0], [236.0, 245.0, 0.0]),
+        _ => ([71.0, 126.0, 46.0], [0.0, 245.0, 92.0]),
+    };
+    (dark.map(|v: f32| v / 255.0), rim.map(|v: f32| v / 255.0))
+}
+
+/// `outsine` of `p` in 0 to 1.
+fn out_sine(p: f32) -> f32 {
+    (p.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2).sin()
+}
+
+impl Page {
+    /// The ring graph's quads (the order the capture has them), added to `w`.
+    pub(super) fn ring_graph(&self, w: &mut Walker, root: &Xf, look: &FieldLook) {
+        let docs = &self.mix_docs;
+        let Some(main) = find(&docs.field, "clone_tree_behind_node") else { return };
+        let Some(front) = find(&docs.field, "clone_tree_front_node") else { return };
+        let at = |r: &RingShow| [CENTRE[0] + look.shift[0] + r.at[0] as f32 * GRID[0], CENTRE[1] + look.shift[1] + r.at[1] as f32 * GRID[1]];
+        let ring_xf = |r: &RingShow| root.node(at(r), 0.0, [ZOOM; 2]);
+        let variant = |r: &RingShow| if r.kind == 4 { "frame_param" } else { "frame_eff" };
+        let hide = || Over { hide: true, ..Default::default() };
+        let show = || Over { show: true, ..Default::default() };
+        // The masks: each ring's disc and rim.
+        for r in &look.rings {
+            let (dark, rim) = tint(r.elem);
+            let v = variant(r);
+            let over = |p: &[&str]| -> Over {
+                match p {
+                    [B, "main", "frames", n] if *n == v => show(),
+                    [B, "main", "frames", n, "frame_bg"] if *n == v => Over { image_no: Some(1), paint: Some([dark[0], dark[1], dark[2], 222.0 / 255.0]), ..Default::default() },
+                    [B, "main", "frames", n, "frame_ring"] if *n == v => Over { image_no: Some(2), paint: Some([rim[0], rim[1], rim[2], 1.0]), ..Default::default() },
+                    [B] | [B, "main"] | [B, "main", "frames"] => Over::default(),
+                    _ => hide(),
+                }
+            };
+            w.walk(main, ring_xf(r), &mut Vec::new(), &over, &HashMap::new());
+        }
+        if std::env::var_os("RING_DEBUG").is_some() {
+            eprintln!("masks: {} quads", w.out.len());
+        }
+        // The lines: one for each ring that hangs from another, along the direction it leaves by.
+        for r in &look.rings {
+            let Some((from, dir)) = r.link else { continue };
+            let Some(parent) = look.rings.get(from) else { continue };
+            let angle = (-90.0 + 60.0 * f32::from(dir)).to_radians();
+            let origin = ring_xf(parent);
+            let line = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mix01_line_p2".into()), ("size_wh".into(), format!("{EDGE_LENGTH}, {EDGE_WIDTH}, 0"))], children: Vec::new() };
+            let xf = origin.node([0.0, 0.0], angle.to_degrees(), [1.0; 2]).node([EDGE_FROM, -EDGE_WIDTH / 2.0], 0.0, [1.0; 2]);
+            for add in [false, true] {
+                let before = w.out.len();
+                w.image(&line, xf, &Over { alpha: Some(0.949), natural: false, ..Default::default() });
+                if add {
+                    w.additive.extend(before..w.out.len());
+                }
+            }
+        }
+        // The cursor's glow.
+        if let Some(r) = look.rings.get(look.cursor) {
+            let angle = FOCUS_DEGREES_PER_FRAME * (look.clock - FOCUS_ZERO_AT);
+            let side = 262.0 * ZOOM;
+            let glow = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mmap02_point_eff_0".into()), ("size_wh".into(), format!("{side}, {side}, 0"))], children: Vec::new() };
+            w.image(&glow, root.node(at(r), angle, [1.0; 2]).node([-side / 2.0, -side / 2.0], 0.0, [1.0; 2]), &Over::default());
+        }
+        // The rings.
+        w.bold_scale = ZOOM;
+        for (k, r) in look.rings.iter().enumerate() {
+            let (dark, rim) = tint(r.elem);
+            let dim = if r.open { 1.0 } else { 0.5 };
+            let v = variant(r);
+            // The light behind it.
+            let t = (look.clock - 2656.4 + if GLOW_FIRST_SET.contains(&k) { 0.0 } else { -GLOW_SET_LAG }).rem_euclid(GLOW_FRAMES);
+            let half = GLOW_FRAMES / 2.0;
+            let alpha = if t < half { out_sine(t / half) } else { out_sine((GLOW_FRAMES - t) / half) };
+            let p = out_sine(t / GLOW_FRAMES);
+            let scale = [0.95 + 0.15 * p, 0.95 + 0.2 * p];
+            let center = ring_xf(r).apply([1.0, 0.0]);
+            let size = [GLOW_SIZE * ZOOM * scale[0] * w.screen_k, GLOW_SIZE * ZOOM * scale[1] * w.screen_k];
+            let angle = (30.0 * t / GLOW_FRAMES).to_radians();
+            let glow = Xf { a: angle.cos(), b: angle.sin(), c: -angle.sin(), d: angle.cos(), x: center[0], y: center[1] };
+            let corners = [[-size[0] / 2.0, -size[1] / 2.0], [size[0] / 2.0, -size[1] / 2.0], [size[0] / 2.0, size[1] / 2.0], [-size[0] / 2.0, size[1] / 2.0]].map(|c| glow.apply(c));
+            let (x0, x1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
+            let (y0, y1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+            if let Some((texture, pic, (aw, ah))) = self.picture("gen_a21_mix01_ring_eff", r.elem).map(|(t, p, a)| (t, p, (a[0], a[1]))) {
+                let uv = [pic.uvwh[0] / aw, pic.uvwh[1] / ah, (pic.uvwh[0] + pic.uvwh[2]) / aw, (pic.uvwh[1] + pic.uvwh[3]) / ah];
+                let before = w.out.len();
+                w.out.push(Quad { turn: false, spin: Some(Spin::Corners(corners)), rect: [x0, y0, x1, y1], uv, color: [dim, dim, dim, alpha], texture });
+                w.additive.push(before);
+            }
+            let over = |p: &[&str]| -> Over {
+                match p {
+                    [B, "main", "frames", n] if *n == v => show(),
+                    [B, "main", "frames", n, "frame_bg"] if *n == v => Over { image_no: Some(1), paint: Some([dark[0] * dim, dark[1] * dim, dark[2] * dim, 222.0 / 255.0]), ..Default::default() },
+                    [B, "main", "frames", n, "frame_ring"] if *n == v => Over { image_no: Some(2), paint: Some([rim[0] * dim, rim[1] * dim, rim[2] * dim, 1.0]), ..Default::default() },
+                    [B, "main", "frames", n, "frame_circle"] if *n == v => Over { paint: Some([dim, dim, dim, 1.0]), ..Default::default() },
+                    [B, "main", "frames", n, "frame_bg_eff1"] | [B, "main", "frames", n, "frame_bg_eff2"] if *n == v => hide(),
+                    [B] | [B, "main"] | [B, "main", "frames"] => Over::default(),
+                    [B, "main", "frames", ..] => hide(),
+                    [B, "main", "dummy"] => Over::default(),
+                    [B, "main", "dummy", "mat_restrict"] if r.restrict.is_some() => Over { show: true, at: Some([0.0, if r.need.is_some() { 0.0 } else { 10.0 }]), ..Default::default() },
+                    [B, "main", "dummy", "mat_restrict", "item_image"] => hide(),
+                    [B, "main", "dummy", "mat_restrict", "cat_image"] => Over { image_no: r.restrict, paint: Some([254.0 / 255.0 * dim, 251.0 / 255.0 * dim, 231.0 / 255.0 * dim, 1.0]), ..Default::default() },
+                    [B, "main", "dummy", ..] | [B, "main", "mat_history_0", ..] | [B, "main", "mat_history_1", ..] | [B, "main", "mat_history_2", ..] => hide(),
+                    [B, "element"] if r.kind < 5 => show(),
+                    [B, "element", "list", n] if matches!(*n, "node_0" | "node_1") => Over::default(),
+                    [B, "element", "list", _] => hide(),
+                    [B, "element", "list", _, "elem"] => hide(),
+                    [B, "lock"] if !r.open => { if std::env::var_os("RING_DEBUG").is_some() { eprintln!("lock shown {k}"); } show() }
+                    [B, "lock", "__unzoom"] => Over { scale: Some([1.0 / ZOOM; 2]), ..Default::default() },
+                    [B, "lock", "__unzoom", "dummy"] => Over { at: Some([0.0, PLATE_DY]), ..Default::default() },
+                    [B, "lock", "__unzoom", "dummy", "cond", "elem_icon"] if r.need.is_some() => Over { image_no: r.need.map(|n| n.0), ..Default::default() },
+                    [B, "lock", "__unzoom", "dummy", "cond", "threshold"] if r.need.is_some() => Over { text: r.need.map(|n| n.1.to_string()), ..Default::default() },
+                    [B, "lock", "__unzoom", "dummy", "cond"] if r.need.is_some() => Over::default(),
+                    [B, "lock", "__unzoom", "dummy", "cond", ..] if r.need.is_none() => hide(),
+                    [B, "lock", "__unzoom", "dummy", ..] if r.need.is_some() => Over::default(),
+                    [B, "lock", "__unzoom", "dummy", ..] => hide(),
+                    [B, "lock", ..] => Over::default(),
+                    [B, "lv_up_bg", ..] | [B, "lv_up_txt", ..] => hide(),
+                    _ => Over::default(),
+                }
+            };
+            w.walk(main, ring_xf(r), &mut Vec::new(), &over, &HashMap::new());
+        }
+        let rings_end = w.out.len();
+        let _ = rings_end;
+        w.bold_scale = 1.0;
+        // The labels.
+        for r in &look.rings {
+            let label = self.strings.get(&(LABEL_BASE + r.kind.min(5))).cloned();
+            let xf = ring_xf(r);
+            let over = |p: &[&str]| -> Over {
+                match p {
+                    [.., "ring_type"] => Over { text: label.clone(), ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            let _ = &xf;
+            w.walk(front, root.node([at(r)[0] + LABEL_AT[0] + 77.0 + 25.0, at(r)[1] + LABEL_AT[1] + 23.0 + 50.0], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        }
+    }
+}
+
+/// `STR_ring label n` is the string `LABEL_BASE + n`: "Effect 1" to "Effect 3", then "Quality" and "Traits" from kind 4 (`str_menu_define`).
+const LABEL_BASE: u32 = 10_092_545;
+
+impl Page {
+    /// The bars of the field's screens (a gradation top and bottom over a white: the capture draws the set twice, under the ring graph and over it).
+    fn bars(&self, w: &mut Walker, root: &Xf) {
+        let gradation = self.gradation_texture();
+        // (the top one is drawn turned: its picture's u runs backwards)
+        w.piece(root.node([0.0, 0.0], 0.0, [1.0; 2]), [0.0; 2], [1280.0, 64.0], [1.0, 0.0, 0.0, 1.0], [1.0; 4], gradation);
+        w.piece(root.node([0.0, 64.0], 0.0, [1.0; 2]), [0.0; 2], [1280.0, 592.0], [0.0, 0.0, 0.125, 0.125], [1.0; 4], WHITE);
+        w.piece(root.node([0.0, 656.0], 0.0, [1.0; 2]), [0.0; 2], [1280.0, 64.0], [0.0, 0.0, 1.0, 1.0], [1.0; 4], gradation);
+    }
+
+    /// The Add Materials screen's quads on a `screen` of pixels: the ring graph, then (STAND-IN, as far as built) the bars over it.
+    pub fn add_quads(&self, look: &FieldLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: true, bold_scale: 1.0 };
+        let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
+        self.ring_graph(&mut w, &root, look);
+        w.cull_outside(screen);
+        self.bars(&mut w, &root);
+        self.caption_plate(&mut w, &root, ADD_TITLE, Slide::NONE);
+        (w.out, w.additive, w.clips)
+    }
+}
+
+/// The title plate's string ("Add Materials", `str_menu_define`).
+const ADD_TITLE: u32 = 9_961_591;
+
+impl Walker<'_> {
+    /// Drops the quads that lie wholly outside the screen (the game does not draw them: the capture has none).
+    fn cull_outside(&mut self, screen: (u32, u32)) {
+        let (w, h) = (screen.0 as f32, screen.1 as f32);
+        let keep: Vec<bool> = self.out.iter().map(|q| q.rect[2] > 0.0 && q.rect[0] < w && q.rect[3] > 0.0 && q.rect[1] < h).collect();
+        let mut at = 0;
+        let moved: Vec<Option<usize>> = keep.iter().map(|&k| k.then(|| { at += 1; at - 1 })).collect();
+        let mut i = 0;
+        self.out.retain(|_| { i += 1; keep[i - 1] });
+        self.additive = self.additive.iter().filter_map(|&a| moved.get(a).copied().flatten()).collect();
+    }
+}

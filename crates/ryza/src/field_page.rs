@@ -12,7 +12,9 @@
 //! slides and fades of the page's coming and going (docs/ryza/open.md, "Field menu, part 7").
 
 mod recipe_view;
+mod ring_view;
 pub use recipe_view::{RecipeInfo, RecipeLook, RecipeRow};
+pub use ring_view::{FieldLook, RingShow};
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -302,6 +304,8 @@ struct Over {
     thumb: Option<[f32; 2]>,
     /// A picture at its style's natural size whatever its node says (the game's code sets it).
     natural: bool,
+    /// The picture is one copy of an outline already (`bold_size` makes nine copies of a picture in the synthesis's screens).
+    outlined: bool,
 }
 
 /// The layouts of the synthesis's Select Recipe and Add Materials screens.
@@ -459,6 +463,7 @@ impl Page {
             }
         }
         wanted.insert((texture_path("ui/a21_common.g1t", false), HELP_PLATE));
+        wanted.insert((texture_path("ui/sys_alpha_gradation.g1t", false), 0));
         let wanted: Vec<(String, usize)> = wanted.into_iter().collect();
         let sizes = wanted
             .iter()
@@ -492,6 +497,7 @@ impl Page {
                     || *n == crate::library::UNKNOWN_NAME
                     || (3_538_945..3_538_945 + 2000).contains(n)
                     || (9_961_000..9_962_000).contains(n)
+                    || (10_092_000..10_093_000).contains(n)
             })
             .collect();
         Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, mix_sheet, mix_docs, text_styles, glyphs: files.glyphs })
@@ -502,6 +508,11 @@ impl Page {
         self.wanted.iter().position(|(p, i)| p.ends_with("a21_common.g1t") && *i == HELP_PLATE).map_or(WHITE, |i| FIXED + i)
     }
 
+    /// The layer's texture of the screens' bars' gradation (`ui/sys_alpha_gradation.g1t`).
+    fn gradation_texture(&self) -> usize {
+        self.wanted.iter().position(|(p, _)| p.ends_with("sys_alpha_gradation.g1t")).map_or(WHITE, |i| FIXED + i)
+    }
+
     /// The layer's textures after the fonts and the white: (install path, texture index).
     pub fn wanted(&self) -> &[(String, usize)] {
         &self.wanted
@@ -510,7 +521,7 @@ impl Page {
     /// The page's quads in draw order on a `screen` of pixels, and which of them are drawn added to what is under them.
     pub fn quads(&self, look: &Look, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // Frames since A on the card: the Status page's parts come in by it (the Equipment page's are whole by the time it is shown).
         let clock = look.age;
@@ -708,7 +719,7 @@ impl Page {
     /// and the card of the tool under it (from the right) and the title plate.
     pub fn tools_quads(&self, look: &ToolsLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let (base, add, f) = cursor_colors(look.age);
@@ -750,7 +761,7 @@ impl Page {
             None => 1.0 - (s.since / GUIDE_FADE).clamp(0.0, 1.0),
         });
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let fade = |frames: f32| (frames / GUIDE_FADE).clamp(0.0, 1.0);
         let (back, top) = match look.leaving {
@@ -885,7 +896,7 @@ impl Page {
     /// plate (`uil_a21_cabinet.xml`'s `default`, which slides in from the left over 40 frames, and the card from the right).
     pub fn shelf_quads(&self, look: &ShelfLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let row = |s: &str, name: &str| s.strip_prefix(name).and_then(|n| n.strip_prefix(':')).and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
@@ -1178,7 +1189,7 @@ impl Page {
     /// The finished item's card, on a `screen` of pixels (the card is whole: its coming in, `mix_anm_finish_card_in`, is not drawn).
     pub fn sheet_quads(&self, look: &SheetLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let t = look.clock;
         // The effect under the card.
@@ -1293,7 +1304,7 @@ impl Page {
     /// title plate and the alchemy level panel. STAND-IN: the numbers are the capture's; the experience rule is not read.
     pub fn complete_quads(&self, look: &CompleteLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // The effects under the card and over it, then the level panel, then the plate (the layout's order).
         let age = look.age;
@@ -1332,7 +1343,7 @@ impl Page {
     /// `leaving`: the frames since A, which sends the card out to the right (the slide in played backwards) and brings the level panel in.
     pub fn result_quads(&self, card: &Card, leaving: Option<(f32, CompleteLook)>, entering: Option<(f32, SheetLook)>, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let slide = match (&leaving, entering) {
             (Some((out, _)), _) => Slide::in_from(SLIDE_FRAMES - out.max(0.0), [40.0, 0.0]),
@@ -1458,6 +1469,8 @@ struct Walker<'a> {
     clips: Vec<Clip>,
     /// Walking one of the synthesis screens: clones name the synthesis layouts' templates first.
     mix: bool,
+    /// The outlines of texts and pictures stand this share of their size from them (the ring graph's plates keep the ring's zoom, not the unzoomed node's).
+    bold_scale: f32,
 }
 
 /// An animation's hold on a part of the page: its opacity and its offset in layout pixels.
@@ -1644,6 +1657,15 @@ impl Walker<'_> {
 
     fn image(&mut self, e: &Element, xf: Xf, o: &Over) {
         let Some(style) = e.attr("style") else { return };
+        // A picture with a `bold_size` is drawn nine times in black at half its opacity round its place, then itself (the synthesis's lock plates).
+        if let (true, false, Some(bold)) = (self.mix, o.outlined, e.attr("bold_size").and_then(|v| v.trim().parse::<f32>().ok())) {
+            let k = xf.a.hypot(xf.b);
+            for dx in [-1.0, 0.0, 1.0] {
+                for dy in [-1.0, 0.0, 1.0] {
+                    self.image(e, Xf { x: xf.x + dx * bold * k * self.bold_scale, y: xf.y + dy * bold * k * self.bold_scale, ..xf }, &Over { outlined: true, paint: Some([0.0, 0.0, 0.0, 0.5]), ..o.clone() });
+                }
+            }
+        }
         if style == "common_white_image" {
             // The common white (`ui/sys_white.g1t`, its first pixel of the 8 by 8): the stencil masks of the item card's lists.
             let size = self.node_size(e);
@@ -1823,7 +1845,7 @@ impl Walker<'_> {
             let outline = if b.len() >= 4 { [b[0] / 255.0, b[1] / 255.0, b[2] / 255.0, b[3] / 255.0 * OUTLINE_ALPHA] } else { [0.0, 0.0, 0.0, OUTLINE_ALPHA] };
             for dx in [-1.0, 0.0, 1.0] {
                 for dy in [-1.0, 0.0, 1.0] {
-                    run(dx * bold * k, dy * bold * k, outline);
+                    run(dx * bold * k * self.bold_scale, dy * bold * k * self.bold_scale, outline);
                 }
             }
         }

@@ -112,6 +112,8 @@ struct Args {
     mix_sheet: Option<(u16, u32, Option<(f32, f32)>)>,
     /// `--mix-recipe CURSOR[:AGE[:BAR]]`: the synthesis's Select Recipe screen with the cursor on a row (-1: no cursor bar), AGE frames after its first and the help bar BAR frames into its fade.
     mix_recipe: Option<(i32, f32, f32)>,
+    /// `--mix-add FRAME`: the synthesis's Add Materials screen at a frame of the capture's run.
+    mix_add: Option<f32>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
     mix_complete: Option<(u32, u32, u32, f32)>,
     /// `--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING[:ENTERING]]`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows), LEAVING frames after A sent it out.
@@ -219,7 +221,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, mix_recipe: None, mix_complete: None, mix_result: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, mix_recipe: None, mix_add: None, mix_complete: None, mix_result: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -348,6 +350,7 @@ fn args(args: Vec<String>) -> Result<Args> {
                 };
                 a.mix_complete = Some((level as u32, next as u32, gained as u32, age));
             }
+            "--mix-add" => a.mix_add = Some(value()?.parse()?),
             "--mix-recipe" => {
                 let v = value()?;
                 let n: Vec<&str> = v.split(':').collect();
@@ -843,7 +846,7 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
     use barrel_ryza::field_page as fp;
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
-    let back = mix_back_layer(install, gpu, renderer, screen)?;
+    let back = mix_back_layer(install, gpu, renderer, 2, screen)?;
     let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let order: Vec<String> = barrel_formats::table::parse(&install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?.children.iter().filter_map(|c| c.attr("category").map(str::to_string)).collect();
     let rows: Vec<fp::RecipeRow> = [("ITEM_MIX_CRAFT", 239u16, true, 4u32), ("ITEM_MIX_MATERIAL_NEUTRALIZE_001", 329, false, 3)]
@@ -867,9 +870,49 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
     Ok(vec![back, sheet, bar])
 }
 
+/// The synthesis's Add Materials screen (`--mix-add FRAME`): the background, then the screen's parts. STAND-IN: the capture's recipe (Red Supplement); the
+/// rings' states are the start's (the first ring open) until the rules' placements are wired in.
+fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+    use barrel_ryza::field_page as fp;
+    const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
+    let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let order: Vec<String> = barrel_formats::table::parse(&install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?.children.iter().filter_map(|c| c.attr("category").map(str::to_string)).collect();
+    let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
+    let rings = fields.get(TAG).ok_or("no field for the recipe")?;
+    let recipe = recipes.recipes.iter().find(|r| r.tag == TAG).ok_or("no recipe")?;
+    let present: Vec<usize> = (0..rings.len()).filter(|&i| rings[i].elem.is_some()).collect();
+    let shown: Vec<fp::RingShow> = present
+        .iter()
+        .map(|&i| {
+            let r = &rings[i];
+            let link = r.link.and_then(|l| {
+                let from = l.from?;
+                let dir = rings.get(from)?.children.iter().position(|&c| c == i as i32)? as u8;
+                Some((present.iter().position(|&p| p == from)?, dir))
+            });
+            fp::RingShow {
+                at: r.at,
+                elem: r.elem.unwrap_or(0),
+                kind: r.kind,
+                open: i == 0,
+                restrict: recipe.rows.get(r.restrict as usize).and_then(|row| order.iter().position(|o| Some(o) == row.category.as_ref())),
+                link,
+                need: r.link.filter(|l| l.need > 0).map(|l| (l.elem, l.need)),
+            }
+        })
+        .collect();
+    let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(0), category: Some(c) }).collect();
+    let back = mix_back_layer(install, gpu, renderer, 1, screen)?;
+    let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
+    let (quads, additive, clips) = page.add_quads(&fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, screen);
+    sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
+    Ok(vec![back, sheet])
+}
+
 /// The synthesis screens' background layer: the picture (`a21_bg01`, drawn twice as the capture has it) and the field's two bars of the screen
 /// (a gradation top and bottom over a white, drawn twice: the capture has them from the screen's first frame to its last).
-fn mix_back_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, screen: (u32, u32)) -> Result<text::Layer> {
+fn mix_back_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, triples: usize, screen: (u32, u32)) -> Result<text::Layer> {
     let files = [install.read("\\data\\x64\\res_cmn\\ui\\a21_bg01.g1t")?, install.read("\\data\\x64\\res_cmn\\ui\\sys_alpha_gradation.g1t")?, install.read("\\data\\x64\\res_cmn\\ui\\sys_white.g1t")?];
     let parsed = files.iter().map(|b| barrel_formats::g1t::G1t::parse(b).map_err(|e| format!("mix background: {e}"))).collect::<std::result::Result<Vec<_>, _>>()?;
     let tex: Vec<_> = parsed.iter().filter_map(|g| g.textures.first()).collect();
@@ -879,7 +922,7 @@ fn mix_back_layer(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let quad = |rect: [f32; 4], uv: [f32; 4], texture: usize| text::Quad { turn: false, spin: None, rect, uv, color: [1.0; 4], texture };
     let fill = quad([0.0, 0.0, 2.0 * w, 2.0 * h], [0.0, 0.0, 2.0, 2.0], 0);
     let bars = [quad([0.0, 0.0, w, bar], [1.0, 0.0, 0.0, 1.0], 1), quad([0.0, bar, w, h - bar], [0.0, 0.0, 0.125, 0.125], 2), quad([0.0, h - bar, w, h], [0.0, 0.0, 1.0, 1.0], 1)];
-    let all: Vec<text::Quad> = [fill, fill].into_iter().chain(bars).chain(bars).collect();
+    let all: Vec<text::Quad> = [fill, fill].into_iter().chain(bars.into_iter().cycle().take(3 * triples)).collect();
     back.set(gpu, &all)?;
     Ok(back)
 }
@@ -2527,6 +2570,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         _ => None,
     };
     let mix_screen = match (a.mix_sheet, a.mix_complete, a.mix_result.clone()) {
+        _ if a.mix_add.is_some() => Some(mix_add_layers(&install, &gpu, &renderer, a.mix_add.unwrap_or(0.0), (width, height))?),
         _ if a.mix_recipe.is_some() => Some(mix_recipe_layers(&install, &gpu, &renderer, a.mix_recipe.unwrap_or((0, 0.0, 99.0)), &container.0, (width, height))?),
         (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
         (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
