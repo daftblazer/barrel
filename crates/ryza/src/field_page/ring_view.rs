@@ -246,7 +246,7 @@ impl Page {
                     _ => Over::default(),
                 }
             };
-            w.slid(Slide::in_from(look.desc_age, [0.0, 40.0]), |w| w.walk(desc, root.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+            w.slid(Slide::in_from(look.desc_age, [0.0, 30.0]), |w| w.walk(desc, root.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
         }
         // Select Recipe's list, going out to the left and fading as Add Materials comes in.
         if let Some((list, out)) = &look.list_out {

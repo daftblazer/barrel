@@ -921,17 +921,36 @@ fn ring_graph_pan(frame: f32) -> [f32; 2] {
     [x, -164.14 * ((frame - 3246.0) / 12.0).clamp(0.0, 1.0)]
 }
 
+/// The frames the ring's description has risen into place on `frame` (it rises again each time the cursor is back on a ring, and goes out as that played backwards from
+/// the frame before A).
+// STAND-IN: the starts are read off the capture's alphas and offsets of the plate (`synth-atelier` 2870: 0.49, 3040: 0.349, 3250: 0.188, 3260: 0.784; 30 layout pixels to rise): 2863.5, 3034 and 3248.
+fn desc_age(frame: f32) -> f32 {
+    const RISES_FROM: [f32; 3] = [2863.5, 3034.0, 3248.0];
+    let (rise, &(a, ..)) = RISES_FROM.iter().zip(ADD_LISTS.iter()).rev().find(|&(&from, _)| frame >= from).unwrap_or((&RISES_FROM[0], &ADD_LISTS[0]));
+    let at_a = ((a - 1.0) - rise).min(30.0);
+    if frame >= a { at_a - (frame - (a - 1.0)) } else { frame - rise }
+}
+
+/// The frame the cursor leaves the first ring for the third list's (the popup of the new ring starts to fade in).
+// STAND-IN: `synth-atelier` 3260: the popup of the new ring has one third of its opacity (5 frames of 15), 3250: the old ring's has two frames' worth.
+const CURSOR_MOVES_AT: f32 = 3255.0;
+
 /// The opacity of the ring popup on `frame`: whole from the ring phase and while a list is up, fading in over `POPUP_FADE` frames before the ring is chosen again and out
 /// over as many after A on a material.
 // STAND-IN: the capture's alphas on the sampled frames (`synth-atelier` 2990 and 3110 and 3350: one third, 3040: 0.4, 3260: one third) give the fade's 15 frames and the
 // starts at 3034 and 3255; the rule behind them is not read.
 fn popup_alpha(frame: f32) -> f32 {
     const POPUP_FADE: f32 = 15.0;
-    const SHOWN_FROM: [f32; 3] = [2870.0, 3034.0, 3255.0];
+    const SHOWN_FROM: [f32; 3] = [f32::NEG_INFINITY, 3034.0, 3248.0];
+    if frame < 2870.0 {
+        return 0.0;
+    }
     SHOWN_FROM
         .iter()
         .zip(ADD_LISTS.iter())
-        .map(|(&from, &(_, out, ..))| {
+        .enumerate()
+        .map(|(i, (&from, &(_, out, ..)))| {
+            let from = if i == 2 && frame >= CURSOR_MOVES_AT { CURSOR_MOVES_AT } else { from };
             let on = ((frame - from) / POPUP_FADE).clamp(0.0, 1.0);
             let off = 1.0 - ((frame - (out + 1.0)) / POPUP_FADE).clamp(0.0, 1.0);
             if frame < from { 0.0 } else { on * off }
@@ -976,7 +995,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     for &(_, unit, ring, row) in &ADD_RUN[..placed_now] {
         place(&mut preview, unit, ring, row)?;
     }
-    if let Some((_, out, ring, row, placed)) = session.filter(|s| frame < s.1) {
+    if let Some((_, out, ring, row, placed)) = session.filter(|s| frame < s.1 + 1.5) {
         let _ = out;
         let (_, unit, _, _) = ADD_RUN[placed];
         place(&mut preview, unit, ring, row)?;
@@ -984,7 +1003,8 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let outcome = preview.outcome(false);
     let lit = cauldron.outcome(false).eval.cells;
     let shown = ring_shows(rings, recipe, &order, |i| lit.get(i).is_some_and(|c| c.1));
-    let cursor = session.map_or(0, |s| s.2);
+    // (the cursor moves down to the water's ring while the graph pans, from `CURSOR_MOVES_AT`)
+    let cursor = if frame >= CURSOR_MOVES_AT { ADD_LISTS[2].2 } else { session.map_or(0, |s| s.2) };
     // The glow's turn starts again when the list is gone (30 frames after A on a material).
     let focus_zero = ADD_LISTS.iter().rev().find(|s| frame >= s.1 + 30.0).map_or(fp::FOCUS_ZERO_AT, |s| s.1 + 30.5);
     let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(329), category: Some(c) }).chain([fp::ShelfItem { image: tables.image(329), category: None }]).chain(units.iter().map(|u| fp::ShelfItem { image: tables.image(u.item), category: None })).collect();
@@ -1060,7 +1080,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u32>().ok()? + 1332;
         strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned()
     });
-    let look = fp::AddLook { materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame), focus_zero }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: if frame >= 2920.0 { 30.0 - (frame - 2919.0) } else { frame - 2862.2 } };
+    let look = fp::AddLook { materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame), focus_zero }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame) };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
