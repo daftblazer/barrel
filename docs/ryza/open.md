@@ -3053,6 +3053,46 @@ ryza-synth INSTALL SAVE 92 PAD.txt 1900 4400` runs it on the scenario's own `pad
   screens in a window (it runs headless; the live run and window shots of each screen wait for the screens), the field side's own 2D (the prompt's and the
   notice's draws; the capture has none before 2250).
 
+**Part 3: the synthesis rules** (`barrel_ryza::rings`, `crates/ryza/src/rings.rs`; the data and the types: docs/tables.md "the synthesis field"; the game's addresses: docs/engine.md
+"the synthesis rules"; the key `synth-rules`: same inputs as synth-atelier with `0x1402cbb50`'s numbers and `0x1402cacd0`'s ring states hooked).
+- **Built.** `mixfielddata.xml` is read into rings by recipe tag (growable: `Rings::extend`). Placing a material (`Cauldron::place(ring, row, quality, elements)`) adds its
+  element value of the ring's element to that ring (the ring must be open and take the recipe row: `restrict`); a ring is open when it has no link or its link's ring is open and holds
+  `val` of the element (`Connect`); each open ring's highest reached `Param` step applies by `type` (0 to 3 effect slot tiers, 4 the quality bonus A, 5 and the rest into the totals words);
+  the quality is `trunc(min(999, max(0, sum / count + bonus157 + (A - B))))` in f32. `barrel-tool ryza-rules INSTALL SAVE RECIPE EVENTS [--rings]` prints a row per change (quality,
+  mean, sum, count, A, the four slot tiers; `--rings`: the 32 state words), `tools/synth_rules_key.py` writes the same rows from the key's hook log. **11 changes, 0 differ** (2860, 2921,
+  2981, 3041, 3101, 3281, 3341, 3535 and the three frames where a press shows the empty ring state: quality 35, 38 (38.5), 49 (39 + 10), 39; count, sum, A and tiers equal) and **11
+  ring states, 0 differ** (rows `synth-rules`, `synth-rules-rings`). `barrel-tool ryza-synth ... --placements FILE` takes the made units' quality from the rules (49, and its one effect
+  `ITEM_EFF_CREATE_QUALITY_01` = "Synth Quality +5": slot 0 tier 0) in place of part 2's STAND-IN (`synth-rules-made`); the checks of part 2 (`synth-cues`, `-screens`, `-walk-end`,
+  `-flow-end`) are unchanged.
+- **Read off the key.** Ring 0 (fire, no link) is lit from the start: `(0, 1)`; ring 3 (ice, `Connect idx 0 val 2 elem 0`) reads -2, -1 and `(0, lit)` as ring 0 holds 0, 1 and 2 fire; the
+  water goes into ring 3 (ice 1: the quality bonus 10) and ring 1 (linked to ring 3 at 2 ice) reads -1. The empty slots and the rings with a link to a shut ring whose `val` is
+  absent read (0, 0). The mean 38.5 truncates to 38 and 117 / 3 + 10 = 49. A frame where the ring state is empty (2980, 3100 and 3340: the press that confirms a loop) has A 0 and no tiers
+  with the same materials (39 at 3340).
+- **STAND-INs.** (1) Which unit goes in which ring (`tools/synth_rules_events.txt`: the key's: two flowers in ring 0, the water in ring 3): the cursor's and the loops' rule is not read, so
+  **which presses add a material is not derived** (`ADD_STEPS` of the machine stays: presses 0, 2 and 6 are the key's three, at 2920, 3040 and 3280, the frames the rules' changes are at).
+  Without `--placements`, `ryza-synth` puts each row's units (`mix::make`'s four) in the first open ring taking the row: three flowers and the water, quality 48; **the key counts three
+  materials (two flowers and the water) while the rows take four units**: why the third flower is not counted is not found. (2) The materials' kinds `0x157` and `0x15b` (bonus and
+  other: 0 in the key), the state's `B` (0), the level and experience rule (Level UP stays a STAND-IN). (3) `restrict` = the recipe row is from one recipe; `ex_material` and
+  `ev_start` are parsed, not used; types other than 0, 1, 4 and 5 follow the jump table and are unchecked. (4) The made item's effect id on the unit (`Worn.effects`) is not set (the
+  effect names are printed from the recipe's `AddEff` rows).
+
+**Part 3: Select Recipe at 0 (not built)**: no `--mix-recipe` form and no `synth-recipe-*` rows; the unmatched `res_` quads are at the start's (2310: 415 by `barrel-parity diff` with
+`--mix-sheet` as the stub, 2800: 507). What the capture shows (for the next part):
+- The screen is the layouts `uil_a21_mix_recipe` (the list window `template_menu_node`: frame `gen_a21_mix02_flame01`, 12 `menu_item` rows 24.9 layout pixels apart (name, count, star,
+  new and recipe icons, the cursor `gen_a21_mix02_hilight` as a bar of 9-pixel pieces), the tab, `product_info` (`mix_mat_info`, `create_info`, `common_info`: the item picture, level, elements),
+  `ring_info`, `ring_desc`, `change_recipe_info`) and `uil_a21_mix_field` (the ring graph; its `clone_targets` are built by the game's code: `clone_tree_edge` the six links of a ring
+  (`gen_a21_mix01_line_p2`, turned by 60 degrees each), `clone_tree_focus` the cursor's glow (`gen_a21_mmap02_point_eff_0`, 262 layout pixels), `clone_tree_behind_node` the ring's frame
+  (`frame_bg`, `frame_ring`, `frame_circle`, `frame_eff` and `frame_pot`: the `gen_a21_mix01_mkan` pieces and `gen_a21_mix01_ring_eff`)), `uia_a21_mix_field` / `uia_a21_mix` (the animations: `start_in`,
+  `fade_in`), the caption plate and the help bar. Everything is drawn at 0.549 opacity at 2310 (the screen's fade-in) and the list rises into place.
+- **The ring graph appears with the cursor on the second recipe**: no ring frame at 2700 and 2790, four at 2810 and 2850. Each ring is two `a21_mix#1` quads of 122.5 and 126.2 layout pixels
+  (the dark disc `uv 0.0029 0.1265` colour (0.32, 0, 0, 0.87) for fire, (0, 0.16, 0.32, 0.87) for ice, and the ring `uv 0.0029 0.2515` colour (0.75, 0, 0, 1) / (0, 0.56, 0.75, 1)), a
+  third (`uv 0.0029 0.0015`, grey 0.5) for the lit one, and a `gen_a21_mix01_mkan` plate, with the number pictures on top; the first ring's frame is at (721.8, 545.8) layout pixels,
+  the grid steps 142.15 layout pixels in x and 82.07 (142.15 / the square root of 3) in y per unit of `x` and `y`: the four rings of 2810 sit at grid (0, 0), (2, 0), (0, 2) and (3, 1)
+  (red, red, red, blue), which are not rings of recipe 92's field as listed (its rings are at (0, 0), (1, 3), (3, 3), (0, 2), (2, 2), (2, 0), (1, 5), (4, 4)): which recipe's field the cursor is on at 2800, and
+  what the game shows of its rings (only the opened ones? a window of the grid?), is not found.
+- The text: 340 glyphs of `mainfont00` / `mainfont01` at 2310 (the list's names and counts, the description, the tutorial's page text), 4 `sys_alpha_gradation` and the white rectangle,
+  the caption plate (`a21_caption` 1) and the `a21v2_saveload` spinner (13 quads, up all through the key).
+
 Left.
 
 **Left.**
