@@ -28,7 +28,7 @@ const GLOW_SECOND_LAG: f32 = 243.0;
 const GLOW_FIRST_SET: [usize; 4] = [0, 1, 2, 4];
 /// The glow's size in layout pixels before the ring's zoom (520 style pixels).
 const GLOW_SIZE: f32 = 520.0 / 3.0;
-/// The cursor's glow turns once in about 375 frames (the capture's 12.1 degrees at 2850 and 60.0 at 2900), `GLOW_TURN_AT` frames into the graph's clock.
+/// The cursor's glow turns once in about 375 frames (the capture's 12.1 degrees at 2850 and 60.0 at 2900): it was at no turn at `FOCUS_ZERO_AT` on the capture's clock.
 const FOCUS_DEGREES_PER_FRAME: f32 = 0.958;
 const FOCUS_ZERO_AT: f32 = 2837.4;
 /// Where a ring's label plate stands from the ring's centre (measured on the capture's plates: STAND-IN).
@@ -108,9 +108,6 @@ impl Page {
             };
             w.walk(main, ring_xf(r), &mut Vec::new(), &over, &HashMap::new());
         }
-        if std::env::var_os("RING_DEBUG").is_some() {
-            eprintln!("masks: {} quads", w.out.len());
-        }
         // The lines: one for each ring that hangs from another, along the direction it leaves by.
         for r in &look.rings {
             let Some((from, dir)) = r.link else { continue };
@@ -184,7 +181,7 @@ impl Page {
                     [B, "element", "list", n] if matches!(*n, "node_0" | "node_1") => Over::default(),
                     [B, "element", "list", _] => hide(),
                     [B, "element", "list", _, "elem"] => hide(),
-                    [B, "lock"] if !r.open => { if std::env::var_os("RING_DEBUG").is_some() { eprintln!("lock shown {k}"); } show() }
+                    [B, "lock"] if !r.open => show(),
                     [B, "lock", "__unzoom"] => Over { scale: Some([1.0 / ZOOM; 2]), ..Default::default() },
                     [B, "lock", "__unzoom", "dummy"] => Over { at: Some([0.0, PLATE_DY]), ..Default::default() },
                     [B, "lock", "__unzoom", "dummy", "cond", "elem_icon"] if r.need.is_some() => Over { image_no: r.need.map(|n| n.0), ..Default::default() },
@@ -200,20 +197,16 @@ impl Page {
             };
             w.walk(main, ring_xf(r), &mut Vec::new(), &over, &HashMap::new());
         }
-        let rings_end = w.out.len();
-        let _ = rings_end;
         w.bold_scale = 1.0;
         // The labels.
         for r in &look.rings {
             let label = self.strings.get(&(LABEL_BASE + r.kind.min(5))).cloned();
-            let xf = ring_xf(r);
             let over = |p: &[&str]| -> Over {
                 match p {
                     [.., "ring_type"] => Over { text: label.clone(), ..Default::default() },
                     _ => Over::default(),
                 }
             };
-            let _ = &xf;
             w.walk(front, root.node([at(r)[0] + LABEL_AT[0] + 77.0 + 25.0, at(r)[1] + LABEL_AT[1] + 23.0 + 50.0], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
     }
@@ -278,7 +271,7 @@ pub struct AddLook {
     pub popup: Option<Popup>,
     /// The recipe list still going out, and the frames since it began to.
     pub list_out: Option<(RecipeLook, f32)>,
-    /// The frames since the ring's description began to rise into place (`anm_common_slide_in_bottom`).
+    /// The frames since the ring's description began to rise into place (`anm_common_slide_in_bottom`; it goes out as that played backwards from A on 2920).
     pub desc_age: f32,
 }
 

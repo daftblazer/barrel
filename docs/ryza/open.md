@@ -3076,7 +3076,7 @@ ryza-synth INSTALL SAVE 92 PAD.txt 1900 4400` runs it on the scenario's own `pad
   `ev_start` are parsed, not used; types other than 0, 1, 4 and 5 follow the jump table and are unchecked. (4) The made item's effect id on the unit (`Worn.effects`) is not set (the
   effect names are printed from the recipe's `AddEff` rows).
 
-**Part 3: Select Recipe at 0 (not built)**: no `--mix-recipe` form and no `synth-recipe-*` rows; the unmatched `res_` quads are at the start's (2310: 415 by `barrel-parity diff` with
+**Part 3: Select Recipe at 0 (the findings; built in part 4)**: the start was no `--mix-recipe` form and no `synth-recipe-*` rows; the unmatched `res_` quads are at the start's (2310: 415 by `barrel-parity diff` with
 `--mix-sheet` as the stub, 2800: 507). What the capture shows (for the next part):
 - The screen is the layouts `uil_a21_mix_recipe` (the list window `template_menu_node`: frame `gen_a21_mix02_flame01`, 12 `menu_item` rows 24.9 layout pixels apart (name, count, star,
   new and recipe icons, the cursor `gen_a21_mix02_hilight` as a bar of 9-pixel pieces), the tab, `product_info` (`mix_mat_info`, `create_info`, `common_info`: the item picture, level, elements),
@@ -3093,6 +3093,51 @@ ryza-synth INSTALL SAVE 92 PAD.txt 1900 4400` runs it on the scenario's own `pad
 - The text: 340 glyphs of `mainfont00` / `mainfont01` at 2310 (the list's names and counts, the description, the tutorial's page text), 4 `sys_alpha_gradation` and the white rectangle,
   the caption plate (`a21_caption` 1) and the `a21v2_saveload` spinner (13 quads, up all through the key).
 
+**Part 4: Select Recipe and Add Materials in 2D** (`crates/ryza/src/field_page/recipe_view.rs`, `ring_view.rs`; `--mix-recipe CURSOR[:AGE[:BAR[:FRAME]]]`, `--mix-tutorial
+PAGE:AGE:CLOCK`, `--mix-opening AGE` and `--mix-add FRAME` of `barrel` draw the screens offscreen; rows `synth-recipe-FRAME` and `synth-add-FRAME`). The layouts are walked by
+`field_page`'s generic walker (`Walker::walk` with the game's changes as `Over`s by node path); the walker gained, for the synthesis screens only (`Walker::mix`): the
+synthesis templates first in `clone_child_tree` (`Page::template(name, mix)`), `parent_size_copy_w/h`, `pos_ratio="x, y, z"`, `size_wh` over `size_w`, a picture's `bold_size`
+(nine copies of it, as a text's), a text's colour runs (`Over::runs`, the tutorial's `<#RRGGBB>`), the styles `alpha_gradation` and `alpha_circle` (the whole of
+`sys_alpha_gradation` and `sys_alpha_circle`) and the placeholder `sys_no_image` for a style-less mask picture. **Every field menu row is unchanged** (run again: see below).
+- **What the compare keeps.** `barrel-parity` hides a quad a later opaque quad covers whole: the game draws the field's bars (a gradation, a white 96 to 984 high, a gradation) twice,
+  under the ring graph and over it, so the whole ring graph but the parts of its lower rings below 984 lines is hidden, and only what is drawn after the second white counts. The
+  bars are therefore a back layer (`mix_back_layer`: the picture twice, then one set of bars; two sets for Select Recipe without the graph) and the page's own set over the graph.
+  The game does not draw a quad wholly off the screen, and Barrel's `cull_outside` drops them too. Only a quad's texture and place (8 pixels) decide a match; the colours,
+  the uvs and the fine place are the `DIFF` lines (not counted by the rows): the rows are `GAME` and `BARREL` lines with `res_`.
+- **Select Recipe** (2660 to 2850; 2310 to 2650 with the tutorial; 2310 to 2330 sliding in): the list (`template_menu_node`: the frame, the rows 25.13 layout pixels apart with the
+  cursor's bar and its added glow `cursor_colors(age)`, the star, the name, the count in its plate), the tab row (`template_tab/tab_ui_top` of `uil_a21_item_tab_mix`: the shoulder
+  buttons, the five tabs with the first's highlight, "All"), the panel on the right (`product_info`: the materials' categories with their pictures and names, red where the container
+  has none; the alchemy and item level circles; the element circle and its four lights; the item's big picture, dark when the recipe cannot be made; the CP and range of an attack
+  item or the units made of a material; the warning plate), the quantity box (`remain_put_num` of `uil_a21_mix_caption`: a circle for each unit the first row takes, the first at
+  112 / (the number shown), 28 across and a quarter down for each; the times), the title plate and the help bar (`Entries::Recipe`: fades in over 15 frames from 2694, its plate
+  growing with it). The cursor's colour restarts on a move (2800: age 1) and runs from 2690 before; the cursor bar is not drawn before 2700 (tutorial) and after A (2860).
+  The ring graph (`ring_view`) is added from 2800 (the cursor on the second recipe): rows 2810 to 2850 are at 0.
+- **The tutorial** (`uil_a21_balloon_frame_20x03.xml`'s `size_s`): five pages (`str_tutorial` 10027054 to 10027058) from 2336, a page on each of the key's A at 2420, 2480, 2540 and
+  2600 (the sampled frames 2430, 2490, 2550 and 2610 are the first of the next); the box rises 30 layout pixels and fades in over 30 frames (`Slide::in_from`), its text wraps at
+  520 layout pixels and its block is centred on the box's middle line (24 pixels a line); the arrow (its shadow, the two halves turning by 1.5 degrees a frame the one way and
+  the other, the core) turns on one clock from 2336. Rows 2340 to 2650 sampled (32 frames) are at 0.
+- **Add Materials, the ring phase** (2870 to 2920 at 0; 2860 at 1, the stray quad below): the ring graph (`Page::ring_graph`) in the order the capture draws it: the rings' masks
+  (disc and rim: `frame_eff` for the effect and trait rings, `frame_param` for the quality rings, whose pictures are another set), the lines (one for each ring that hangs from
+  another: 57.6 layout pixels from the parent's centre, 112 long, 40 wide, by the direction the parent's `Child` says), the cursor's glow (turning 0.958 degrees a frame), each ring
+  (its light: `anm_ring_bg_loop`, 480 frames, the picture by element; a second light turned over from 243 frames on; its disc and rim tinted by the element and halved when closed;
+  the picture of the category its row takes; two lights on the effect and quality rings; the lock with its plate "X n" of the link's need), the labels ("Effect 1" to "Effect 3" by
+  ring kind, "Quality", "Traits"); then the bars, the ring's description (`ring_desc`: string 10092605 + kind, rising 40 pixels over 30 frames from 2862.2), Select Recipe's list
+  going out to the left (`Slide::in_from(30 - frames, [-40, 0])` from 2859), the panel (`create_info`: the gauge `crop`s, the three effect rows, the page "1 / 2"), the quantity box,
+  the popup of the ring under the cursor (`ring_info`: the heading "(Flower)", a row for each step with a light for each point of the element, the effect's name), the title and the
+  help bar (`Entries::AddRing`, its plate growing from Select Recipe's width over 20 frames after A: out cubic).
+- **STAND-INs** (each named in the code with its source): the recipe list is the two recipes of the capture's save (Craft and Red Supplement; `mix_recipe_layers`); the numbers
+  of Craft's and Red Supplement's panels beyond `itemdata` (CP 2, alchemy level 1, the times 4 and 3, the tint of a recipe that cannot be made, `SHORT_ICON`, `SHORT_TEXT`); the
+  recipe's row step and plate offsets (`ROW_STEP`, `PLATE_DY`, `LABEL_AT`, `RING_SHIFT`, `POPUP_BELOW`, `BALLOON_WRAP`, `TEXT_RAISE`: fitted to the capture, each sampled from one frame);
+  which rings are in the first set of lights (slots 0, 1, 2, 4: the second set runs 142.4 frames behind) and the lights' clock (`look.clock - 2656.4`); the ring effects' numbers
+  (`ITEM_EFF_CREATE_QUALITY_nn` is effect 1332 + nn: the enum's table is not read); the Check Tree and favorite entries' glyphs; the help bars' plates (the fade of Select Recipe's
+  at 2700, the growth at 2860: one sample each); the first ring open (the rules' state is not wired in: `open: i == 0`).
+- **Left.** (1) Frames 2310 (13: the autosave spinner `a21v2_saveload`, up from 2250 to 2315, which `spinner.rs` draws for the boot's window only), 2800 and 2860 (1 each: on the frame of the
+  DOWN and of the A the game draws one quad of the font's texture over the whole screen with all its uv at one texel; Barrel's compare drops its own, so it is not reproduced).
+  (2) **Add Materials from 2930** (the material list: the Container grid `uil_a21_cabinet_mix` and its cell, the item tab "Health Flower", the quality and effect panel under it
+  (`_simple_item_info`, `_gem`), the cursor's flying material, the particles; the graph's pans (+105 pixels in x from 2930 to 2990, 3050 to 3110 and 3290 to 3350, and up two grid steps
+  from 3260: `--mix-add` has none) and the lit states of the rings from the rules (`rings::evaluate`), the quality bar, the second page of the effects list; the help bar with the list up
+  is one entry, built in `Entries::Add` and not checked): 790 `res_` quads at 2950, 640 at 2930, the graph being 320 of them. (3) The gaps 3820 to 3830 and 4260 to 4300 are not started. (4) The silhouette of her model (white in the capture) is not drawn.
+
 Left.
 
 **Left.**
@@ -3100,8 +3145,8 @@ Left.
   cauldron (the MIX gimmick: fixID 8 of `gimmick_fieldmap_s01_i_attic.xml`) and A (the capture has no draws before 2250; her end place (3772.95, 4140.70)
   facing 14.5 degrees is the only check of the walk 2160 to 2200); the attic's room camera (the 2250 frame is a first look: Barrel's frame has the wrong
   camera, so the balloons over the room's three gimmicks, the prompt and the arrival plate "Ryza's Room" are not compared).
-- Select Recipe (with the tutorial pages) and Add Materials (loops, the material list, the quality bar, the ring graph): about 520 to 920 quads a
-  frame, most of them the ring graph's pieces and the lists' text; not started. The quality, effects and traits of the result and the experience rule.
+- Select Recipe (with the tutorial pages) and Add Materials (loops, the material list, the quality bar, the ring graph): part 4 (above) draws Select Recipe
+  and Add Materials' ring phase (2870 to 2920); the material phase from 2930 is not drawn. The quality, effects and traits of the result and the experience rule.
 - What Select Recipe and Add Materials are made of (for the next part): the files the key read at 2303 (`barrel-tool pak-reads`): the layouts
   `ui_en/a21_mix/uil_a21_mix_caption`, `_recipe` (44 KB), `_field` (32 KB: the ring graph) with `ui_cmn/a21_mix/uia_a21_mix`, `uia_a21_mix_field`,
   `uil_a21_mix_background`, `_blackout`, `_lecture`, `_scale`, `ui_en/a21_cabinet/uil_a21_cabinet_mix` with its `_cell` and `uil_a21_item_tab_mix` (the list

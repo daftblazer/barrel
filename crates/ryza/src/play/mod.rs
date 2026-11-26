@@ -913,6 +913,14 @@ fn ring_shows(rings: &[barrel_ryza::rings::Ring], recipe: &barrel_ryza::mix::Rec
         .collect()
 }
 
+/// How far the capture's ring graph is panned on frame `frame`, in layout pixels. STAND-IN: the capture's: 105 pixels of 1080 lines to the right (70) while the material list has the
+/// pad (from 9 frames after A on 2920, 3040 and 3280, to 9 after the next press), and two grid steps up (164.1) in 12 frames from 3246.
+fn ring_graph_pan(frame: f32) -> [f32; 2] {
+    const LIST_HAS_PAD: [(f32, f32); 3] = [(2929.0, 2989.0), (3049.0, 3109.0), (3289.0, 3349.0)];
+    let x = if LIST_HAS_PAD.iter().any(|&(from, to)| frame >= from && frame < to) { 70.0 } else { 0.0 };
+    [x, -164.14 * ((frame - 3246.0) / 12.0).clamp(0.0, 1.0)]
+}
+
 /// The synthesis's Add Materials screen (`--mix-add FRAME`): the background, then the screen's parts. STAND-IN: the capture's recipe (Red Supplement); the
 /// rings' states are the start's (the first ring open) until the rules' placements are wired in.
 fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, screen: (u32, u32)) -> Result<Vec<text::Layer>> {
@@ -971,7 +979,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
             .collect();
         (fp::RecipeLook { rows, cursor: 1, cursor_shown: frame < 2860.0, age: frame - 2799.0, graph: None, tutorial: None, opening: None }, frame - 2859.0)
     });
-    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) }, popup, list_out, desc_age: frame - 2862.2 };
+    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: ring_graph_pan(frame) }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) }, popup, list_out, desc_age: if frame >= 2920.0 { 30.0 - (frame - 2919.0) } else { frame - 2862.2 } };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
