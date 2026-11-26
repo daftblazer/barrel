@@ -13,7 +13,7 @@
 
 mod recipe_view;
 mod ring_view;
-pub use recipe_view::{AddPanel, RecipeInfo, RecipeLook, RecipeRow};
+pub use recipe_view::{AddPanel, RecipeInfo, RecipeLook, RecipeRow, Tutorial};
 pub use ring_view::{AddLook, FieldLook, Popup, RingShow};
 
 use std::collections::{BTreeSet, HashMap};
@@ -304,6 +304,10 @@ struct Over {
     thumb: Option<[f32; 2]>,
     /// A picture at its style's natural size whatever its node says (the game's code sets it).
     natural: bool,
+    /// The distance between a text's lines where the game's code sets it (layout pixels).
+    step: Option<f32>,
+    /// A text's colour runs: the plain string's character where each begins and its colour (the game's `<#RRGGBB>` markup).
+    runs: Vec<(usize, [f32; 4])>,
     /// A picture's height in layout pixels where the game's code sets it.
     size_h: Option<f32>,
     /// The picture is one copy of an outline already (`bold_size` makes nine copies of a picture in the synthesis's screens).
@@ -319,6 +323,8 @@ struct MixDocs {
     cell: Element,
     /// The screens' caption layout (`uil_a21_mix_caption.xml`: the quantity box and the help plates).
     caption: Element,
+    /// The tutorial box (`a21_balloon_frame/uil_a21_balloon_frame_20x03.xml`).
+    balloon: Element,
 }
 
 pub struct Page {
@@ -361,7 +367,7 @@ pub struct Page {
 }
 
 /// The style files the layouts' styles are in.
-const STYLE_FILES: [&str; 16] = [
+const STYLE_FILES: [&str; 17] = [
     "ui_en\\gen_styles\\uis_gen_a21_status.xml",
     "ui_en\\gen_styles\\uis_gen_a21_item_info.xml",
     "ui_en\\gen_styles\\uis_gen_a21_caption.xml",
@@ -378,6 +384,7 @@ const STYLE_FILES: [&str; 16] = [
     "ui_en\\gen_styles\\uis_gen_a21_mix.xml",
     "ui_cmn\\etc\\uis_a21_item_s.xml",
     "ui_en\\gen_styles\\uis_gen_a21_library.xml",
+    "ui_en\\gen_styles\\uis_gen_a21_balloon_frame.xml",
 ];
 
 fn texture_path(texture: &str, english: bool) -> String {
@@ -406,7 +413,7 @@ impl Page {
         let mix_sheet = table::parse(&read("ui_en\\a21_mix\\uil_a21_mix_item_sheet.xml")?).map_err(|e| format!("mix item sheet: {e}"))?;
         let mix_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_mix\\{n}"))?).map_err(|e| format!("{n}: {e}"));
         let cab_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_cabinet\\{n}"))?).map_err(|e| format!("{n}: {e}"));
-        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")?, caption: mix_read("uil_a21_mix_caption.xml")? };
+        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")?, caption: mix_read("uil_a21_mix_caption.xml")?, balloon: table::parse(&read("ui_en\\a21_balloon_frame\\uil_a21_balloon_frame_20x03.xml")?).map_err(|e| format!("balloon: {e}"))? };
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -434,7 +441,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell, &mix_docs.caption] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell, &mix_docs.caption, &mix_docs.balloon] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -467,6 +474,7 @@ impl Page {
         wanted.insert((texture_path("ui/a21_common.g1t", false), HELP_PLATE));
         wanted.insert((texture_path("ui/sys_alpha_gradation.g1t", false), 0));
         wanted.insert((texture_path("ui/sys_no_image.g1t", false), 0));
+        wanted.insert((texture_path("ui/sys_alpha_circle.g1t", false), 0));
         let wanted: Vec<(String, usize)> = wanted.into_iter().collect();
         let sizes = wanted
             .iter()
@@ -481,6 +489,10 @@ impl Page {
         if let Some(slot) = wanted.iter().position(|(p, _)| p.ends_with("sys_alpha_gradation.g1t")) {
             let (tw, th) = sizes[slot];
             styles.insert("alpha_gradation".to_string(), vec![Pic { path: wanted[slot].0.clone(), index: 0, uvwh: [0.0, 0.0, tw as f32 * PER_LAYOUT, th as f32 * PER_LAYOUT], per_layout: PER_LAYOUT, over_texture: PER_LAYOUT, edges: None }]);
+        }
+        if let Some(slot) = wanted.iter().position(|(p, _)| p.ends_with("sys_alpha_circle.g1t")) {
+            let (tw, th) = sizes[slot];
+            styles.insert("alpha_circle".to_string(), vec![Pic { path: wanted[slot].0.clone(), index: 0, uvwh: [0.0, 0.0, tw as f32 * PER_LAYOUT, th as f32 * PER_LAYOUT], per_layout: PER_LAYOUT, over_texture: PER_LAYOUT, edges: None }]);
         }
         let strings_root = table::parse(&read("text_en\\strcombineall.xml")?).map_err(|e| format!("strcombineall: {e}"))?;
         let strings = strings_root
@@ -506,6 +518,7 @@ impl Page {
                     || (3_538_945..3_538_945 + 2000).contains(n)
                     || (9_961_000..9_962_000).contains(n)
                     || (10_092_000..10_093_000).contains(n)
+                    || (10_027_000..10_028_000).contains(n)
             })
             .collect();
         Ok(Page { styles, wanted, sizes, strings, equip, chara, status, caption, faces, skill, item, targets, cabinet, cell, tabs, explore, library_bg, library_top, library_items, library_eff, mix_sheet, mix_docs, text_styles, glyphs: files.glyphs })
@@ -534,7 +547,7 @@ impl Page {
     /// The page's quads in draw order on a `screen` of pixels, and which of them are drawn added to what is under them.
     pub fn quads(&self, look: &Look, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // Frames since A on the card: the Status page's parts come in by it (the Equipment page's are whole by the time it is shown).
         let clock = look.age;
@@ -732,7 +745,7 @@ impl Page {
     /// and the card of the tool under it (from the right) and the title plate.
     pub fn tools_quads(&self, look: &ToolsLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let (base, add, f) = cursor_colors(look.age);
@@ -774,7 +787,7 @@ impl Page {
             None => 1.0 - (s.since / GUIDE_FADE).clamp(0.0, 1.0),
         });
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let fade = |frames: f32| (frames / GUIDE_FADE).clamp(0.0, 1.0);
         let (back, top) = match look.leaving {
@@ -909,7 +922,7 @@ impl Page {
     /// plate (`uil_a21_cabinet.xml`'s `default`, which slides in from the left over 40 frames, and the card from the right).
     pub fn shelf_quads(&self, look: &ShelfLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let into = |total: f32| look.leaving.map_or(look.age, |out| total - out);
         let row = |s: &str, name: &str| s.strip_prefix(name).and_then(|n| n.strip_prefix(':')).and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
@@ -1202,7 +1215,7 @@ impl Page {
     /// The finished item's card, on a `screen` of pixels (the card is whole: its coming in, `mix_anm_finish_card_in`, is not drawn).
     pub fn sheet_quads(&self, look: &SheetLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let t = look.clock;
         // The effect under the card.
@@ -1317,7 +1330,7 @@ impl Page {
     /// title plate and the alchemy level panel. STAND-IN: the numbers are the capture's; the experience rule is not read.
     pub fn complete_quads(&self, look: &CompleteLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         // The effects under the card and over it, then the level panel, then the plate (the layout's order).
         let age = look.age;
@@ -1356,7 +1369,7 @@ impl Page {
     /// `leaving`: the frames since A, which sends the card out to the right (the slide in played backwards) and brings the level panel in.
     pub fn result_quads(&self, card: &Card, leaving: Option<(f32, CompleteLook)>, entering: Option<(f32, SheetLook)>, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: false, ordinal: 0, mask: None, clips: Vec::new(), mix: false, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         let slide = match (&leaving, entering) {
             (Some((out, _)), _) => Slide::in_from(SLIDE_FRAMES - out.max(0.0), [40.0, 0.0]),
@@ -1484,6 +1497,8 @@ struct Walker<'a> {
     mix: bool,
     /// The outlines of texts and pictures stand this share of their size from them (the ring graph's plates keep the ring's zoom, not the unzoomed node's).
     bold_scale: f32,
+    /// The plain string's character the line being drawn starts at (the colour runs count from the string's start).
+    run_base: usize,
 }
 
 /// An animation's hold on a part of the page: its opacity and its offset in layout pixels.
@@ -1782,14 +1797,18 @@ impl Walker<'_> {
         let string = o.text.clone().or_else(|| e.attr("string_id").and_then(|s| self.page.string(s)).map(str::to_string));
         let Some(string) = string else { return };
         let ky = xf.c.hypot(xf.d);
+        let mut at = 0;
         for (i, line) in self.wrap(e, &xf, o, &string).iter().enumerate() {
-            self.text_line(e, Xf { y: xf.y + i as f32 * LINE_STEP * ky, ..xf }, o, line);
+            self.run_base = at;
+            self.text_line(e, Xf { y: xf.y + i as f32 * o.step.unwrap_or(LINE_STEP) * ky, ..xf }, o, line);
+            at += line.chars().count();
         }
+        self.run_base = 0;
     }
 
     /// A text's lines: the string as one, or broken at spaces so that no line (with the space it ends in) is wider than the
     /// node's `limit_width` (layout pixels).
-    fn wrap(&self, e: &Element, xf: &Xf, o: &Over, string: &str) -> Vec<String> {
+    pub(super) fn wrap(&self, e: &Element, xf: &Xf, o: &Over, string: &str) -> Vec<String> {
         let Some(limit) = e.attr("limit_width").and_then(|v| v.trim().parse::<f32>().ok()) else { return vec![string.to_string()] };
         let glyphs = &self.page.glyphs[usize::from(e.attr("font") != Some("MainFont01"))];
         let size = e.attr("font_size").and_then(|v| v.trim().parse().ok()).or(o.size).unwrap_or(17.0);
@@ -1846,9 +1865,12 @@ impl Walker<'_> {
             };
             o.tint.or_else(|| o.color.filter(|_| numbers(e, "font_color").len() < 4)).unwrap_or_else(|| c.map(|v| v / 255.0))
         };
-        let mut run = |dx: f32, dy: f32, color: [f32; 4]| {
+        let base = self.run_base;
+        let mut run = |dx: f32, dy: f32, color: [f32; 4], main: bool| {
             let mut pen = left + dx;
-            for g in string.chars().filter_map(|c| glyphs.get(&c)) {
+            for (n, g) in string.chars().enumerate().filter_map(|(n, c)| glyphs.get(&c).map(|g| (n, g))) {
+                // (a text with colour runs, `Over::runs`: the glyph takes the colour of the last run that began at or before it)
+                let color = if main { o.runs.iter().rev().find(|r| r.0 <= base + n).map_or(color, |r| r.1) } else { color };
                 let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.width as f32, g.height as f32);
                 let (x0, y0) = (pen + g.x_offset as f32 * s, top + dy + g.y_offset as f32 * sy);
                 let (x1, y1) = (x0 + gw * s, y0 + gh * sy);
@@ -1874,11 +1896,11 @@ impl Walker<'_> {
             let outline = if b.len() >= 4 { [b[0] / 255.0, b[1] / 255.0, b[2] / 255.0, b[3] / 255.0 * OUTLINE_ALPHA] } else { [0.0, 0.0, 0.0, OUTLINE_ALPHA] };
             for dx in [-1.0, 0.0, 1.0] {
                 for dy in [-1.0, 0.0, 1.0] {
-                    run(dx * bold * k * self.bold_scale, dy * bold * k * self.bold_scale, outline);
+                    run(dx * bold * k * self.bold_scale, dy * bold * k * self.bold_scale, outline, false);
                 }
             }
         }
-        run(0.0, 0.0, color);
+        run(0.0, 0.0, color, true);
     }
 }
 

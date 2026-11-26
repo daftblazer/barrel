@@ -46,6 +46,15 @@ pub struct RecipeLook {
     pub age: f32,
     /// The ring graph behind the screen, from the cursor's move to the second recipe (its bars go over it).
     pub graph: Option<FieldLook>,
+    /// The tutorial page up over the screen.
+    pub tutorial: Option<Tutorial>,
+}
+
+/// A tutorial page: its number (0 to 4), the frames since the box came up and the arrow's clock.
+pub struct Tutorial {
+    pub page: usize,
+    pub age: f32,
+    pub clock: f32,
 }
 
 /// The list's place: the layout's `recipe_menu` (2, 108) and its `menu_top` (0, 41).
@@ -67,7 +76,7 @@ impl Page {
     /// The Select Recipe screen's quads on a `screen` of pixels (the background and the help bar are other layers').
     pub fn recipe_quads(&self, look: &RecipeLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
-        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: true, bold_scale: 1.0 };
+        let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: true, bold_scale: 1.0, run_base: 0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
         if let Some(graph) = &look.graph {
             self.ring_graph(&mut w, &root, graph);
@@ -84,6 +93,9 @@ impl Page {
             self.quantity_box(&mut w, &root, &row.info);
         }
         self.caption_plate(&mut w, &root, RECIPE_TITLE, Slide::NONE);
+        if let Some(t) = &look.tutorial {
+            self.tutorial_box(&mut w, &root, t);
+        }
         (w.out, w.additive, w.clips)
     }
 }
@@ -255,5 +267,97 @@ impl Page {
                 w.walk(name, root.node([at[0] + t[0], at[1] + t[1]], 0.0, [1.0; 2]), &mut Vec::new(), &|_: &[&str]| Over { text: string(ALL_WORD), ..Default::default() }, &HashMap::new());
             }
         }
+    }
+}
+
+/// The tutorial pages' strings (`str_tutorial`: "Helpful Synthesis Features", then the four pages).
+const TUTORIAL_STRINGS: [u32; 5] = [10_027_054, 10_027_055, 10_027_056, 10_027_057, 10_027_058];
+/// The box's place (layout pixels): the layout's root is at (325, 401); the game stands it 31 higher (`synth-atelier` 2500: the panel's top at 761 of 1080 lines).
+const BALLOON_AT: [f32; 2] = [325.0, 370.0];
+/// The width the box's text wraps at (layout pixels). STAND-IN: fitted to the pages' breaks.
+const BALLOON_WRAP: f32 = 520.0;
+/// The words stand this much higher than the layout's `msg_text` (layout pixels; STAND-IN: the capture's first line is 19 pixels of 1080 lines above where the text routine puts it).
+const TEXT_RAISE: f32 = 12.7;
+/// The distance between the box's lines (layout pixels: 36 of 1080 lines).
+const TEXT_STEP: f32 = 24.0;
+/// The tutorial colour of a highlighted word (`<#006e5a>`).
+const BUTTONS: [(&str, char); 3] = [("<KEY_ASSIGN_MIX_AUTO>", '\u{4e7}'), ("<KEY_ASSIGN_MIX_MATERIAL_MULTI_SELECT>", '\u{4e7}'), ("<KEY_ASSIGN_BASIC_OK>", '\u{4da}')];
+/// The arrow turns once in 240 frames (`anm_rotate`).
+const ARROW_FRAMES: f32 = 240.0;
+
+/// A tutorial text without its markup, and where each colour starts (`<#RRGGBB>`, `<CLNR>` back to the plain colour), by character.
+fn markup(text: &str) -> (String, Vec<(usize, [f32; 4])>) {
+    let (mut plain, mut runs) = (String::new(), Vec::new());
+    let mut rest = text;
+    'text: while !rest.is_empty() {
+        if let Some(tag) = rest.strip_prefix("<#").and_then(|r| r.get(..7)).filter(|t| t.ends_with('>')) {
+            let v = u32::from_str_radix(&tag[..6], 16).unwrap_or(0);
+            runs.push((plain.chars().count(), [(v >> 16) as f32 / 255.0, (v >> 8 & 0xff) as f32 / 255.0, (v & 0xff) as f32 / 255.0, 1.0]));
+            rest = &rest[9..];
+            continue;
+        }
+        if let Some(r) = rest.strip_prefix("<CLNR>") {
+            runs.push((plain.chars().count(), [26.0 / 255.0, 0.0, 0.0, 1.0]));
+            rest = r;
+            continue;
+        }
+        for (tag, glyph) in BUTTONS {
+            if let Some(r) = rest.strip_prefix(tag) {
+                plain.push(glyph);
+                rest = r;
+                continue 'text;
+            }
+        }
+        let c = rest.chars().next().unwrap_or(' ');
+        plain.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    (plain, runs)
+}
+
+/// A copy of `e` with the attribute `name` of every node called `node` set to `value`.
+fn with_attr(e: &Element, node: &str, name: &str, value: &str) -> Element {
+    let mut copy = e.clone();
+    if copy.attr("name") == Some(node) {
+        copy.attributes.retain(|(k, _)| k != name);
+        copy.attributes.push((name.to_string(), value.to_string()));
+    }
+    copy.children = e.children.iter().map(|c| with_attr(c, node, name, value)).collect();
+    copy
+}
+
+impl Page {
+    /// The tutorial box (`uil_a21_balloon_frame_20x03.xml`'s `size_s`): the panel, the page's words and the turning arrow, rising and fading in over 30 frames.
+    pub(super) fn tutorial_box(&self, w: &mut Walker, root: &Xf, t: &Tutorial) {
+        let Some(size_s) = find(&self.mix_docs.balloon, "size_s") else { return };
+        let Some(text) = TUTORIAL_STRINGS.get(t.page).and_then(|n| self.strings.get(n)) else { return };
+        let (plain, runs) = markup(text);
+        let size_s = with_attr(size_s, "msg_text", "limit_width", &BALLOON_WRAP.to_string());
+        let origin = root.node(BALLOON_AT, 0.0, [1.0; 2]);
+        // The lines stand 24 layout pixels apart, the block centred on a line of the box (a single line 12 pixels below the first of two).
+        let lines = find(&size_s, "msg_text").map_or(1, |m| w.wrap(m, &origin, &Over::default(), &plain).len()).max(1);
+        let first = 90.0 - TEXT_RAISE + TEXT_STEP / 2.0 * (2.0 - lines as f32);
+        let over = |p: &[&str]| -> Over {
+            match p {
+                ["size_s"] => Over { show: true, ..Default::default() },
+                ["size_s", "panel", "msg_text"] => Over { text: Some(plain.clone()), runs: runs.clone(), at: Some([86.0, first]), step: Some(TEXT_STEP), ..Default::default() },
+                ["size_s", "panel", "name_base", ..] => Over { hide: true, ..Default::default() },
+                ["size_s", "panel", "prompt", ..] => Over { hide: true, ..Default::default() },
+                _ => Over::default(),
+            }
+        };
+        w.slid(Slide::in_from(t.age, [0.0, 30.0]), |w| {
+            w.walk(&size_s, origin, &mut Vec::new(), &over, &HashMap::new());
+            // The arrow: its shadow, the two turning halves (turned the one way and the other) and the core, at the layout's `prompt`.
+            let prompt = origin.node([-12.0 + 600.0, 137.0 + 100.0], 0.0, [1.0; 2]);
+            let angle = (360.0 * t.clock / ARROW_FRAMES) % 360.0;
+            let half = 100.0 / 3.0 / 2.0;
+            let shadow = Element { name: "image".into(), attributes: vec![("style".into(), "alpha_circle".into()), ("size_wh".into(), "25.6, 25.6, 0".into())], children: Vec::new() };
+            w.image(&shadow, prompt.node([16.4, 17.2], 49.4, [1.0; 2]).node([-12.8, -12.8], 0.0, [1.0; 2]), &Over { paint: Some([26.0 / 255.0, 0.0, 0.0, 60.0 / 255.0]), ..Default::default() });
+            for (style, turn) in [("gen_a21_baloon_frame01_ic_prop02", angle), ("gen_a21_baloon_frame01_ic_prop", -angle), ("gen_a21_baloon_frame01_ic_core", 0.0)] {
+                let part = Element { name: "image".into(), attributes: vec![("style".into(), style.into())], children: Vec::new() };
+                w.image(&part, prompt.node([half, half], turn, [1.0; 2]).node([-half, -half], 0.0, [1.0; 2]), &Over::default());
+            }
+        });
     }
 }
