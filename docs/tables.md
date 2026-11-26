@@ -2851,3 +2851,24 @@ card is the Container page's (`uil_a21_item_info.xml`'s `normal_item`) and the f
 `uia_a21_mix.xml` (`mix_anm_finish_card_in`: the card rises 25 layout pixels by out cubic from frame 20 to 140 and fades in from 20 to 60, its
 panel's copy at 2.5 times the speed; `mix_anm_finish_mix05` to `09`: the white, the glows; `mix_anm_level_up_*`: the plate's spline rise
 (frames 0 150, 20 150, 45 -50, 65 25, 80 -13, 95 0), its alpha 20 to 50, the words' glow and the two glows).
+
+
+## Ryza DX: the synthesis field (`Saves/mix/mixfielddata.xml`)
+
+Plain Shift-JIS XML read through `barrel_ryza::rings::Rings` (by `FieldData tag`, an `ITEM_MIX_*`; 228 recipes; `Rings::extend` adds or replaces
+recipes' graphs, so a mod's file adds a recipe). Each `FieldData` has 16 `<Ring>` slots; a slot with no `elem` is empty. A ring's attributes: `elem` (0 fire, 1 ice,
+2 thunder, 3 air: `itemdata.xml`'s `elemFire` ... `elemAir` order), `type` (what its steps give, below), `restrict` (the recipe row whose materials it takes:
+checked on recipe 92, where ring 0 (row 0, the flowers) and ring 3 (row 1, the liquid) are the only ones the key fills), `ex_material` (an item tag; 279 rings:
+not read yet), `ev_start` (a story event that shows the ring; 18: not read), `x` and `y` (its place on the graph's grid, 0 when absent). Its children:
+`Child indexes` (the six neighbours by direction, -1 for none), `Connect` (`idx` the ring that opens it, `val` the amount of `elem` that ring must hold (0 when
+absent), `elem`, `dir` the direction the link leaves by; no `idx`: a root, lit from the start) and `Param` (`v0..` the values, `e0..` the thresholds of the steps: the highest
+step the ring's element value reaches gives its value; the values of type-6 rings are recipe or event tags).
+- **The state** the game keeps per ring is `(value, lit)` (32 words, the key's `ringeval`): a lit ring's value is the amount of its element placed in it; an unlit ring's
+  is its link's ring's value of the linked element less `val` (that ring's value counts 0 while it is shut), at most 0: recipe 92's ring 3 reads -2 with no fire in
+  ring 0, -1 with one, and is lit at 2; an empty slot reads (0, 0).
+- **A material** gives each ring it is placed in its `elemValue` of that ring's element when it names the element (`elemFire` etc. present in its `itemdata.xml` row; the
+  attribute's -1 is not read).
+- **Types** (by the game's jump table, `0x1402cadf4`): 0 to 3 an effect slot's tier (the step's value; the highest over rings; the recipe's rows `0..3` are the slots and
+  the row's `AddEff` list the tiers: recipe 92's ring 0 gives tiers 0 to 3 at fire 2, 3, 4, 5 = `ITEM_EFF_CREATE_QUALITY_01..04`), 4 the quality bonus (summed: the
+  ice rings' 10, 15, 20, 25 at ice 1 to 4), 5 a sum into totals word 1, 6 an effect id or unlock (a tag), 7 and 8 words 6 and 7, 9 and 11 to 16 word `type - 1`, 10 nothing.
+  Only types 0, 1, 4 and 5 are seen in the key; the others follow the game's table and are unchecked.

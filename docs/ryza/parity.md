@@ -42,6 +42,12 @@ particles' textures and are not drawn. `--hud-arrival` is 1730 here, two frames 
 within a frame, 0 extra), `synth-screens` (30 screen changes, the card 3820, the result 4000, Complete 4060, going out 4240, the room 4300), `synth-walk-end` (her end place
 within 10 units of the dump at 2250: fitted, see open.md) and `synth-flow-end` (clock 1193, level 2, 21 units).
 
+**synth rules** (P6 part 3): three rows run the rules of `barrel_ryza::rings` against the synth-rules key (ryza-recomp `scenarios/synth-rules/hooks.log`, same inputs as synth-atelier).
+`synth-rules` runs `barrel-tool ryza-rules ... 92 tools/synth_rules_events.txt` (the key's placements: two flowers in ring 0, the water in ring 3, and the frames where a loop's
+press shows the empty ring state) and diffs its rows (quality, mean, sum, count, the rings' quality bonus A, the four effect slots' tiers) with `tools/synth_rules_key.py` of the hook
+log's `setq` lines: 11 changes, 0 differ; `synth-rules-rings` does the same for the 32 ring state words of each `ringeval` (11 states, 0 differ); `synth-rules-made` runs `ryza-synth
+... --placements` and reads the made quality 49 and its one effect (`ITEM_EFF_CREATE_QUALITY_01`).
+
 **synth**: eight rows are the draws and the rules, not pictures. `synth-draws`, `-index`, `-end-index` run `tools/synth_script.py` and `barrel-tool ryza-lockstep` over the
 whole capture (2250 to 4900: 109 draws, the index right at each of the 26 dumps, 0x285 at the end); `synth-refresh-draws` and `-index` run `barrel-tool ryza-mix ... --steps` from the
 generator of 3535 and diff its calls with the hook log's lines of frames 3535 and 3536 (98 draws: the effect's 48 and the world's pass); `synth-recipe`, `-takes` and

@@ -626,6 +626,20 @@ list has them. The synthesis's draws (docs/ryza/open.md, "Synthesis (P6)"): the 
 `0x14059f4a0` fills the 13 groups' lists from the table at `0x1402fc490`), the voice picks at `0x1402de19b`; `barrel_ryza::mix::Step` runs them by the hook
 log's own words and `barrel-tool ryza-lockstep` takes them as `FRAME draw irand A B` lines.
 
+## Ryza DX: the synthesis rules
+
+`barrel_ryza::rings` (the data: docs/tables.md, "the synthesis field"). The addresses of the game's code the rules were read from (ryza-recomp's synth-rules key):
+- `0x1402cbb50` (the mix state's subtree; the state's +0xa8 a mode 1 or 2, +0xf0 `B`) recomputes the product on every material change: `0x1402ca8a0` walks the placed
+  materials with the lambda `0x1402ca060` (count += 1, sum += the quality (`0x1402a4510`, a float add), bonus157 += `0x1402a1f10(material, 0x157, 0)`, other += kind 0x15b),
+  `0x1402caa50` fills the 16 totals words from the rings, then `quality = trunc(min(999, max(0, sum / count + bonus157 + (A - B))))` (the 999 is the f32 at `0x140e52c6c`;
+  A is totals word 0) and `0x1402a5c10` and `0x1402a5430` set it on the product. `0x1402a59c0` sets the level-ish value (1 to 99) and `0x1402a5c90` the mode 2 one (not read).
+- `0x1402caa50` walks the state's rings (`+0xc0` to `+0xc8`, stride `0xa8`, last to first): `0x1402efc10(id)` is a ring list's definition, `0x1402cacd0(definition, state,
+  out)` evaluates it (a ring counts when its byte `+4` is lit and its level is at least 0; `0x1401c0050(ring)` the value of the highest step reached; then the jump table
+  `0x1402cadf4` by `type`) and the out words are added to the totals. The effect slots' tiers (0 to 4) pick, per slot, the line of the made item's effect.
+- Not read (STAND-INs of `Cauldron::outcome`): the kinds `0x157` and `0x15b` of a material (0 in the key), the state's `B` (0), the level and experience rule.
+Deliberate difference: none (the numbers are the game's). `ryza-synth` takes the key's placements from a file (`--placements`); the game's cursor and loops that choose them are not
+modelled.
+
 ## Movies
 
 Eight movies play at the openings, chapter breaks and endings (`docs/events.md`, "Movies":
