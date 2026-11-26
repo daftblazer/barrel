@@ -1105,6 +1105,10 @@ fn made_result(install: &barrel_ryza::install::Install, units: &[barrel_ryza::sa
     Ok((outcome.quality as u16, effects))
 }
 
+/// The frames before the A that leaves Complete at which its level panel begins to slide out.
+// STAND-IN: `synth-atelier` 4250 and 4260 (the panel is 15 and 25 frames into a 30 frame slide: it began on 4235, the pad's A is on 4240).
+const LEAVE_BEFORE_A: f32 = 5.0;
+
 /// The card's animation clock on its `frames`th frame: the frames themselves, but for the stretch the capture's clock runs ahead by 12.
 // STAND-IN: the (frames, clock) pairs of the capture's sampled card frames (`synth-atelier` 3830 to 3940, the `synth-card-*` rows); between them the clock is interpolated, and from 122 frames
 // (3950: the card's coming in is over, its clock stops mattering) it has none.
@@ -1160,7 +1164,7 @@ fn mix_run_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
             let result_from = began(Screen::Result).unwrap_or(frame);
             let complete_from = began(Screen::Complete).unwrap_or(frame);
             let in_result = frame - result_from;
-            let leaving = began(Screen::Leaving).map(|from| frame - from).filter(|t| *t >= 0.0);
+            let leaving = began(Screen::Leaving).map(|from| frame - from + LEAVE_BEFORE_A).filter(|t| *t >= 0.0);
             match run.screen {
                 Screen::Result => mix_sheet_layers(install, gpu, renderer, 329, MixShown::Result(quality, effects, None, (in_result < 20.0).then_some(in_result + 1.0)), screen),
                 _ if frame - complete_from < 30.0 => mix_sheet_layers(install, gpu, renderer, 329, MixShown::Result(quality, effects, Some(frame - complete_from), None), screen),

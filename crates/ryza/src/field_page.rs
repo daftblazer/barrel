@@ -1294,9 +1294,9 @@ pub struct CompleteLook {
 }
 
 /// The Complete screen's level panel leaves over this many frames (`anm_common_slide_in_right` played backwards).
-// STAND-IN: `synth-atelier` 4260, 20 frames after the A of 4240: the panel's opacity 107/255 and 23.1 layout pixels from its place fit 24 frames of the slide's 40 pixels (a 30 frame slide
-// fits too if it began on 4235); the later frames (4270 on) are the room's.
-const LEAVE_FRAMES: f32 = 24.0;
+// The slide's own 30 frames (`synth-atelier` 4250 and 4260: the panel's opacity 223/255 and 107/255, 5 and 23.1 layout pixels from its place, are 15 and 25 frames in); it begins 5 frames
+// before the Machine's A (`play::LEAVE_BEFORE_A`).
+const LEAVE_FRAMES: f32 = 30.0;
 
 /// A keyed curve of `uia_a21_mix.xml`: (frame, value) pairs, linear between them; before the first key the first value, after the
 /// last the last (two keys on one frame make a step).
