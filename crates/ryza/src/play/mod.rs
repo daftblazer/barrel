@@ -1035,6 +1035,18 @@ fn popup_alpha(frame: f32, tl: &AddTimeline) -> f32 {
 }
 
 
+/// The prompt before the synthesis on `frame`: its box fades in over `PROMPT_FADE` frames from `PROMPT_OPENS_BEFORE` the confirming A and out as many from the frame before it.
+// STAND-IN: the capture's window opacities (`synth-atelier` 3500: 17/255, 3510: 187/255, 3520: 238/255, 3530: 68/255) give the fade's 15 frames and the start 21 frames before the
+// A (the rule that opens it, 39 frames after the last loop's press, is not read).
+fn prompt_look(frame: f32, tl: &AddTimeline) -> Option<barrel_ryza::field_page::Prompt> {
+    use barrel_ryza::field_page as fp;
+    const PROMPT_FADE: f32 = 15.0;
+    const PROMPT_OPENS_BEFORE: f32 = 21.0;
+    let (press, opens) = (tl.presses[10], tl.presses[10] - PROMPT_OPENS_BEFORE);
+    let alpha = ((frame - opens) / PROMPT_FADE).clamp(0.0, 1.0).min(1.0 - (frame - (press - 1.0)) / PROMPT_FADE);
+    (alpha > 0.0).then(|| fp::Prompt { alpha, age: frame - opens, glow: frame < press })
+}
+
 /// The synthesis's Add Materials screen (`--mix-add FRAME`): the background, then the screen's parts. STAND-IN: the capture's recipe (Red Supplement); the
 /// rings' states are the start's (the first ring open) until the rules' placements are wired in.
 fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, tl: &AddTimeline, units: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
@@ -1159,7 +1171,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u32>().ok()? + 1332;
         strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned()
     });
-    let look = fp::AddLook { bare: frame >= runs_at, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame, tl), focus_zero, quiet: frame >= runs_at }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame, tl) };
+    let look = fp::AddLook { bare: frame >= runs_at, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame, tl), focus_zero, quiet: frame >= runs_at }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame, tl), prompt: prompt_look(frame, tl) };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;

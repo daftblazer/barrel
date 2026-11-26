@@ -330,7 +330,7 @@ fn markup(text: &str) -> (String, Vec<(usize, [f32; 4])>) {
 }
 
 /// A copy of `e` with the attribute `name` of every node called `node` set to `value`.
-fn with_attr(e: &Element, node: &str, name: &str, value: &str) -> Element {
+pub(super) fn with_attr(e: &Element, node: &str, name: &str, value: &str) -> Element {
     let mut copy = e.clone();
     if copy.attr("name") == Some(node) {
         copy.attributes.retain(|(k, _)| k != name);

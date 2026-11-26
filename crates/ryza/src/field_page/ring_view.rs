@@ -259,6 +259,10 @@ impl Page {
         }
         // (the layout's `mix_param` comes between them, and the ring's own `ring_info` over the panel's frame and the quantity box)
         self.product_panel(&mut w, &root, &look.row, Some(&look.panel));
+        // (the prompt's box comes right after the panel's picture)
+        if let Some(prompt) = &look.prompt {
+            self.prompt_box(&mut w, &root, prompt);
+        }
         if let (Some(popup), Some(ring)) = (&look.popup, look.field.rings.get(look.field.cursor)) {
             w.slid(Slide { alpha: popup.alpha, dx: 0.0, dy: 0.0 }, |w| self.ring_popup(w, &root, [CENTRE[0] + look.field.shift[0] + ring.at[0] as f32 * GRID[0], CENTRE[1] + look.field.shift[1] + ring.at[1] as f32 * GRID[1] + POPUP_BELOW], ring, popup));
         }
@@ -289,6 +293,8 @@ pub struct AddLook {
     pub materials: Option<MaterialsLook>,
     /// The quantity box's circles lit (the materials placed).
     pub lit: usize,
+    /// The prompt before the synthesis ("OK" and "Start Over").
+    pub prompt: Option<super::Prompt>,
 }
 
 /// What a ring's popup says: its heading and a row for each tier.

@@ -12,9 +12,11 @@
 //! slides and fades of the page's coming and going (docs/ryza/open.md, "Field menu, part 7").
 
 mod material_view;
+mod prompt_view;
 mod recipe_view;
 mod ring_view;
 pub use material_view::{MaterialInfo, MaterialItem, MaterialsLook};
+pub use prompt_view::Prompt;
 pub use recipe_view::{AddPanel, RecipeInfo, RecipeLook, RecipeRow, Tutorial};
 pub use ring_view::{AddLook, FieldLook, Popup, RingShow, FOCUS_ZERO_AT};
 
@@ -329,6 +331,9 @@ struct MixDocs {
     balloon: Element,
     /// The panel under the material list (`uil_a21_mix_simple_item_info.xml`: the item's quality, elements, effects and traits).
     simple: Element,
+    /// The balloon select's window and cursor (`_menu_templates/uil_mt_balloon_select.xml`) and its line's text (`_line_format/uil_lf_balloon_select.xml`).
+    select: Element,
+    select_line: Element,
 }
 
 pub struct Page {
@@ -417,7 +422,7 @@ impl Page {
         let mix_sheet = table::parse(&read("ui_en\\a21_mix\\uil_a21_mix_item_sheet.xml")?).map_err(|e| format!("mix item sheet: {e}"))?;
         let mix_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_mix\\{n}"))?).map_err(|e| format!("{n}: {e}"));
         let cab_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_cabinet\\{n}"))?).map_err(|e| format!("{n}: {e}"));
-        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")?, caption: mix_read("uil_a21_mix_caption.xml")?, balloon: table::parse(&read("ui_en\\a21_balloon_frame\\uil_a21_balloon_frame_20x03.xml")?).map_err(|e| format!("balloon: {e}"))?, simple: mix_read("uil_a21_mix_simple_item_info.xml")? };
+        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")?, caption: mix_read("uil_a21_mix_caption.xml")?, balloon: table::parse(&read("ui_en\\a21_balloon_frame\\uil_a21_balloon_frame_20x03.xml")?).map_err(|e| format!("balloon: {e}"))?, simple: mix_read("uil_a21_mix_simple_item_info.xml")?, select: table::parse(&read("ui_en\\_menu_templates\\uil_mt_balloon_select.xml")?).map_err(|e| format!("balloon select: {e}"))?, select_line: table::parse(&read("ui_en\\_line_format\\uil_lf_balloon_select.xml")?).map_err(|e| format!("balloon select line: {e}"))? };
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -445,7 +450,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell, &mix_docs.caption, &mix_docs.balloon, &mix_docs.simple] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell, &mix_docs.caption, &mix_docs.balloon, &mix_docs.simple, &mix_docs.select, &mix_docs.select_line] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -509,6 +514,7 @@ impl Page {
                     || *n == EQUIPMENT_TITLE
                     || *n == STATUS_TITLE
                     || *n == COMPLETE_TITLE
+                    || *n == prompt_view::OK_STRING
                     || (ACTION_NAME..ACTION_NAME + 1000).contains(n)
                     || (ACTION_COMMENT..ACTION_COMMENT + 1000).contains(n)
                     || (NAME_BASE..NAME_BASE + 1000).contains(n)
