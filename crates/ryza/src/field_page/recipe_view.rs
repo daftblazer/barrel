@@ -283,7 +283,7 @@ const BALLOON_WRAP: f32 = 520.0;
 const TEXT_RAISE: f32 = 12.7;
 /// The distance between the box's lines (layout pixels: 36 of 1080 lines).
 const TEXT_STEP: f32 = 24.0;
-/// The tutorial colour of a highlighted word (`<#006e5a>`).
+/// The pad's buttons the tutorial texts name (`<KEY_ASSIGN_...>`), as the glyphs the font has for them (STAND-IN: the pad's assignment is not read; the capture's pages show these).
 const BUTTONS: [(&str, char); 3] = [("<KEY_ASSIGN_MIX_AUTO>", '\u{4e7}'), ("<KEY_ASSIGN_MIX_MATERIAL_MULTI_SELECT>", '\u{4e7}'), ("<KEY_ASSIGN_BASIC_OK>", '\u{4da}')];
 /// The arrow turns once in 240 frames (`anm_rotate`).
 const ARROW_FRAMES: f32 = 240.0;
@@ -362,5 +362,27 @@ impl Page {
                 w.image(&part, prompt.node([half, half], turn, [1.0; 2]).node([-half, -half], 0.0, [1.0; 2]), &Over::default());
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tutorials_markup_gives_the_plain_text_and_where_each_colour_starts() {
+        let (plain, runs) = markup("Use <#006e5a>Auto-Add<CLNR> or press <KEY_ASSIGN_BASIC_OK>.");
+        assert_eq!(plain, "Use Auto-Add or press \u{4da}.");
+        assert_eq!(runs.iter().map(|r| r.0).collect::<Vec<_>>(), [4, 12]);
+        assert_eq!(runs[0].1, [0.0, 110.0 / 255.0, 90.0 / 255.0, 1.0]);
+    }
+
+    #[test]
+    fn a_nodes_attribute_is_set_by_its_name_anywhere_below() {
+        let child = Element { name: "text".into(), attributes: vec![("name".into(), "msg_text".into())], children: Vec::new() };
+        let root = Element { name: "node".into(), attributes: vec![("name".into(), "size_s".into())], children: vec![child] };
+        let set = with_attr(&root, "msg_text", "limit_width", "520");
+        assert_eq!(set.children[0].attr("limit_width"), Some("520"));
+        assert_eq!(set.attr("limit_width"), None);
     }
 }

@@ -358,3 +358,25 @@ impl Page {
 
 /// The popup's rows stand this far apart (layout pixels: `ring_info`'s `node_1` at 21.78).
 const ROW_STEP_POPUP: f32 = 21.78;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rings_colours_are_the_captures_bytes_for_each_element() {
+        let (dark, rim) = tint(0);
+        assert_eq!((dark[0] * 255.0).round(), 82.0);
+        assert_eq!((rim[0] * 255.0).round(), 191.0);
+        let (dark, rim) = tint(1);
+        assert_eq!(((dark[2] * 255.0).round(), (rim[1] * 255.0).round()), (82.0, 144.0));
+    }
+
+    #[test]
+    fn the_lights_fade_in_and_out_on_an_out_sine() {
+        assert_eq!(out_sine(0.0), 0.0);
+        assert!((out_sine(1.0) - 1.0).abs() < 1e-6);
+        assert!(out_sine(0.5) > 0.5);
+        assert_eq!(out_sine(2.0), 1.0);
+    }
+}
