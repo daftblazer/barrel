@@ -3017,7 +3017,7 @@ frames 2250 to 4900, her and the generator every frame, pictures every 50. Items
 **STAND-INs** (named in the code): the world's restocking schedule; the clock's 50 words to the hour; the made-item rank (a letter lower than
 `item_info`'s steps give: quality 49 is C here, D there); the help bar's plate width on the finished card (40.2 layout pixels more than its words, and the
 words "Fast Forward" until the card's 140 frames, then "Next"); the bar's going away 15 frames after A (10 has it, 20 does not); the title's size (24);
-the Level UP numbers 2, 3 and 0 (the experience rule is not read).
+the Level UP numbers 2, 3 and 0 (the flag form; the machine's numbers now come from the experience rule, `barrel_ryza::alchemy`, row `synth-level`).
 
 **The silhouette** (the capture's white Ryza on the right of Select Recipe and Add Materials): the
 pixels show it white, not black, in every frame I looked at (2250 none, 2400, 2800, 3400, 3500 white, 3050 and 3950 on: lit). The lit frames (3050) have draws the white ones (2800, 3400) lack: 41 big
@@ -3046,7 +3046,7 @@ ryza-synth INSTALL SAVE 92 PAD.txt 1900 4400` runs it on the scenario's own `pad
   arrival (3637.05, 3609.3) and the room camera's yaw (45.95 degrees) are fitted so that 60 frames of the stick (`walk::lean` and the player's full
   speed) end at the key's place (3772.95, 4140.70) facing 14.35 degrees; the error is 0.04 by construction. The key's text says she stops by 2200 (a wall or
   the cauldron's own box may hold her there; walls are not modelled); (5) the made units' quality (49) and effects are the part-1 STAND-IN; (6) the Level UP
-  gain is 1 and the experience rule is not read; (7) the sounds before 2250 (the prompt's click and message at 1960, the arrival's jingle 52 frames on, the
+  gain follows the experience rule (engine.md "Ryza DX: the alchemy level"; the recipe's made count before is the caller's, 0 in `ryza-synth`); (7) the sounds before 2250 (the prompt's click and message at 1960, the arrival's jingle 52 frames on, the
   notice's 33 after its A) are the key's offsets.
 - **Not done in this part**: Select Recipe and Add Materials in 2D (no `--mix-recipe` form, no `synth-recipe-*` / `synth-add-*` rows: still at the 418 to 920
   unmatched `res_` quads a frame listed below, the ring graph's pieces and texts not started), the gaps 3820 and 4260 to 4300, the machine drawing its
@@ -3072,7 +3072,7 @@ ryza-synth INSTALL SAVE 92 PAD.txt 1900 4400` runs it on the scenario's own `pad
   **which presses add a material is not derived** (`ADD_STEPS` of the machine stays: presses 0, 2 and 6 are the key's three, at 2920, 3040 and 3280, the frames the rules' changes are at).
   Without `--placements`, `ryza-synth` puts each row's units (`mix::make`'s four) in the first open ring taking the row: three flowers and the water, quality 48; **the key counts three
   materials (two flowers and the water) while the rows take four units**: why the third flower is not counted is not found. (2) The materials' kinds `0x157` and `0x15b` (bonus and
-  other: 0 in the key), the state's `B` (0), the level and experience rule (Level UP stays a STAND-IN). (3) `restrict` = the recipe row is from one recipe; `ex_material` and
+  other: 0 in the key), the state's `B` (0). The experience rule is built (engine.md "Ryza DX: the alchemy level"; STAND-IN: the made count before). (3) `restrict` = the recipe row is from one recipe; `ex_material` and
   `ev_start` are parsed, not used; types other than 0, 1, 4 and 5 follow the jump table and are unchecked. (4) The made item's effect id on the unit (`Worn.effects`) is not set (the
   effect names are printed from the recipe's `AddEff` rows).
 
@@ -3148,7 +3148,7 @@ Left.
   facing 14.5 degrees is the only check of the walk 2160 to 2200); the attic's room camera (the 2250 frame is a first look: Barrel's frame has the wrong
   camera, so the balloons over the room's three gimmicks, the prompt and the arrival plate "Ryza's Room" are not compared).
 - Select Recipe (with the tutorial pages) and Add Materials (loops, the material list, the quality bar, the ring graph): part 4 (above) draws Select Recipe
-  and Add Materials' ring phase (2870 to 2920); the material phase from 2930 is not drawn. The quality, effects and traits of the result and the experience rule.
+  and Add Materials' ring phase (2870 to 2920); the material phase from 2930 is not drawn. The result's traits and the leftovers of the rules above (the experience rule is built).
 - What Select Recipe and Add Materials are made of (for the next part): the files the key read at 2303 (`barrel-tool pak-reads`): the layouts
   `ui_en/a21_mix/uil_a21_mix_caption`, `_recipe` (44 KB), `_field` (32 KB: the ring graph) with `ui_cmn/a21_mix/uia_a21_mix`, `uia_a21_mix_field`,
   `uil_a21_mix_background`, `_blackout`, `_lecture`, `_scale`, `ui_en/a21_cabinet/uil_a21_cabinet_mix` with its `_cell` and `uil_a21_item_tab_mix` (the list
