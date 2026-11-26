@@ -3133,10 +3133,12 @@ synthesis templates first in `clone_child_tree` (`Page::template(name, mix)`), `
   at 2700, the growth at 2860: one sample each); the first ring open (the rules' state is not wired in: `open: i == 0`).
 - **Left.** (1) Frames 2310 (13: the autosave spinner `a21v2_saveload`, up from 2250 to 2315, which `spinner.rs` draws for the boot's window only), 2800 and 2860 (1 each: on the frame of the
   DOWN and of the A the game draws one quad of the font's texture over the whole screen with all its uv at one texel; Barrel's compare drops its own, so it is not reproduced).
-  (2) **Add Materials from 2930** (the material list: the Container grid `uil_a21_cabinet_mix` and its cell, the item tab "Health Flower", the quality and effect panel under it
-  (`_simple_item_info`, `_gem`), the cursor's flying material, the particles; the graph's pans (+105 pixels in x from 2930 to 2990, 3050 to 3110 and 3290 to 3350, and up two grid steps
-  from 3260: `--mix-add` has none) and the lit states of the rings from the rules (`rings::evaluate`), the quality bar, the second page of the effects list; the help bar with the list up
-  is one entry, built in `Entries::Add` and not checked): 790 `res_` quads at 2950, 640 at 2930, the graph being 320 of them. (3) The gaps 3820 to 3830 and 4260 to 4300 are not started. (4) The silhouette of her model (white in the capture) is not drawn.
+  (2) **Add Materials from 2930** (the material list: the Container grid `uil_a21_cabinet_mix` and its cell, the item tab "Health Flower", the quality and effect panel under it,
+  the cursor's flying material, the particles, the list's own fade in over the 60 frames after A on 2980; the lit states of the rings from the rules (`rings::evaluate`), the
+  quality bar, the second page of the effects list). `--mix-add` has the ring graph for these frames with its pans as a STAND-IN schedule (`ring_graph_pan`: 70 layout pixels to the
+  right while the list has the pad, from 9 frames after the key's A on 2920, 3040 and 3280, and two grid steps up in 12 frames from 3246), the description gone by 2950: the graph
+  matches at 3000 (2 `res_` quads of 159 left, the rest the list and the item panel on the left), 2930 has 556, 2940 646, 2950 704. The help bar with the list up is one entry
+  (`Entries::Add`), not checked. (3) The gaps 3820 to 3830 and 4260 to 4300 are not started. (4) The silhouette of her model (white in the capture) is not drawn.
 
 Left.
 
