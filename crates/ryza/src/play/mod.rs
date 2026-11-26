@@ -878,7 +878,7 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
         let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
         let tag = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
         let recipe = recipes.recipes.iter().find(|r| r.tag == tag).ok_or("no recipe")?;
-        Ok(fp::FieldLook { rings: ring_shows(fields.get(tag).ok_or("no field")?, recipe, &order, |i| i == 0), cursor: 0, clock: f, focus_zero: fp::FOCUS_ZERO_AT, shift: [0.0; 2] })
+        Ok(fp::FieldLook { rings: ring_shows(fields.get(tag).ok_or("no field")?, recipe, &order, |i| i == 0), cursor: 0, clock: f, focus_zero: fp::FOCUS_ZERO_AT, shift: [0.0; 2], quiet: false })
     }).transpose()?;
     let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows, cursor: cursor.max(0) as usize, cursor_shown: cursor >= 0, age, graph, tutorial, opening: opening_age }, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
@@ -930,6 +930,10 @@ fn desc_age(frame: f32) -> f32 {
     let at_a = ((a - 1.0) - rise).min(30.0);
     if frame >= a { at_a - (frame - (a - 1.0)) } else { frame - rise }
 }
+
+/// The frame from which the synthesis is running and Add Materials shows only its ring graph and the bars.
+// STAND-IN: `synth-atelier`: 1008 quads on 3530, 968 on 3540, 152 on 3550 and 40 from 3600 on (the panels fade over those frames: the fade is not drawn).
+const SYNTHESIS_RUNS_AT: f32 = 3545.0;
 
 /// The frame the cursor leaves the first ring for the third list's (the popup of the new ring starts to fade in).
 // STAND-IN: `synth-atelier` 3260: the popup of the new ring has one third of its opacity (5 frames of 15), 3250: the old ring's has two frames' worth.
@@ -1083,7 +1087,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u32>().ok()? + 1332;
         strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned()
     });
-    let look = fp::AddLook { materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame), focus_zero }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame) };
+    let look = fp::AddLook { bare: frame >= SYNTHESIS_RUNS_AT, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame), focus_zero, quiet: frame >= SYNTHESIS_RUNS_AT }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame) };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
@@ -1108,6 +1112,9 @@ fn add_bar(frame: f32) -> (crate::field_menu::AddEntries, f32) {
     const PAIR: f32 = 1258.0;
     const LIST: f32 = 342.0;
     const ONE: f32 = 1544.0;
+    const PROMPT: f32 = 1219.0;
+    const PROMPT_AT: f32 = 3505.0;
+    const FAST_FORWARD_AT: f32 = 3555.0;
     const BAR_EASE: f32 = 15.0;
     const BAR_PAIR: f32 = 15.0;
     const ADD_BAR_RING_AT: [f32; 3] = [f32::NEG_INFINITY, 3037.8, 3255.6];
@@ -1115,6 +1122,13 @@ fn add_bar(frame: f32) -> (crate::field_menu::AddEntries, f32) {
     let lerp = |a: f32, b: f32, t: f32| a + (b - a) * ease(t);
     // The plate before A on list `i`: settled on the ring's, or on its way there from the one word's.
     let ring_plate = |i: usize, f: f32| if i == 0 { RING } else { lerp(ONE, RING, f - ADD_BAR_RING_AT[i]) };
+    // The prompt before the synthesis (3510 and 3520 sampled), then the synthesis's fast forward from 3555.
+    if frame > PROMPT_AT && frame < PROMPT_AT + 25.0 {
+        return (AddEntries::Prompt, PROMPT);
+    }
+    if frame >= FAST_FORWARD_AT {
+        return (AddEntries::Fast, ONE);
+    }
     let mut state = (AddEntries::One, ONE);
     for (i, &(a, out, ..)) in ADD_LISTS.iter().enumerate() {
         if frame >= ADD_BAR_RING_AT[i] && frame <= a {

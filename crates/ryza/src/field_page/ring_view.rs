@@ -66,6 +66,8 @@ pub struct FieldLook {
     pub shift: [f32; 2],
     /// The frame of the capture's run at which the cursor's glow stood at no turn (`FOCUS_ZERO_AT` for the first ring; it starts again on each move of the cursor).
     pub focus_zero: f32,
+    /// No cursor glow and no lights behind the rings (the synthesis is running).
+    pub quiet: bool,
 }
 
 /// A ring's colours: the dark of its disc and the colour of its rim (the capture's bytes).
@@ -127,7 +129,7 @@ impl Page {
             }
         }
         // The cursor's glow.
-        if let Some(r) = look.rings.get(look.cursor) {
+        if let Some(r) = look.rings.get(look.cursor).filter(|_| !look.quiet) {
             let angle = FOCUS_DEGREES_PER_FRAME * (look.clock - look.focus_zero);
             let side = 262.0 * ZOOM;
             let glow = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mmap02_point_eff_0".into()), ("size_wh".into(), format!("{side}, {side}, 0"))], children: Vec::new() };
@@ -143,7 +145,7 @@ impl Page {
             let run = look.clock - 2656.4 + if GLOW_FIRST_SET.contains(&k) { 0.0 } else { -GLOW_SET_LAG };
             let center = ring_xf(r).apply([1.0, 0.0]);
             let lights = [(run.rem_euclid(GLOW_FRAMES), false, 1.0), ((run - GLOW_SECOND_LAG).rem_euclid(GLOW_FRAMES), true, 0.9)];
-            for (n, (t, turned, shrink)) in lights.into_iter().enumerate() {
+            for (n, (t, turned, shrink)) in lights.into_iter().enumerate().filter(|_| !look.quiet) {
                 if n == 1 && (run <= GLOW_SECOND_LAG || out_sine(t / (GLOW_FRAMES / 2.0)) * 255.0 < 1.5) {
                     continue;
                 }
@@ -236,6 +238,9 @@ impl Page {
         self.ring_graph(&mut w, &root, &look.field);
         w.cull_outside(screen);
         self.bars(&mut w, &root);
+        if look.bare {
+            return (w.out, w.additive, w.clips);
+        }
         // The description of the ring under the cursor.
         if let (Some(ring), Some(desc)) = (look.field.rings.get(look.field.cursor), find(&self.mix_docs.recipe, "ring_desc")) {
             let text = self.strings.get(&(DESC_BASE + ring.kind.min(5))).cloned();
@@ -268,6 +273,8 @@ impl Page {
 
 /// What the Add Materials screen shows.
 pub struct AddLook {
+    /// Only the ring graph and the bars (the synthesis is running: the panels, the popup and the plate are gone).
+    pub bare: bool,
     pub field: FieldLook,
     /// The recipe's row and the panel's numbers.
     pub row: RecipeRow,

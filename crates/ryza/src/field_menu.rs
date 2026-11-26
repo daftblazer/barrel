@@ -266,7 +266,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || ADD_RING_ENTRIES.iter().any(|(_, w)| w == n) || ADD_ENTRIES.iter().any(|(_, w)| w == n) || ADD_PAIR_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || ADD_RING_ENTRIES.iter().any(|(_, w)| w == n) || ADD_ENTRIES.iter().any(|(_, w)| w == n) || ADD_PAIR_ENTRIES.iter().any(|(_, w)| w == n) || ADD_PROMPT_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -1064,6 +1064,8 @@ enum Entries {
     AddPair,
     /// Add Materials with the list gone and the cursor not yet on a ring: the one entry.
     AddOne,
+    /// The prompt before the synthesis.
+    AddPrompt,
 }
 
 /// The synthesis's Select Recipe entries (`synth-atelier` 2790): the cross "Select", the guide, X "Mark as Favorite", Y "Check Tree" and A "Confirm".
@@ -1077,6 +1079,8 @@ const ADD_RING_ENTRIES: [(char, u32); 9] = [('\u{4f2}', 4_194_366), ('\u{4e3}', 
 const ADD_ENTRIES: [(char, u32); 8] = [('\u{4e0}', 4_194_366), ('\u{4e3}', 9_961_611), ('\u{4e7}', 9_961_613), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 4_194_450), ('\u{4de}', 4_194_317), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
 
 /// The bar of the frames between the ring's bar and the list's (`synth-atelier` 2930, 3050, 3290): hide the loop's info and change display.
+/// The bar of the prompt before the synthesis (`synth-atelier` 3520).
+const ADD_PROMPT_ENTRIES: [(char, u32); 4] = [('\u{4e1}', 4_194_366), ('\u{4dc}', 4_194_450), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
 /// Its one entry once the list is gone.
 const ADD_ONE_ENTRIES: [(char, u32); 1] = [('\u{4dc}', 4_194_450)];
 const ADD_PAIR_ENTRIES: [(char, u32); 2] = [('\u{4e3}', 9_961_611), ('\u{4dc}', 4_194_450)];
@@ -1087,6 +1091,10 @@ pub enum AddEntries {
     Pair,
     List,
     One,
+    /// The synthesis running: fast forward.
+    Fast,
+    /// The prompt before the synthesis: select, change display, back and confirm.
+    Prompt,
 }
 
 /// The Add Materials bar's plate grows from Select Recipe's width in this many frames after A (`synth-atelier` 2870: 0.875 of the way, out cubic over 20).
@@ -1386,10 +1394,14 @@ impl View {
             AddEntries::Pair => Entries::AddPair,
             AddEntries::List => Entries::Add,
             AddEntries::One => Entries::AddOne,
+            AddEntries::Fast => Entries::FastForward,
+            AddEntries::Prompt => Entries::AddPrompt,
         };
         let full = self.plate_full(&self.help_line(match entries {
             Entries::AddRing => &ADD_RING_ENTRIES[..],
             Entries::AddPair => &ADD_PAIR_ENTRIES[..],
+            Entries::AddPrompt => &ADD_PROMPT_ENTRIES[..],
+            Entries::FastForward => &FAST_FORWARD_ENTRIES[..],
             Entries::Add => &ADD_ENTRIES[..],
             _ => &ADD_ONE_ENTRIES[..],
         }), k);
@@ -1828,6 +1840,7 @@ impl View {
             Entries::Add => &ADD_ENTRIES,
             Entries::AddPair => &ADD_PAIR_ENTRIES,
             Entries::AddOne => &ADD_ONE_ENTRIES,
+            Entries::AddPrompt => &ADD_PROMPT_ENTRIES,
             Entries::GuideTop => &GUIDE_TOP_ENTRIES,
             Entries::GuideItems => &GUIDE_ITEMS_ENTRIES,
             Entries::GuideEffects => &GUIDE_EFFECTS_ENTRIES,
