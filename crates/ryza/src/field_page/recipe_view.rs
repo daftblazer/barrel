@@ -22,8 +22,9 @@ pub struct RecipeInfo {
     pub level: i32,
     /// The alchemy level the panel's second circle shows.
     pub alchemy: u32,
-    /// Units one synthesis makes.
+    /// Units one synthesis makes (shown for a material; an attack item shows its CP and range instead).
     pub make: u32,
+    pub attack: bool,
     pub elem_value: i32,
     /// Fire, ice, bolt and air.
     pub elements: [bool; 4],
@@ -122,7 +123,9 @@ impl Page {
             let n = |s: &str, p: &str| s.strip_prefix(p).and_then(|k| k.parse::<usize>().ok()).unwrap_or(0);
             let over = |p: &[&str]| -> Over {
                 match p {
-                    ["product_info"] | ["product_info", "mix_mat_info"] | ["product_info", "common_info", "cp_and_range"] => Over { show: true, ..Default::default() },
+                    ["product_info"] | ["product_info", "mix_mat_info"] => Over { show: true, ..Default::default() },
+                    ["product_info", "common_info", "cp_and_range"] if info.attack => Over { show: true, ..Default::default() },
+                    ["product_info", "common_info", "mix_make_num"] if !info.attack => Over { show: true, ..Default::default() },
                     ["product_info", "mix_mat_info", "list", node, rest @ ..] => {
                         let k = n(node, "node_");
                         match (info.materials.get(k), rest) {
@@ -136,6 +139,7 @@ impl Page {
                     ["product_info", "common_info", "alc_lv", "dummy", "value"] => Over { text: Some(info.alchemy.to_string()), ..Default::default() },
                     ["product_info", "common_info", "lv", "dummy", "value"] => Over { text: Some(info.level.to_string()), tint: Some([1.0; 4]), ..Default::default() },
                     ["product_info", "common_info", "cp_and_range", ":1", ":1"] => Over { tint: Some([1.0; 4]), ..Default::default() },
+                    ["product_info", "common_info", "mix_make_num", "dummy", "value"] => Over { text: Some(info.make.to_string()), ..Default::default() },
                     ["product_info", "common_info", "cp_and_range", "range_type"] => Over { text: string(ALL_WORD), ..Default::default() },
                     ["product_info", "common_info", "cp_and_range", _, "dummy", "cp_value"] => Over { text: Some(CP_VALUE.to_string()), ..Default::default() },
                     ["product_info", "common_info", "element", "dummy", "value"] => Over { text: Some(info.elem_value.to_string()), ..Default::default() },
@@ -162,8 +166,8 @@ impl Page {
                     ["remain_put_num"] => Over { show: true, ..Default::default() },
                     ["remain_put_num", "list", node, ..] if p.len() == 3 => {
                         let k = node.strip_prefix("node:").and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
-                        // (the circles stand on the right of the row; the game moves each by its place among the shown: 28 across, a quarter down)
-                        if k + put >= 4 && k <= 3 { Over { at: Some([28.0 * k as f32, 0.25 * (k + put - 4) as f32]), ..Default::default() } } else { hide() }
+                        // (the circles stand on the right of the row; the game moves each: the first stands at 112 / (the number shown), then 28 across and a quarter down for each)
+                        if k + put >= 4 && k <= 3 { Over { at: Some([112.0 / put as f32 + 28.0 * (k + put - 4) as f32, 0.25 * (k + put - 4) as f32]), ..Default::default() } } else { hide() }
                     }
                     ["remain_put_num", "list", _, "light"] => hide(),
                     ["remain_put_num", "num"] => Over { text: Some(row.info.times.to_string()), ..Default::default() },

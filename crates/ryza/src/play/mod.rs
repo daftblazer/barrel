@@ -853,7 +853,7 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
             let row = items.row(item)?;
             let materials = recipe.rows.iter().filter_map(|r| Some((order.iter().position(|o| Some(o) == r.category.as_ref())?, r.category.as_ref().is_none_or(|c| container.iter().any(|u| recipes.in_category(usize::from(u.item), c)))))).collect();
             // STAND-IN: the second circle's number is the save's alchemy level (1) and the quantity box's number the capture's (4 and 3); the rules are not read.
-            let info = fp::RecipeInfo { image: tables.image(item), level: row.level, alchemy: 1, make: recipe.make, elem_value: row.elem_value, elements: row.elements, put: recipe.rows.first().map_or(0, |r| r.need as usize), times, materials };
+            let info = fp::RecipeInfo { image: tables.image(item), level: row.level, alchemy: 1, make: recipe.make, attack: row.kind == "ITEM_KIND_ATTACK", elem_value: row.elem_value, elements: row.elements, put: recipe.rows.first().map_or(0, |r| r.need as usize), times, materials };
             Some(fp::RecipeRow { name: barrel_ryza::item_info::NAME_BASE + u32::from(item), count: 0, short, info })
         })
         .collect();
