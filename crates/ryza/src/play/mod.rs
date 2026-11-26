@@ -1035,6 +1035,10 @@ fn popup_alpha(frame: f32, tl: &AddTimeline) -> f32 {
 }
 
 
+/// The frames after the confirming A at which the quantity box and the title plate begin to leave.
+// STAND-IN: `synth-atelier` 3550 and 3560: both at 216/255 and 89/255 of their opacity, the age 14 and 4 of an `anm_common_slide_in_*` that is played backwards from 3534.
+const PLATES_LEAVE_AFTER: f32 = 14.0;
+
 /// The prompt before the synthesis on `frame`: its box fades in over `PROMPT_FADE` frames from `PROMPT_OPENS_BEFORE` the confirming A and out as many from the frame before it.
 // STAND-IN: the capture's window opacities (`synth-atelier` 3500: 17/255, 3510: 187/255, 3520: 238/255, 3530: 68/255) give the fade's 15 frames and the start 21 frames before the
 // A (the rule that opens it, 39 frames after the last loop's press, is not read).
@@ -1171,7 +1175,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u32>().ok()? + 1332;
         strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned()
     });
-    let look = fp::AddLook { bare: frame >= runs_at, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame, tl), focus_zero, quiet: frame >= runs_at }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame, tl), prompt: prompt_look(frame, tl) };
+    let look = fp::AddLook { bare: frame >= runs_at, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame, tl), focus_zero, quiet: frame >= runs_at }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame, tl), prompt: prompt_look(frame, tl), panel_out: (frame >= tl.presses[10]).then(|| frame - tl.presses[10]), plates_out: (frame >= tl.presses[10] + PLATES_LEAVE_AFTER).then(|| frame - tl.presses[10] - PLATES_LEAVE_AFTER) };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;

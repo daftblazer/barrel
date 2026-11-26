@@ -112,6 +112,10 @@ impl Page {
             };
             w.walk(main, ring_xf(r), &mut Vec::new(), &over, &HashMap::new());
         }
+        // (once the synthesis runs the capture draws only these discs and rims of the rings: no lines, glow, rings or labels, `synth-atelier` 3550 on)
+        if look.quiet {
+            return;
+        }
         // The lines: one for each ring that hangs from another, along the direction it leaves by.
         for r in &look.rings {
             let Some((from, dir)) = r.link else { continue };
@@ -229,6 +233,13 @@ impl Page {
         w.piece(root.node([0.0, 656.0], 0.0, [1.0; 2]), [0.0; 2], [1280.0, 64.0], [0.0, 0.0, 1.0, 1.0], [1.0; 4], gradation);
     }
 
+    /// The quantity box and the title plate, leaving as the synthesis starts (the box sinks and the plate rises, fading, as `anm_common_slide_in_*` played backwards).
+    fn plates(&self, w: &mut Walker, root: &Xf, look: &AddLook) {
+        let out = |from: [f32; 2]| look.plates_out.map_or(Slide::NONE, |t| Slide::in_from(SLIDE_FRAMES - t, from));
+        w.slid(out([0.0, 30.0]), |w| self.quantity_box(w, root, &look.row.info, look.lit, look.field.shift[0]));
+        self.caption_plate(w, root, ADD_TITLE, out([0.0, -30.0]));
+    }
+
     /// The Add Materials screen's quads on a `screen` of pixels: the ring graph, the bars over it, then the description of the ring under the cursor,
     /// the panel on the right, the quantity box and the title plate.
     pub fn add_quads(&self, look: &AddLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
@@ -239,6 +250,7 @@ impl Page {
         w.cull_outside(screen);
         self.bars(&mut w, &root);
         if look.bare {
+            self.plates(&mut w, &root, look);
             return (w.out, w.additive, w.clips);
         }
         // The description of the ring under the cursor.
@@ -258,7 +270,8 @@ impl Page {
             w.slid(Slide::in_from(SLIDE_FRAMES - out, [-40.0, 0.0]), |w| self.recipe_list(w, &root, list));
         }
         // (the layout's `mix_param` comes between them, and the ring's own `ring_info` over the panel's frame and the quantity box)
-        self.product_panel(&mut w, &root, &look.row, Some(&look.panel));
+        let out = look.panel_out.map_or(Slide::NONE, |t| Slide::in_from(SLIDE_FRAMES - t, [40.0, 0.0]));
+        w.slid(out, |w| self.product_panel(w, &root, &look.row, Some(&look.panel)));
         // (the prompt's box comes right after the panel's picture)
         if let Some(prompt) = &look.prompt {
             self.prompt_box(&mut w, &root, prompt);
@@ -269,8 +282,7 @@ impl Page {
         if let Some(list) = &look.materials {
             self.material_list(&mut w, &root, list);
         }
-        self.quantity_box(&mut w, &root, &look.row.info, look.lit, look.field.shift[0]);
-        self.caption_plate(&mut w, &root, ADD_TITLE, Slide::NONE);
+        self.plates(&mut w, &root, look);
         (w.out, w.additive, w.clips)
     }
 }
@@ -295,6 +307,10 @@ pub struct AddLook {
     pub lit: usize,
     /// The prompt before the synthesis ("OK" and "Start Over").
     pub prompt: Option<super::Prompt>,
+    /// The frames since the A that confirmed the prompt: the right panel slides out to the right over 30 frames (`anm_common_slide_in_right` played backwards).
+    pub panel_out: Option<f32>,
+    /// The frames since the quantity box and the title plate began to leave (down and up, over 30 frames).
+    pub plates_out: Option<f32>,
 }
 
 /// What a ring's popup says: its heading and a row for each tier.

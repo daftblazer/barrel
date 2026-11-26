@@ -24,7 +24,7 @@ pub struct Prompt {
     pub alpha: f32,
     /// The frames of the cursor's loop (`anm_common_cursor_base`) it has played.
     pub age: f32,
-    /// The cursor's glow is drawn (it is not once A has chosen: `synth-atelier` 3520 and 3530 have the base only).
+    /// The cursor's glow is drawn (it is not, and the cursor is white, once A has chosen: `synth-atelier` 3520 and 3530).
     pub glow: bool,
 }
 
@@ -43,7 +43,7 @@ impl Page {
             match p {
                 ["__uimenu_window", "__uimenu_scroll_bar", ..] => Over { hide: true, ..Default::default() },
                 ["__uimenu_window", "__uimenu_body", "__uimenu_cursor", "__uimenu_cursor_inactive"] => Over { hide: true, ..Default::default() },
-                ["__uimenu_window", "__uimenu_body", "__uimenu_cursor", "__uimenu_cursor_active", "base"] => Over { paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
+                ["__uimenu_window", "__uimenu_body", "__uimenu_cursor", "__uimenu_cursor_active", "base"] => Over { paint: Some(if prompt.glow { [base[0], base[1], base[2], 1.0] } else { [1.0; 4] }), ..Default::default() },
                 ["__uimenu_window", "__uimenu_body", "__uimenu_cursor", "__uimenu_cursor_active", "add"] if !prompt.glow => Over { hide: true, ..Default::default() },
                 ["__uimenu_window", "__uimenu_body", "__uimenu_cursor", "__uimenu_cursor_active", "add"] => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
                 _ => Over::default(),
