@@ -121,7 +121,7 @@ struct Args {
     /// `--mix-opening AGE`: Select Recipe coming in, AGE frames after it began.
     mix_opening: Option<f32>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
-    mix_complete: Option<(u32, u32, u32, f32)>,
+    mix_complete: Option<(u32, u32, u32, f32, Option<f32>)>,
     /// `--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING[:ENTERING]]`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows), LEAVING frames after A sent it out.
     mix_result: Option<(u16, u16, Vec<u16>, Option<f32>, Option<f32>)>,
     /// The capture's frames the move stick is out of its dead zone in (`--hud-stick FROM-TO,...`, the pad script's own frames), to replay the help bar by.
@@ -349,12 +349,13 @@ fn args(args: Vec<String>) -> Result<Args> {
             "--mix-complete" => {
                 let v = value()?;
                 let n = v.split(':').map(str::parse).collect::<std::result::Result<Vec<f32>, _>>()?;
-                let (level, next, gained, age) = match n[..] {
-                    [level, next, gained] => (level, next, gained, 0.0),
-                    [level, next, gained, age] => (level, next, gained, age),
-                    _ => return Err("--mix-complete LEVEL:NEXT:GAINED[:AGE]".into()),
+                let (level, next, gained, age, leaving) = match n[..] {
+                    [level, next, gained] => (level, next, gained, 0.0, None),
+                    [level, next, gained, age] => (level, next, gained, age, None),
+                    [level, next, gained, age, leaving] => (level, next, gained, age, Some(leaving)),
+                    _ => return Err("--mix-complete LEVEL:NEXT:GAINED[:AGE[:LEAVING]]".into()),
                 };
-                a.mix_complete = Some((level as u32, next as u32, gained as u32, age));
+                a.mix_complete = Some((level as u32, next as u32, gained as u32, age, leaving));
             }
             "--mix-add" => a.mix_add = Some(value()?.parse()?),
             "--mix-run" => {
@@ -800,7 +801,7 @@ enum MixShown {
     /// The item's card with the number made.
     Card(u32, Option<(f32, f32)>),
     /// The "Complete" screen's level panel: the level, the experience to the next and the experience gained.
-    Complete(u32, u32, u32, f32),
+    Complete(u32, u32, u32, f32, Option<f32>),
     /// The made item's card: its quality and effects.
     Result(u16, Vec<u16>, Option<f32>, Option<f32>),
 }
@@ -837,7 +838,7 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &[fp::ShelfItem { image, category: items.row(item).and_then(|r| r.category) }])?;
     let (quads, additive, clips) = match shown.clone() {
         MixShown::Card(count, clock) => page.sheet_quads(&fp::SheetLook { item, image, count, clock: clock.map(|c| c.0), frames: clock.map_or(0.0, |c| c.1), out: None }, screen),
-        MixShown::Complete(level, next, gained, age) => page.complete_quads(&fp::CompleteLook { level, next, gained, age }, screen),
+        MixShown::Complete(level, next, gained, age, leaving) => page.complete_quads(&fp::CompleteLook { level, next, gained, age, leaving }, screen),
         MixShown::Result(quality, ref effects, leaving, entering) => {
             let mut effect = [0xffff; 4];
             effect[..effects.len().min(4)].copy_from_slice(&effects[..effects.len().min(4)]);
@@ -845,7 +846,7 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
             let mut card = items.card(&unit, &[], image);
             // STAND-IN: the rank letter of quality 49 is C in the capture (`synth-atelier` 4060), where `item_info`'s steps give D.
             card.rank = card.rank.saturating_sub(1);
-            page.result_quads(&card, leaving.map(|l| (l, fp::CompleteLook { level: 2, next: 3, gained: 0, age: 0.0 })), entering.map(|e| (e, fp::SheetLook { item, image, count: MADE_UNITS, clock: None, frames: 0.0, out: None })), screen)
+            page.result_quads(&card, leaving.map(|l| (l, fp::CompleteLook { level: 2, next: 3, gained: 0, age: 0.0, leaving: None })), entering.map(|e| (e, fp::SheetLook { item, image, count: MADE_UNITS, clock: None, frames: 0.0, out: None })), screen)
         }
     };
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
@@ -952,10 +953,24 @@ impl AddTimeline {
     }
 }
 
-/// The timeline of Add Materials a `synthesis::Machine` makes of the pad script `pad` (`FRAME BUTTON HOLD` lines, the key's `pad.txt`): the machine runs from 1900, as the
-/// `ryza-synth` check does, to the last of its Add Materials presses.
-fn timeline_from_pad(install: &barrel_ryza::install::Install, pad: &str, container: &[barrel_ryza::save::Worn]) -> Result<AddTimeline> {
-    use barrel_ryza::synthesis::{script_pad, Machine, World};
+/// What a `synthesis::Machine` running the pad script `pad` (`FRAME BUTTON HOLD` lines, the key's `pad.txt`) has made of the screens by `frame`: the timeline of Add Materials
+/// (its presses), the screen it is on and the frames since it changed. The machine runs from 1900, as the `ryza-synth` check does.
+struct MachineRun {
+    timeline: AddTimeline,
+    /// The screen the machine is on as the frame ends, and the screens it has been on with the frame each began on.
+    screen: barrel_ryza::synthesis::Screen,
+    history: Vec<(barrel_ryza::synthesis::Screen, i64)>,
+}
+
+impl MachineRun {
+    /// The frame the machine's `screen` (the first of that kind) began on.
+    fn began(&self, screen: barrel_ryza::synthesis::Screen) -> Option<i64> {
+        self.history.iter().find(|h| h.0 == screen).map(|h| h.1)
+    }
+}
+
+fn run_from_pad(install: &barrel_ryza::install::Install, pad: &str, container: &[barrel_ryza::save::Worn], frame: i64) -> Result<MachineRun> {
+    use barrel_ryza::synthesis::{script_pad, Machine, World, ADD_PRESS_ROLES};
     const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
     let tables = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let recipe = tables.recipes.iter().position(|r| r.tag == TAG).ok_or("no recipe")?;
@@ -964,14 +979,26 @@ fn timeline_from_pad(install: &barrel_ryza::install::Install, pad: &str, contain
     let world = World { clock: 0, container: container.to_vec(), level: 1, exp: 0 };
     let mut machine = Machine::new(&tables, recipe, world, &maker, barrel_ryza::synthesis::KeyPicks);
     machine.start_at(1900);
-    // (the screens' flow ends at the 11th press: later frames only make the item)
-    for frame in 1900..4000 {
-        machine.step(script_pad(&script, frame));
-        if machine.add_presses().len() >= barrel_ryza::synthesis::ADD_PRESS_ROLES.len() {
+    // (the Add Materials timeline is complete with the 11th press; the screen is the machine's as `frame` ends)
+    let (mut timeline, mut at_frame) = (None, None);
+    let mut history: Vec<(barrel_ryza::synthesis::Screen, i64)> = Vec::new();
+    for f in 1900..frame.max(1900) + 4000 {
+        machine.step(script_pad(&script, f));
+        if history.last().is_none_or(|h| h.0 != machine.screen()) {
+            history.push((machine.screen(), f));
+        }
+        if f == frame {
+            at_frame = Some(machine.screen());
+        }
+        if timeline.is_none() && machine.add_presses().len() >= ADD_PRESS_ROLES.len() {
+            timeline = Some(AddTimeline::from_machine(&machine)?);
+        }
+        if f >= frame && timeline.is_some() {
             break;
         }
     }
-    AddTimeline::from_machine(&machine)
+    let screen = at_frame.ok_or("the pad ends before the frame")?;
+    Ok(MachineRun { timeline: timeline.ok_or("the pad does not make the 11 presses of Add Materials")?, screen, history })
 }
 
 /// `text` with its digits and signs in the full-width forms (the game prints the ring popup's quality bonus that way).
@@ -1049,6 +1076,99 @@ fn prompt_look(frame: f32, tl: &AddTimeline) -> Option<barrel_ryza::field_page::
     let (press, opens) = (tl.presses[10], tl.presses[10] - PROMPT_OPENS_BEFORE);
     let alpha = ((frame - opens) / PROMPT_FADE).clamp(0.0, 1.0).min(1.0 - (frame - (press - 1.0)) / PROMPT_FADE);
     (alpha > 0.0).then(|| fp::Prompt { alpha, age: frame - opens, glow: frame < press })
+}
+
+/// The made item's quality and effect numbers once the key's three materials are in (the rules of `rings::Cauldron`): what the result card shows.
+fn made_result(install: &barrel_ryza::install::Install, units: &[barrel_ryza::save::Worn], tl: &AddTimeline) -> Result<(u16, Vec<u16>)> {
+    const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
+    let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
+    let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
+    let rings = fields.get(TAG).ok_or("no field for the recipe")?;
+    let recipe = recipes.recipes.iter().find(|r| r.tag == TAG).ok_or("no recipe")?;
+    let mut cauldron = barrel_ryza::rings::Cauldron::new(rings);
+    for &(_, unit, ring, row) in &tl.run() {
+        let u = units.get(unit).ok_or("no unit")?;
+        let r = items.row(u.item).cloned().unwrap_or_default();
+        cauldron.place(ring, row, f32::from(u.quality), [0, 1, 2, 3].map(|k| if r.elements[k] { r.elem_value } else { 0 }))?;
+    }
+    let outcome = cauldron.outcome(false);
+    // STAND-IN: the effect numbers of `ITEM_EFF_CREATE_QUALITY_nn` (the enum's table is not read: n + 1332).
+    let effects = (0..3)
+        .filter_map(|slot| {
+            let tier = usize::try_from(outcome.eval.totals.tiers[slot]).ok()?;
+            let ring = rings.iter().find(|r| r.elem.is_some() && r.kind as usize == slot)?;
+            let tag = recipe.rows.get(ring.restrict as usize)?.effects.get(tier)?;
+            Some(tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u16>().ok()? + 1332)
+        })
+        .collect();
+    Ok((outcome.quality as u16, effects))
+}
+
+/// The card's animation clock on its `frames`th frame: the frames themselves, but for the stretch the capture's clock runs ahead by 12.
+// STAND-IN: the (frames, clock) pairs of the capture's sampled card frames (`synth-atelier` 3830 to 3940, the `synth-card-*` rows); between them the clock is interpolated, and from 122 frames
+// (3950: the card's coming in is over, its clock stops mattering) it has none.
+const CARD_CLOCK: [(f32, f32); 12] = [(11.0, 11.0), (21.0, 21.0), (31.0, 31.0), (41.0, 41.0), (51.0, 51.0), (61.0, 62.9), (71.0, 83.0), (81.0, 93.0), (91.0, 103.06), (101.0, 113.1), (111.0, 123.1), (121.0, 133.0)];
+
+fn card_clock(frames: f32) -> Option<f32> {
+    let at = CARD_CLOCK.iter().position(|c| c.0 >= frames)?;
+    let (lo, hi) = (CARD_CLOCK[at.saturating_sub(1)], CARD_CLOCK[at]);
+    Some(if hi.0 > lo.0 { lo.1 + (hi.1 - lo.1) * ((frames - lo.0) / (hi.0 - lo.0)).clamp(0.0, 1.0) } else { hi.1 })
+}
+
+/// Any frame of the synthesis from Select Recipe to the room's door (`--mix-run PAD FRAME`): the `synthesis::Machine` runs the pad script and says which screen it is on; the screen is drawn with
+/// the frames it has been up. The room itself (from the Machine's `Room` on) is not drawn here.
+// STAND-IN (the offsets from the machine's screens, read off the capture's sampled frames, rows `synth-*` of the flag forms): the opening's age is 3 frames under the machine's (2320: 17); a tutorial
+// page turns 10 frames after the A; the list's fade starts 30 frames into the last tutorial's screen (bar clock 34 behind) and its cursor moves 1 frame before the machine's (2799); the card's
+// frame count is 1 over its age; the made item's card comes in over 20 frames and leaves over the first 30 of Complete's; Complete's panels start 40 frames in.
+fn mix_run_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, pad: &str, frame: f32, units: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+    use barrel_ryza::synthesis::Screen;
+    let run = run_from_pad(install, pad, units, frame as i64)?;
+    let began = |s: Screen| run.began(s).map(|f| f as f32);
+    let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let made = recipes.recipes.iter().find(|r| r.tag == "ITEM_MIX_MATERIAL_NEUTRALIZE_001").map_or(0, |r| r.make);
+    match run.screen {
+        Screen::RecipeOpening => {
+            let start = began(Screen::RecipeOpening).unwrap_or(frame);
+            mix_recipe_layers(install, gpu, renderer, (-1, 0.0, -4.0, None), None, Some(frame - start - 3.0), units, screen)
+        }
+        Screen::Tutorial(n) if n < 6 => {
+            let first = began(Screen::Tutorial(1)).unwrap_or(frame);
+            // (the page that is up: the machine's, once 10 frames have gone by since its A)
+            let turned = run.history.iter().filter(|h| matches!(h.0, Screen::Tutorial(_)) && frame - h.1 as f32 >= 10.0).count().max(1);
+            let page = (turned - 1).min(n as usize - 1);
+            mix_recipe_layers(install, gpu, renderer, (-1, 0.0, -4.0, None), Some(barrel_ryza::field_page::Tutorial { page, age: frame - first, clock: frame - first }), None, units, screen)
+        }
+        Screen::Tutorial(_) | Screen::Recipes { .. } => {
+            let list = began(Screen::Tutorial(6)).unwrap_or(frame) + 30.0;
+            let moved = began(Screen::Recipes { cursor: 1 }).map(|f| f - 1.0);
+            match moved {
+                Some(at) if frame >= at => mix_recipe_layers(install, gpu, renderer, (1, frame - at, frame - at + 105.0, Some(frame)), None, None, units, screen),
+                _ if frame > list => mix_recipe_layers(install, gpu, renderer, (0, frame - list, frame - list - 4.0, None), None, None, units, screen),
+                _ => mix_recipe_layers(install, gpu, renderer, (-1, 0.0, frame - list - 4.0, None), None, None, units, screen),
+            }
+        }
+        Screen::Materials { .. } | Screen::Making => mix_add_layers(install, gpu, renderer, frame, &run.timeline, units, screen),
+        // (the capture still draws Add Materials on the frame the machine's card begins, 3820)
+        Screen::Card if began(Screen::Card) == Some(frame) => mix_add_layers(install, gpu, renderer, frame, &run.timeline, units, screen),
+        Screen::Card => {
+            let frames = frame - began(Screen::Card).unwrap_or(frame) + 1.0;
+            mix_sheet_layers(install, gpu, renderer, 329, MixShown::Card(made, card_clock(frames).map(|c| (c, frames))), screen)
+        }
+        Screen::Result | Screen::Complete | Screen::Leaving => {
+            let (quality, effects) = made_result(install, units, &run.timeline)?;
+            let result_from = began(Screen::Result).unwrap_or(frame);
+            let complete_from = began(Screen::Complete).unwrap_or(frame);
+            let in_result = frame - result_from;
+            let leaving = began(Screen::Leaving).map(|from| frame - from).filter(|t| *t >= 0.0);
+            match run.screen {
+                Screen::Result => mix_sheet_layers(install, gpu, renderer, 329, MixShown::Result(quality, effects, None, (in_result < 20.0).then_some(in_result + 1.0)), screen),
+                _ if frame - complete_from < 30.0 => mix_sheet_layers(install, gpu, renderer, 329, MixShown::Result(quality, effects, Some(frame - complete_from), None), screen),
+                _ => mix_sheet_layers(install, gpu, renderer, 0, MixShown::Complete(2, 3, 0, (frame - complete_from - 40.0).max(0.0), leaving), screen),
+            }
+        }
+        other => Err(format!("the frame is on {other:?}, which --mix-run does not draw").into()),
+    }
 }
 
 /// The synthesis's Add Materials screen (`--mix-add FRAME`): the background, then the screen's parts. STAND-IN: the capture's recipe (Red Supplement); the
@@ -2897,11 +3017,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         _ if a.mix_add.is_some() => Some(mix_add_layers(&install, &gpu, &renderer, a.mix_add.unwrap_or(0.0), &AddTimeline::KEY, &container.0, (width, height))?),
         _ if a.mix_run.is_some() => {
             let (pad, frame) = a.mix_run.clone().unwrap_or_default();
-            Some(mix_add_layers(&install, &gpu, &renderer, frame, &timeline_from_pad(&install, &pad, &container.0)?, &container.0, (width, height))?)
+            Some(mix_run_layers(&install, &gpu, &renderer, &pad, frame, &container.0, (width, height))?)
         }
         _ if a.mix_recipe.is_some() => Some(mix_recipe_layers(&install, &gpu, &renderer, a.mix_recipe.unwrap_or((0, 0.0, 99.0, None)), a.mix_tutorial.map(|(page, age, clock)| barrel_ryza::field_page::Tutorial { page, age, clock }), a.mix_opening, &container.0, (width, height))?),
         (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
-        (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
+        (None, Some((level, next, gained, age, leaving)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age, leaving), (width, height))?),
         (None, None, Some((item, quality, effects, leaving, entering))) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Result(quality, effects, leaving, entering), (width, height))?),
         (None, None, None) => None,
     };

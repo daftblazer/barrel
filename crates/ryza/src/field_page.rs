@@ -1289,7 +1289,14 @@ pub struct CompleteLook {
     pub gained: u32,
     /// Frames since the "Level UP!" animation began (`anm_level_up`), 0 before it.
     pub age: f32,
+    /// The frames since A sent the screen away to the room: the level panel slides out to the right.
+    pub leaving: Option<f32>,
 }
+
+/// The Complete screen's level panel leaves over this many frames (`anm_common_slide_in_right` played backwards).
+// STAND-IN: `synth-atelier` 4260, 20 frames after the A of 4240: the panel's opacity 107/255 and 23.1 layout pixels from its place fit 24 frames of the slide's 40 pixels (a 30 frame slide
+// fits too if it began on 4235); the later frames (4270 on) are the room's.
+const LEAVE_FRAMES: f32 = 24.0;
 
 /// A keyed curve of `uia_a21_mix.xml`: (frame, value) pairs, linear between them; before the first key the first value, after the
 /// last the last (two keys on one frame make a step).
@@ -1354,7 +1361,8 @@ impl Page {
             let scale = [keyed(&E09_SCALE_X, age), keyed(&E09_SCALE_Y, age)];
             w.image(e, about(&root, e, 0.0, scale), &Over { alpha: Some(a), ..Default::default() });
         }
-        self.level_panel(&mut w, &root, look, Slide::NONE);
+        let out = look.leaving.map_or(Slide::NONE, |t| Slide::over(LEAVE_FRAMES - t, LEAVE_FRAMES, [40.0, 0.0]));
+        self.level_panel(&mut w, &root, look, out);
         // The "Level UP!" plate: its picture and its words rise together, a glow of the words grows over them.
         if let (Some(plate), Some(text), Some(on)) = (find(&self.mix_sheet, "level_up_plate"), find(&self.mix_sheet, "level_up_text"), find(&self.mix_sheet, "level_up_text_on")) {
             let a = keyed(&PLATE_ALPHA, age);
