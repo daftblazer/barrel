@@ -67,57 +67,7 @@ impl Page {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: true, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
-        let docs = &self.mix_docs;
-        let string = |n: u32| self.strings.get(&n).cloned();
-        let hide = || Over { hide: true, ..Default::default() };
-        let (base, both, f) = cursor_colors(look.age);
-        // The list's frame and rows.
-        let Some(menu) = find(&docs.recipe, "template_menu_node") else { return (w.out, w.additive, w.clips) };
-        if let Some(frame) = find(menu, "frame") {
-            let at = pair(frame, "pos", [0.0; 2]);
-            w.walk(frame, root.node([MENU_AT[0] + at[0], MENU_AT[1] + at[1]], 0.0, [1.0; 2]), &mut Vec::new(), &|_: &[&str]| Over::default(), &HashMap::new());
-        }
-        if let (Some(contents), Some(item)) = (find(menu, "contents"), find(menu, "menu_item")) {
-            let at = pair(contents, "pos", [0.0; 2]);
-            for (i, row) in look.rows.iter().enumerate() {
-                let over = |p: &[&str]| -> Over {
-                    match p {
-                        ["menu_item"] => Over { show: true, ..Default::default() },
-                        ["menu_item", "__uimenu_cursor_active"] if i == look.cursor && look.cursor_shown => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
-                        ["menu_item", "__uimenu_cursor_active", "add"] if i == look.cursor && look.cursor_shown => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
-                        ["menu_item", "bookmark_bg"] => Over { show: true, ..Default::default() },
-                        ["menu_item", "__uimenu_cursor_active", ..] | ["menu_item", "bookmark_bg", ..] | ["menu_item", "new_icon"] | ["menu_item", "r_icon"] => hide(),
-                        ["menu_item", "name"] => Over { text: string(row.name), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
-                        ["menu_item", "count_bg", "count"] => Over { text: Some(row.count.to_string()), tint: Some([1.0; 4]), ..Default::default() },
-                        _ => Over::default(),
-                    }
-                };
-                w.walk(item, root.node([MENU_AT[0] + at[0], MENU_AT[1] + at[1] + ROW_STEP * i as f32], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
-            }
-        }
-        // The tab row and the page's name.
-        if let Some(menu) = find(&docs.recipe, "recipe_menu") {
-            let at = pair(menu, "pos", [0.0; 2]);
-            if let Some(tab) = find(menu, "tab") {
-                let t = pair(tab, "pos", [0.0; 2]);
-                let over = |p: &[&str]| -> Over {
-                    match p {
-                        ["tab"] => Over { show: true, ..Default::default() },
-                        ["tab", "tab_frame", "l1", ..] | ["tab", "tab_frame", "r1", ..] | ["tab", "tabon", ..] => hide(),
-                        ["tab", "tab_frame", "select_L"] => Over { text: Some(TAB_LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
-                        ["tab", "tab_frame", "select_R"] => Over { text: Some(TAB_RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
-                        ["tab", "taboff", "tab0", "hilight"] => Over { show: true, ..Default::default() },
-                        ["tab", "taboff", t, "text"] => Over { image_no: Some(TAB_PICTURES[t.strip_prefix("tab").and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(4)]), natural: true, ..Default::default() },
-                        _ => Over::default(),
-                    }
-                };
-                w.walk(tab, root.node([at[0] + t[0], at[1] + t[1]], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
-            }
-            if let Some(name) = find(menu, "page_name") {
-                let t = pair(name, "pos", [0.0; 2]);
-                w.walk(name, root.node([at[0] + t[0], at[1] + t[1]], 0.0, [1.0; 2]), &mut Vec::new(), &|_: &[&str]| Over { text: string(ALL_WORD), ..Default::default() }, &HashMap::new());
-            }
-        }
+        self.recipe_list(&mut w, &root, look);
         // The panel on the right.
         if let Some(row) = look.rows.get(look.cursor) {
             self.product_panel(&mut w, &root, row, None);
@@ -240,6 +190,63 @@ impl Page {
                 }
             };
             w.walk(box_, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        }
+    }
+}
+
+impl Page {
+    /// The recipe list: its frame and rows with the cursor, the tab row and the page's name.
+    pub(super) fn recipe_list(&self, w: &mut Walker, root: &Xf, look: &RecipeLook) {
+        let docs = &self.mix_docs;
+        let string = |n: u32| self.strings.get(&n).cloned();
+        let hide = || Over { hide: true, ..Default::default() };
+        let (base, both, f) = cursor_colors(look.age);
+        // The list's frame and rows.
+        let Some(menu) = find(&docs.recipe, "template_menu_node") else { return };
+        if let Some(frame) = find(menu, "frame") {
+            let at = pair(frame, "pos", [0.0; 2]);
+            w.walk(frame, root.node([MENU_AT[0] + at[0], MENU_AT[1] + at[1]], 0.0, [1.0; 2]), &mut Vec::new(), &|_: &[&str]| Over::default(), &HashMap::new());
+        }
+        if let (Some(contents), Some(item)) = (find(menu, "contents"), find(menu, "menu_item")) {
+            let at = pair(contents, "pos", [0.0; 2]);
+            for (i, row) in look.rows.iter().enumerate() {
+                let over = |p: &[&str]| -> Over {
+                    match p {
+                        ["menu_item"] => Over { show: true, ..Default::default() },
+                        ["menu_item", "__uimenu_cursor_active"] if i == look.cursor && look.cursor_shown => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
+                        ["menu_item", "__uimenu_cursor_active", "add"] if i == look.cursor && look.cursor_shown => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
+                        ["menu_item", "bookmark_bg"] => Over { show: true, ..Default::default() },
+                        ["menu_item", "__uimenu_cursor_active", ..] | ["menu_item", "bookmark_bg", ..] | ["menu_item", "new_icon"] | ["menu_item", "r_icon"] => hide(),
+                        ["menu_item", "name"] => Over { text: string(row.name), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
+                        ["menu_item", "count_bg", "count"] => Over { text: Some(row.count.to_string()), tint: Some([1.0; 4]), ..Default::default() },
+                        _ => Over::default(),
+                    }
+                };
+                w.walk(item, root.node([MENU_AT[0] + at[0], MENU_AT[1] + at[1] + ROW_STEP * i as f32], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+            }
+        }
+        // The tab row and the page's name.
+        if let Some(menu) = find(&docs.recipe, "recipe_menu") {
+            let at = pair(menu, "pos", [0.0; 2]);
+            if let Some(tab) = find(menu, "tab") {
+                let t = pair(tab, "pos", [0.0; 2]);
+                let over = |p: &[&str]| -> Over {
+                    match p {
+                        ["tab"] => Over { show: true, ..Default::default() },
+                        ["tab", "tab_frame", "l1", ..] | ["tab", "tab_frame", "r1", ..] | ["tab", "tabon", ..] => hide(),
+                        ["tab", "tab_frame", "select_L"] => Over { text: Some(TAB_LEFT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                        ["tab", "tab_frame", "select_R"] => Over { text: Some(TAB_RIGHT_BUTTON.to_string()), size: Some(BUTTON_SIZE), color: Some([1.0; 4]), ..Default::default() },
+                        ["tab", "taboff", "tab0", "hilight"] => Over { show: true, ..Default::default() },
+                        ["tab", "taboff", t, "text"] => Over { image_no: Some(TAB_PICTURES[t.strip_prefix("tab").and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(4)]), natural: true, ..Default::default() },
+                        _ => Over::default(),
+                    }
+                };
+                w.walk(tab, root.node([at[0] + t[0], at[1] + t[1]], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+            }
+            if let Some(name) = find(menu, "page_name") {
+                let t = pair(name, "pos", [0.0; 2]);
+                w.walk(name, root.node([at[0] + t[0], at[1] + t[1]], 0.0, [1.0; 2]), &mut Vec::new(), &|_: &[&str]| Over { text: string(ALL_WORD), ..Default::default() }, &HashMap::new());
+            }
         }
     }
 }

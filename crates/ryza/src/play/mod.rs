@@ -939,11 +939,20 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
             .collect();
         fp::Popup { title, tiers }
     });
-    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) }, popup };
+    // Select Recipe's list goes out to the left over the 30 frames after A on 2860 (the slide-in played backwards; the cursor is on the second row).
+    // STAND-IN: the two recipes of the capture's save, as `mix_recipe_layers`.
+    let list_out = (frame >= 2860.0 && frame < 2890.0).then(|| {
+        let rows: Vec<fp::RecipeRow> = [(239u32, true), (329, false)]
+            .iter()
+            .map(|&(item, short)| fp::RecipeRow { name: barrel_ryza::item_info::NAME_BASE + item, count: 0, short, info: fp::RecipeInfo { image: 0, level: 0, alchemy: 0, make: 0, attack: false, elem_value: 0, elements: [false; 4], materials: Vec::new(), put: 0, times: 0 } })
+            .collect();
+        (fp::RecipeLook { rows, cursor: 1, cursor_shown: frame < 2860.0, age: frame - 2799.0 }, frame - 2859.0)
+    });
+    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) }, popup, list_out, desc_age: frame - 2862.2 };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
-    bar.set(gpu, &view.add_help(screen, frame < 2921.0))?;
+    bar.set(gpu, &view.add_help(screen, frame < 2921.0, frame - 2860.0))?;
     Ok(vec![back, sheet, bar])
 }
 

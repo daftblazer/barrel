@@ -6,12 +6,14 @@ use super::*;
 
 /// The graph's centre in layout pixels (`field_root` (660, 360) and `center` (-20, 0)) and the grid's steps for a unit of a ring's `x` and `y`
 /// (the half of the width and the third of the height between two neighbours: `docs/ryza/open.md`, Synthesis part 3).
-const CENTRE: [f32; 2] = [641.9, 361.9];
+const CENTRE: [f32; 2] = [640.0, 360.0];
+/// The rings stand this much further than the grid says (layout pixels: the capture's rings are 2.83 pixels of 1080 lines right and down of it).
+const RING_SHIFT: [f32; 2] = [1.9, 1.9];
 const GRID: [f32; 2] = [142.15, 82.07];
 /// The rings are drawn at this zoom (`synth-atelier` 2900: a ring's picture is 189 pixels of 1080 lines where the layout's is 168 layout pixels).
 const ZOOM: f32 = 0.75;
 /// The plate under a closed ring's lock stands this far below the ring's centre in unzoomed layout pixels (the layout's `dummy` says 31; the capture's plates stand 8.7 higher: STAND-IN).
-const PLATE_DY: f32 = 22.3;
+const PLATE_DY: f32 = 20.4;
 /// A ring's lines: from its centre to the line's start, the line's length and its width (layout pixels at the ring's zoom, measured on the
 /// capture's quads at 2900: 64.8 pixels, 126 and 45 of 1080 lines).
 const EDGE_FROM: f32 = 57.6;
@@ -28,7 +30,7 @@ const GLOW_SIZE: f32 = 520.0 / 3.0;
 const FOCUS_DEGREES_PER_FRAME: f32 = 0.958;
 const FOCUS_ZERO_AT: f32 = 2837.4;
 /// Where a ring's label plate stands from the ring's centre (measured on the capture's plates: STAND-IN).
-const LABEL_AT: [f32; 2] = [-96.5, -61.5];
+const LABEL_AT: [f32; 2] = [-98.4, -63.4];
 
 /// The layout's node a ring is walked from.
 const B: &str = "clone_tree_behind_node";
@@ -84,7 +86,7 @@ impl Page {
         let docs = &self.mix_docs;
         let Some(main) = find(&docs.field, "clone_tree_behind_node") else { return };
         let Some(front) = find(&docs.field, "clone_tree_front_node") else { return };
-        let at = |r: &RingShow| [CENTRE[0] + look.shift[0] + r.at[0] as f32 * GRID[0], CENTRE[1] + look.shift[1] + r.at[1] as f32 * GRID[1]];
+        let at = |r: &RingShow| [CENTRE[0] + RING_SHIFT[0] + look.shift[0] + r.at[0] as f32 * GRID[0], CENTRE[1] + RING_SHIFT[1] + look.shift[1] + r.at[1] as f32 * GRID[1]];
         let ring_xf = |r: &RingShow| root.node(at(r), 0.0, [ZOOM; 2]);
         let variant = |r: &RingShow| if r.kind == 4 { "frame_param" } else { "frame_eff" };
         let hide = || Over { hide: true, ..Default::default() };
@@ -240,7 +242,11 @@ impl Page {
                     _ => Over::default(),
                 }
             };
-            w.walk(desc, root.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+            w.slid(Slide::in_from(look.desc_age, [0.0, 40.0]), |w| w.walk(desc, root.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new()));
+        }
+        // Select Recipe's list, going out to the left and fading as Add Materials comes in.
+        if let Some((list, out)) = &look.list_out {
+            w.slid(Slide::in_from(SLIDE_FRAMES - out, [-40.0, 0.0]), |w| self.recipe_list(w, &root, list));
         }
         // (the layout's `mix_param` comes between them, and the ring's own `ring_info` over the panel's frame and the quantity box)
         self.product_panel(&mut w, &root, &look.row, Some(&look.panel));
@@ -261,6 +267,10 @@ pub struct AddLook {
     pub panel: AddPanel,
     /// The tiers of the ring under the cursor (`ring_info`), up while a ring is looked at.
     pub popup: Option<Popup>,
+    /// The recipe list still going out, and the frames since it began to.
+    pub list_out: Option<(RecipeLook, f32)>,
+    /// The frames since the ring's description began to rise into place (`anm_common_slide_in_bottom`).
+    pub desc_age: f32,
 }
 
 /// What a ring's popup says: its heading and a row for each tier.

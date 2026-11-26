@@ -1071,6 +1071,9 @@ const ADD_RING_ENTRIES: [(char, u32); 9] = [('\u{4f2}', 4_194_366), ('\u{4e3}', 
 /// Its entry with the materials' list up (`synth-atelier` 3000).
 const ADD_ENTRIES: [(char, u32); 1] = [('\u{4dc}', 4_194_450)];
 
+/// The Add Materials bar's plate grows from Select Recipe's width in this many frames after A (`synth-atelier` 2870: 0.875 of the way, out cubic over 20).
+const ADD_BAR_GROW_FRAMES: f32 = 20.0;
+
 /// The Select Recipe plate is this much wider (layout pixels) than its words need, and this much short at 0.4 of its opacity. STAND-IN: one sample each.
 const RECIPE_PLATE_EXTRA: f32 = 0.0;
 const RECIPE_BAR_GROW: f32 = 11.3;
@@ -1340,11 +1343,18 @@ impl View {
         pen.finish().0
     }
 
-    /// The Add Materials screen's help bar (`ring`: while a ring is looked at, else with the materials' list up), whole.
-    pub fn add_help(&self, screen: (u32, u32), ring: bool) -> Vec<Quad> {
+    /// The Add Materials screen's help bar (`ring`: while a ring is looked at, else with the materials' list up), `since_a` frames after A on Select Recipe:
+    /// the Select Recipe's bar on that frame, then the new words on a plate that grows from the old one's width to its own over 20 frames (out cubic).
+    pub fn add_help(&self, screen: (u32, u32), ring: bool, since_a: f32) -> Vec<Quad> {
+        if since_a <= 0.0 {
+            return self.recipe_help(screen, 99.0);
+        }
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
-        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra: 0.0, entries: if ring { Entries::AddRing } else { Entries::Add } });
+        let e = 1.0 - (1.0 - (since_a / ADD_BAR_GROW_FRAMES).clamp(0.0, 1.0)).powi(3);
+        let (from, to) = (self.plate_full(&self.help_line(&RECIPE_ENTRIES), k), self.plate_full(&self.help_line(&ADD_RING_ENTRIES), k));
+        let extra = if ring { -(1.0 - e) * (to - from) } else { 0.0 };
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries: if ring { Entries::AddRing } else { Entries::Add } });
         pen.finish().0
     }
 
