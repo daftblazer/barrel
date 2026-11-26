@@ -1037,7 +1037,10 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
             .enumerate()
             .map(|(t, s)| {
                 let tag = row.and_then(|row| row.effects.get(t)).cloned().unwrap_or_default();
-                let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_").and_then(|n| n.parse::<u32>().ok()).map_or(0, |n| 1332 + n);
+                // STAND-IN: `ITEM_EFF_ADD_CATEGORY_nn` is effect 1446 + nn ("Add (Water)" is nn 12, the liquid category's: tables.md); the enum's table is not read.
+                let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_").and_then(|n| n.parse::<u32>().ok()).map(|n| 1332 + n).or_else(|| tag.strip_prefix("ITEM_EFF_ADD_CATEGORY_").and_then(|n| n.parse::<u32>().ok()).map(|n| 1446 + n)).unwrap_or(0);
+                // STAND-IN: a quality ring (kind 4) names its tiers "Quality", "Quality+", "Quality++" ... (effect numbers 65536 + tier: the capture's rows at 3280).
+                let id = if r.kind == 4 { 65_536 + t as u32 } else { id };
                 (s.at, strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned().unwrap_or_default())
             })
             .collect();
