@@ -1119,7 +1119,7 @@ impl Page {
                 return match first {
                     "template_cell" => descend(&self.mix_docs.cell, parts),
                     "template_tab" => descend(&self.mix_docs.tabs, parts),
-                    _ => [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs, &self.mix_docs.caption].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
+                    _ => [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs, &self.mix_docs.caption, &self.mix_docs.simple].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
                 };
             }
             return match first {
