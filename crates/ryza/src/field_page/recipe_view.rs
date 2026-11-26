@@ -93,7 +93,7 @@ impl Page {
         }
         // The quantity box at the bottom (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right.
         if let Some(row) = look.rows.get(look.cursor) {
-            w.slid(slide([0.0, 40.0]), |w| self.quantity_box(w, &root, &row.info));
+            w.slid(slide([0.0, 40.0]), |w| self.quantity_box(w, &root, &row.info, 0, 0.0));
         }
         self.caption_plate(&mut w, &root, RECIPE_TITLE, slide([0.0, -30.0]));
         if let Some(t) = &look.tutorial {
@@ -107,9 +107,16 @@ impl Page {
 pub struct AddPanel {
     /// The quality the placed materials give.
     pub quality: u32,
+    /// The quality the gauge fills to: the placed materials' (the number also previews the material under the list's cursor).
+    pub gauge: u32,
     /// The page of the effects list and the number of pages.
     pub page: (u32, u32),
+    /// The name each of the three effect rows shows (green: a ring's tier reached), none for an empty row.
+    pub effects: [Option<String>; 3],
 }
+
+/// The colour of a reached effect's name (the capture's bytes: 0, 135, 10).
+const REACHED: [f32; 4] = [0.0, 135.0 / 255.0, 10.0 / 255.0, 1.0];
 
 impl Page {
     /// The panel on the right (`product_info`) of Select Recipe (`add`: None) or of Add Materials, whose `create_info` takes the place of the list of materials.
@@ -131,13 +138,13 @@ impl Page {
                         match (k < 3, rest) {
                             (false, _) => hide(),
                             (true, ["cap_text"]) => Over { text: string(EFFECT_CAPS[k]), ..Default::default() },
-                            (true, ["name"]) => Over { text: Some(String::new()), ..Default::default() },
+                            (true, ["name"]) => Over { text: Some(add.and_then(|a| a.effects[k].clone()).unwrap_or_default()), tint: Some(REACHED), ..Default::default() },
                             _ => Over::default(),
                         }
                     }
                     ["product_info", "create_info", "quality", "gauge", gauge] => {
                         // (each gauge holds a hundred points; the first and the last are drawn even when empty)
-                        let q = add.map_or(0.0, |a| a.quality as f32);
+                        let q = add.map_or(0.0, |a| a.gauge as f32);
                         let share = |from: f32| ((q - from) / 100.0).clamp(0.0, 1.0);
                         match *gauge {
                             "bar_body" => Over { crop: Some(share(0.0)), ..Default::default() },
@@ -193,10 +200,11 @@ const EFFECT_CAPS: [u32; 3] = [6_619_488, 6_619_491, 6_619_492];
 
 impl Page {
     /// The box at the bottom of the synthesis screens (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right, and the number of times.
-    pub(super) fn quantity_box(&self, w: &mut Walker, root: &Xf, info: &RecipeInfo) {
+    pub(super) fn quantity_box(&self, w: &mut Walker, root: &Xf, info: &RecipeInfo, lit: usize, shift: f32) {
         let hide = || Over { hide: true, ..Default::default() };
         if let Some(box_) = find(&self.mix_docs.caption, "remain_put_num") {
             let at = pair(box_, "pos", [0.0; 2]);
+            let at = [at[0] + shift, at[1]];
             let put = info.put.min(4);
             let over = |p: &[&str]| -> Over {
                 match p {
@@ -206,7 +214,10 @@ impl Page {
                         // (the circles stand on the right of the row; the game moves each: the first stands at 112 / (the number shown), then 28 across and a quarter down for each)
                         if k + put >= 4 && k <= 3 { Over { at: Some([112.0 / put as f32 + 28.0 * (k + put - 4) as f32, 0.25 * (k + put - 4) as f32]), ..Default::default() } } else { hide() }
                     }
-                    ["remain_put_num", "list", _, "light"] => hide(),
+                    ["remain_put_num", "list", node, "light"] => {
+                        let k = node.strip_prefix("node:").and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
+                        if k + put >= 4 && k + put - 4 < lit { Over { show: true, ..Default::default() } } else { hide() }
+                    }
                     ["remain_put_num", "num"] => Over { text: Some(info.times.to_string()), ..Default::default() },
                     _ => Over::default(),
                 }

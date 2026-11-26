@@ -30,7 +30,7 @@ const GLOW_FIRST_SET: [usize; 4] = [0, 1, 2, 4];
 const GLOW_SIZE: f32 = 520.0 / 3.0;
 /// The cursor's glow turns once in about 375 frames (the capture's 12.1 degrees at 2850 and 60.0 at 2900): it was at no turn at `FOCUS_ZERO_AT` on the capture's clock.
 const FOCUS_DEGREES_PER_FRAME: f32 = 0.958;
-const FOCUS_ZERO_AT: f32 = 2837.4;
+pub const FOCUS_ZERO_AT: f32 = 2837.4;
 /// Where a ring's label plate stands from the ring's centre (measured on the capture's plates: STAND-IN).
 const LABEL_AT: [f32; 2] = [-98.4, -63.4];
 
@@ -64,6 +64,8 @@ pub struct FieldLook {
     pub clock: f32,
     /// The graph's shift in pixels of the layout (the capture pans it as the cursor moves).
     pub shift: [f32; 2],
+    /// The frame of the capture's run at which the cursor's glow stood at no turn (`FOCUS_ZERO_AT` for the first ring; it starts again on each move of the cursor).
+    pub focus_zero: f32,
 }
 
 /// A ring's colours: the dark of its disc and the colour of its rim (the capture's bytes).
@@ -126,7 +128,7 @@ impl Page {
         }
         // The cursor's glow.
         if let Some(r) = look.rings.get(look.cursor) {
-            let angle = FOCUS_DEGREES_PER_FRAME * (look.clock - FOCUS_ZERO_AT);
+            let angle = FOCUS_DEGREES_PER_FRAME * (look.clock - look.focus_zero);
             let side = 262.0 * ZOOM;
             let glow = Element { name: "image".into(), attributes: vec![("style".into(), "gen_a21_mmap02_point_eff_0".into()), ("size_wh".into(), format!("{side}, {side}, 0"))], children: Vec::new() };
             w.image(&glow, root.node(at(r), angle, [1.0; 2]).node([-side / 2.0, -side / 2.0], 0.0, [1.0; 2]), &Over::default());
@@ -255,7 +257,10 @@ impl Page {
         if let (Some(popup), Some(ring)) = (&look.popup, look.field.rings.get(look.field.cursor)) {
             self.ring_popup(&mut w, &root, [CENTRE[0] + look.field.shift[0] + ring.at[0] as f32 * GRID[0], CENTRE[1] + look.field.shift[1] + ring.at[1] as f32 * GRID[1] + POPUP_BELOW], ring, popup);
         }
-        self.quantity_box(&mut w, &root, &look.row.info);
+        if let Some(list) = &look.materials {
+            self.material_list(&mut w, &root, list);
+        }
+        self.quantity_box(&mut w, &root, &look.row.info, look.lit, look.field.shift[0]);
         self.caption_plate(&mut w, &root, ADD_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)
     }
@@ -273,6 +278,10 @@ pub struct AddLook {
     pub list_out: Option<(RecipeLook, f32)>,
     /// The frames since the ring's description began to rise into place (`anm_common_slide_in_bottom`; it goes out as that played backwards from A on 2920).
     pub desc_age: f32,
+    /// The material list, up after a ring is chosen.
+    pub materials: Option<MaterialsLook>,
+    /// The quantity box's circles lit (the materials placed).
+    pub lit: usize,
 }
 
 /// What a ring's popup says: its heading and a row for each tier.

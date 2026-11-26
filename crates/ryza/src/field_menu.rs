@@ -1110,6 +1110,9 @@ const SHELF_ENTRIES: [(char, u32); 5] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TAB
 /// The Container page's plate is this much wider than its five entries need (layout pixels: 0.67 of 1080 lines, `field-menu-pages` 2110).
 /// STAND-IN, as `STATUS_PLATE_EXTRA`.
 const SHELF_PLATE_EXTRA: f32 = 0.67 / 1.5;
+/// The plate of Add Materials' one-entry bar (a layout pixel is 1.5 pixels of 1080 lines): 35 pixels wider than the entry's own width.
+// STAND-IN: measured on `synth-atelier` 3000 to 3500 (the plate's left edge 35 pixels left of Barrel's); the rule that sets it is not read.
+const ADD_PLATE_EXTRA: f32 = 35.0 / 1.5;
 
 /// The Guide page's entries (`field-menu-pages` 3250): B "Back" and A "Confirm".
 const GUIDE_TOP_ENTRIES: [(char, u32); 2] = [('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
@@ -1353,7 +1356,7 @@ impl View {
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         let e = 1.0 - (1.0 - (since_a / ADD_BAR_GROW_FRAMES).clamp(0.0, 1.0)).powi(3);
         let (from, to) = (self.plate_full(&self.help_line(&RECIPE_ENTRIES), k), self.plate_full(&self.help_line(&ADD_RING_ENTRIES), k));
-        let extra = if ring { -(1.0 - e) * (to - from) } else { 0.0 };
+        let extra = if ring { -(1.0 - e) * (to - from) } else { ADD_PLATE_EXTRA };
         self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries: if ring { Entries::AddRing } else { Entries::Add } });
         pen.finish().0
     }

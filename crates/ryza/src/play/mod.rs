@@ -878,7 +878,7 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
         let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
         let tag = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
         let recipe = recipes.recipes.iter().find(|r| r.tag == tag).ok_or("no recipe")?;
-        Ok(fp::FieldLook { rings: ring_shows(fields.get(tag).ok_or("no field")?, recipe, &order, |i| i == 0), cursor: 0, clock: f, shift: [0.0; 2] })
+        Ok(fp::FieldLook { rings: ring_shows(fields.get(tag).ok_or("no field")?, recipe, &order, |i| i == 0), cursor: 0, clock: f, focus_zero: fp::FOCUS_ZERO_AT, shift: [0.0; 2] })
     }).transpose()?;
     let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows, cursor: cursor.max(0) as usize, cursor_shown: cursor >= 0, age, graph, tutorial, opening: opening_age }, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
@@ -921,9 +921,16 @@ fn ring_graph_pan(frame: f32) -> [f32; 2] {
     [x, -164.14 * ((frame - 3246.0) / 12.0).clamp(0.0, 1.0)]
 }
 
+/// The key's three materials, as `(the frame their rings light, container unit, ring, recipe row)`: the first flower, the second, the water.
+// STAND-IN: read off the capture (`synth-atelier`: A on a material at 2980, 3100 and 3340; `tools/synth_rules_events.txt` has the units and rings).
+const ADD_RUN: [(f32, usize, usize, u32); 3] = [(2981.0, 13, 0, 0), (3101.0, 14, 0, 0), (3341.0, 18, 3, 1)];
+/// The key's three material lists as `(frame of the A that opens it, frame of the A that takes it away, ring, recipe row, materials placed before)`.
+// STAND-IN: the same capture (A at 2920, 3040 and 3280 on a ring; 2980, 3100 and 3340 on a material, the list going out from the frame after).
+const ADD_LISTS: [(f32, f32, usize, u32, usize); 3] = [(2920.0, 2979.0, 0, 0, 0), (3040.0, 3099.0, 0, 0, 1), (3280.0, 3339.0, 3, 1, 2)];
+
 /// The synthesis's Add Materials screen (`--mix-add FRAME`): the background, then the screen's parts. STAND-IN: the capture's recipe (Red Supplement); the
 /// rings' states are the start's (the first ring open) until the rules' placements are wired in.
-fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, units: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
     use barrel_ryza::field_page as fp;
     const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
@@ -934,8 +941,35 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
     let rings = fields.get(TAG).ok_or("no field for the recipe")?;
     let recipe = recipes.recipes.iter().find(|r| r.tag == TAG).ok_or("no recipe")?;
-    let shown = ring_shows(rings, recipe, &order, |i| i == 0);
-    let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(329), category: Some(c) }).chain([fp::ShelfItem { image: tables.image(329), category: None }]).collect();
+    // The materials placed by now (the key's three: `ADD_RUN`) and the rings they leave lit; a list that is up also previews the material under its cursor.
+    let item_row = |u: &barrel_ryza::save::Worn| items.row(u.item).cloned().unwrap_or_default();
+    let place = |cauldron: &mut barrel_ryza::rings::Cauldron, unit: usize, ring: usize, row: u32| -> Result<()> {
+        let u = units.get(unit).ok_or("no unit")?;
+        let r = item_row(u);
+        Ok(cauldron.place(ring, row, f32::from(u.quality), [0, 1, 2, 3].map(|k| if r.elements[k] { r.elem_value } else { 0 }))?)
+    };
+    let mut cauldron = barrel_ryza::rings::Cauldron::new(rings);
+    for &(_, unit, ring, row) in ADD_RUN.iter().filter(|r| frame >= r.0) {
+        place(&mut cauldron, unit, ring, row)?;
+    }
+    let placed_now = cauldron.placed().len();
+    let session = ADD_LISTS.iter().find(|s| frame > s.0 && frame < s.1 + 30.0).copied();
+    let mut preview = barrel_ryza::rings::Cauldron::new(rings);
+    for &(_, unit, ring, row) in &ADD_RUN[..placed_now] {
+        place(&mut preview, unit, ring, row)?;
+    }
+    if let Some((_, out, ring, row, placed)) = session.filter(|s| frame < s.1) {
+        let _ = out;
+        let (_, unit, _, _) = ADD_RUN[placed];
+        place(&mut preview, unit, ring, row)?;
+    }
+    let outcome = preview.outcome(false);
+    let lit = cauldron.outcome(false).eval.cells;
+    let shown = ring_shows(rings, recipe, &order, |i| lit.get(i).is_some_and(|c| c.1));
+    let cursor = session.map_or(0, |s| s.2);
+    // The glow's turn starts again when the list is gone (30 frames after A on a material).
+    let focus_zero = ADD_LISTS.iter().rev().find(|s| frame >= s.1 + 30.0).map_or(fp::FOCUS_ZERO_AT, |s| s.1 + 30.5);
+    let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(329), category: Some(c) }).chain([fp::ShelfItem { image: tables.image(329), category: None }]).chain(units.iter().map(|u| fp::ShelfItem { image: tables.image(u.item), category: None })).collect();
     let back = mix_back_layer(install, gpu, renderer, 1, screen)?;
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
     let item = 329u16;
@@ -950,11 +984,11 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         elements: row.elements,
         materials: Vec::new(),
         put: recipe.rows.first().map_or(0, |r| r.need as usize),
-        times: 3,
+        times: session.map_or(3, |s| 2 - s.4 as u32),
     };
-    // The popup of the ring under the cursor (the first): its heading and a row for each of its steps.
+    // The popup of the ring under the cursor: its heading and a row for each of its steps.
     // STAND-IN: the effect numbers of `ITEM_EFF_CREATE_QUALITY_nn` (the enum's table is not read: n + 1332).
-    let popup = rings.first().filter(|r| frame >= 2870.0 && frame < 2930.0).map(|r| {
+    let popup = rings.get(cursor).filter(|_| (2870.0..2930.0).contains(&frame) || session.is_some_and(|s| frame < s.1)).map(|r| {
         let row = recipe.rows.get(r.restrict as usize);
         let category = row.and_then(|row| row.category.as_ref()).and_then(|c| order.iter().position(|o| o == c));
         let title = category.and_then(|c| strings.get(&(barrel_ryza::item_info::CATEGORY_BASE + c as u32))).cloned().unwrap_or_default();
@@ -979,7 +1013,35 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
             .collect();
         (fp::RecipeLook { rows, cursor: 1, cursor_shown: frame < 2860.0, age: frame - 2799.0, graph: None, tutorial: None, opening: None }, frame - 2859.0)
     });
-    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: ring_graph_pan(frame) }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) }, popup, list_out, desc_age: if frame >= 2920.0 { 30.0 - (frame - 2919.0) } else { frame - 2862.2 } };
+    // The material list: the session whose slide is running (up from A on the ring, out from A on the material).
+    let materials = ADD_LISTS.iter().find_map(|&(start, out, ring, row, placed)| {
+        let slide = if frame >= out { 30.0 - (frame - out) } else { frame - start };
+        if frame < start || slide <= 0.0 {
+            return None;
+        }
+        let category = recipe.rows.get(row as usize).and_then(|r| r.category.as_ref()).and_then(|c| order.iter().position(|o| o == c));
+        let items_here: Vec<(usize, &barrel_ryza::save::Worn)> = units.iter().enumerate().filter(|(i, u)| item_row(u).category == category && category.is_some() && !ADD_RUN[..placed].iter().any(|r| r.1 == *i)).collect();
+        let (_, first) = *items_here.first()?;
+        let r = item_row(first);
+        let _ = ring;
+        Some(fp::MaterialsLook {
+            items: items_here.iter().map(|(_, u)| { let r = item_row(u); fp::MaterialItem { image: tables.image(u.item), element: r.elements.iter().position(|&e| e), name: barrel_ryza::item_info::NAME_BASE + u32::from(u.item) } }).collect(),
+            cursor: 0,
+            info: fp::MaterialInfo { image: tables.image(first.item), quality: first.quality, elements: r.elements, elem_value: r.elem_value },
+            slide,
+            age: frame - start,
+            leaving: frame >= out,
+        })
+    });
+    // The effect rows of the panel: the highest tier each effect ring has reached (`Totals::tiers`).
+    let effects: [Option<String>; 3] = std::array::from_fn(|slot| {
+        let tier = usize::try_from(outcome.eval.totals.tiers[slot]).ok()?;
+        let ring = rings.iter().find(|r| r.elem.is_some() && r.kind as usize == slot)?;
+        let tag = recipe.rows.get(ring.restrict as usize)?.effects.get(tier)?;
+        let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u32>().ok()? + 1332;
+        strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned()
+    });
+    let look = fp::AddLook { materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame), focus_zero }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: if frame >= 2920.0 { 30.0 - (frame - 2919.0) } else { frame - 2862.2 } };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
@@ -2647,7 +2709,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         _ => None,
     };
     let mix_screen = match (a.mix_sheet, a.mix_complete, a.mix_result.clone()) {
-        _ if a.mix_add.is_some() => Some(mix_add_layers(&install, &gpu, &renderer, a.mix_add.unwrap_or(0.0), (width, height))?),
+        _ if a.mix_add.is_some() => Some(mix_add_layers(&install, &gpu, &renderer, a.mix_add.unwrap_or(0.0), &container.0, (width, height))?),
         _ if a.mix_recipe.is_some() => Some(mix_recipe_layers(&install, &gpu, &renderer, a.mix_recipe.unwrap_or((0, 0.0, 99.0, None)), a.mix_tutorial.map(|(page, age, clock)| barrel_ryza::field_page::Tutorial { page, age, clock }), a.mix_opening, &container.0, (width, height))?),
         (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
         (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
