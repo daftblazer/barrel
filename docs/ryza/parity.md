@@ -46,6 +46,8 @@ are in the checks file as `synth-recipe-*` and `synth-add-*`.
 Part 5 (the material phase, 2930 to 3520): the count fell from 556 to 1013 a frame to 2 to 10 on the quiet frames (3000 to 3030, 3120 to 3240, 3360 to 3490) and 30 to 390 on the
 list and press frames (open.md, "Synthesis", part 5). Its `synth-add-FRAME` rows for the frames at 10 or fewer pin the count (`^res_ mismatches: N$`), not 0: a regression guard until
 the rest is drawn.
+Part 6 (open.md, part 6): 2930 to 3350 and 3360 to 3490 are at 1 to 30 a frame (2940 to 3040 at 1 to 4; 3050 to 3090 at 11, 3260 to 3280 at 2 or 3, 3290 to 3330 at 8), the prompt's frames 3500 to
+3530 at 40 to 49, the running synthesis 3570 to 3820 at 3 or 4; `synth-run-FRAME` rows (`--mix-run` with the key's pad, the presses from `synthesis::Machine`) give the same counts as `synth-add-FRAME`.
 
 **synth flow** (part 2): four rows run `barrel-tool ryza-synth` on the key's `pad.txt`: `synth-cues` (the machine's cues against the key's play lines, 1900 to 4400: 65 of 65
 within a frame, 0 extra), `synth-screens` (30 screen changes, the card 3820, the result 4000, Complete 4060, going out 4240, the room 4300), `synth-walk-end` (her end place

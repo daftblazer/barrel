@@ -3165,6 +3165,35 @@ file for the frames at 10 or fewer, each pinning its count, not 0: see Left). Th
   (4) The green `a21_battle#1` quad (1 on every list frame) and the six element quads of the panel's nodes 1 to 3, which the capture draws after the item picture's text on the list-in frames.
   (5) 3820 to 3830, 4260 to 4300, the leftovers 2310, 2800, 2860, and the `Machine`-driven `--mix-run`: not started.
 
+**Part 6: the lists' help bar, the presses, the timeline from the Machine** (2026-11-26; `--mix-add FRAME` draws 2930 to 3830 and `--mix-run PAD FRAME` the same from a pad script; counts are
+unmatched `res_` quads against the key, the part-5 counts in brackets).
+- **Help bar.** The bar has six states over the loops, read from the capture's glyph quads (glyph codes by the font's atlas place; the plate's left edge in pixels of 1080 lines):
+  the ring's nine entries (plate 298), then on A the pair "Hide Loop Info / Change Display" (1258) for a few frames, the list's eight (Select, Hide Loop Info, Select Material, the guide, Change Display,
+  Submenu, Back, Confirm: 342), the one entry "Change Display" once a material is placed (1544), the prompt's four (1219) and, once the synthesis runs, "Fast Forward" (1544). `Entries::{Add, AddPair,
+  AddOne, AddPrompt}` and `field_menu::add_help_at` (words and plate edge; `play::add_bar` is the schedule). The plate eases out cubic over 15 frames from the ring's growth (which starts 2.2 and
+  24.4 frames before the second and third list's A) and to the pair's width; the pair's end (15 frames after A) is read between two samples. The part-5 `ADD_PLATE_EXTRA` is gone (one entry's plate
+  is the capture's 1544 itself). 2940 to 2970 went from 120 to 1 or 2, 3060 to 3090 from 129 to 11, 3310 to 3330 from 150 to 8.
+- **The presses.** What the game draws on the frames of A (2980, 3040, 3100, 3280, 3340): the ring's popup (`ring_info`) stays after the list goes out and fades over 15 frames (opacity
+  1 on the A, one third 10 frames on) and comes back over 15 frames from 6 frames before the second list's A (32 before the third's: the cursor moves down to the water's ring 25 frames before
+  that A and the popup of the new ring starts again), the ring's description rises again from 30 pixels (not 40: the rise's offset is 30 layout pixels, as 3040, 3250 and 3260 give) and goes out as
+  the rise played backwards from the A; the quality number on the A frame is still the preview. The popup's rows of a quality ring (kind 4) read "Quality +n" (string 10092589, `%+d`, the step's bonus: 10, 15, 20, 25) in full-width digits and sign, as the capture prints them; an
+  effect name for `ITEM_EFF_ADD_CATEGORY_nn` is string 1446 + nn. The panel's three element nodes (`clone_child_tree` paths into the panel's own file) were not found by the walker: they are drawn
+  now. 2980 went from 358 to 2, 2990 from 224 to 4, 3040 from 386 to 4, 3100 from 351 to 7, 3110 from 224 to 4, 3250 to 3280 from 340 to 4, 2, 3, 2 (3290 to 3330: 8), 3340 and 3350 from 294 and 184 to 6 and 4.
+- **The synthesis running** (3550 on): the panels, the popup and the plate are gone and only the ring graph (no cursor glow, no lights) and the bars stay (`AddLook::bare`, `FieldLook::quiet`);
+  the bar says Fast Forward from 35 frames after the last A. 3570 to 3820 are at 3 or 4 (3830 is the card's row). The prompt before the synthesis (3500 to 3530: a window with "OK" and
+  "Start Over", the bar's four entries) has its bar but not its window; 3540 (750: the screen's fade) and 3550 and 3560 (113: the synthesis banner, `uil_a21_caption` and a time plate) are not drawn.
+- **`synthesis::Machine` drives the screens.** `Machine::add_presses` and `recipe_press` log the frames of A on Select Recipe and on Add Materials, `ADD_PRESS_ROLES` says what each of the 11 does
+  (ring, material, loop). `play::AddTimeline` holds these 12 frames and every other frame of the screens is a fixed count from them (the STAND-INs below): `--mix-add` uses the key's own, `--mix-run PAD
+  FRAME` makes them by running the Machine over the pad script (the key's `pad.txt`) and draws the same: rows `synth-run-FRAME` give the same counts as `synth-add-FRAME`.
+- **STAND-INs** (named in the code): the plate edges (298, 1258, 342, 1544, 1219) and the eases' lengths (15) read off the sampled plates; the pair's length (15) and the prompt's and the fast forward's
+  starts (15 before and 35 after the last A); the popup's and the description's starts (6 and 32 before the A of the second and third lists; `CURSOR_MOVES_BEFORE` 25) and fade (15); the
+  `SYNTHESIS_RUNS_AFTER` 25 (the panels are gone between 3540 and 3550); `ITEM_EFF_ADD_CATEGORY_nn` and the quality tiers' strings; the rings and units of the three lists (part 5).
+- **Left, by size.** (1) The prompt's window and the fade at 3500 to 3560 (about 40 to 750 a frame): the window is the options screen's balloon select (`options_view::ask`) with its own pen, not
+  shared with the synthesis walker yet; the banner at 3550 to 3560 is new. (2) 3290 to 3330 (8: the popup's rows of the water ring with the list gone).
+  (3) 3050 to 3090 (11) and 3150 to 3190 (6 to 8): the second light of the ring at grid (1, 3 to 5), a pair of gradation quads that stand 594 pixels
+  right of Barrel's, and the item picture's pair. (4) 2310 (the autosave spinner, 13), 2800 and 2860 (one font quad over the screen, not reproduced), the ring (1083, 819)'s extra quads on 3570 on
+  (3), `a21_battle#1` (1 on the list frames). (5) The rules still do not choose which materials go where: the key's units and rings are fixed.
+
 Left.
 
 **Left.**

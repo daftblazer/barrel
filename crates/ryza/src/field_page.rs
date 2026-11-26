@@ -513,7 +513,6 @@ impl Page {
                     || (ACTION_COMMENT..ACTION_COMMENT + 1000).contains(n)
                     || (NAME_BASE..NAME_BASE + 1000).contains(n)
                     || (EFFECT_BASE..EFFECT_BASE + 2000).contains(n)
-                    || (EFFECT_BASE + 65_536..EFFECT_BASE + 65_542).contains(n)
                     || (CATEGORY_BASE..CATEGORY_BASE + 100).contains(n)
                     || (POTENTIAL_BASE..POTENTIAL_BASE + 400).contains(n)
                     || SHELF_STRINGS.contains(n)

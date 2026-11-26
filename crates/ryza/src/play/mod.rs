@@ -974,6 +974,16 @@ fn timeline_from_pad(install: &barrel_ryza::install::Install, pad: &str, contain
     AddTimeline::from_machine(&machine)
 }
 
+/// `text` with its digits and signs in the full-width forms (the game prints the ring popup's quality bonus that way).
+fn fullwidth(text: &str) -> String {
+    text.chars().map(|c| match c {
+        '0'..='9' => char::from_u32(0xff10 + (c as u32 - '0' as u32)).unwrap_or(c),
+        '+' => '\u{ff0b}',
+        '-' => '\u{ff0d}',
+        _ => c,
+    }).collect()
+}
+
 /// How far the capture's ring graph is panned on frame `frame`, in layout pixels. STAND-IN: the capture's: 105 pixels of 1080 lines to the right (70) while the material list has the
 /// pad (from 9 frames after A on 2920, 3040 and 3280, to 9 after the next press), and two grid steps up (164.1) in 12 frames from 3246.
 fn ring_graph_pan(frame: f32, tl: &AddTimeline) -> [f32; 2] {
@@ -1102,8 +1112,11 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
                 let tag = row.and_then(|row| row.effects.get(t)).cloned().unwrap_or_default();
                 // STAND-IN: `ITEM_EFF_ADD_CATEGORY_nn` is effect 1446 + nn ("Add (Water)" is nn 12, the liquid category's: tables.md); the enum's table is not read.
                 let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_").and_then(|n| n.parse::<u32>().ok()).map(|n| 1332 + n).or_else(|| tag.strip_prefix("ITEM_EFF_ADD_CATEGORY_").and_then(|n| n.parse::<u32>().ok()).map(|n| 1446 + n)).unwrap_or(0);
-                // STAND-IN: a quality ring (kind 4) names its tiers "Quality", "Quality+", "Quality++" ... (effect numbers 65536 + tier: the capture's rows at 3280).
-                let id = if r.kind == 4 { 65_536 + t as u32 } else { id };
+                // A quality ring (kind 4) says "Quality +n" for the step's bonus (`synth-atelier` 3280: 10, 15, 20, 25 on the ice rings; string 10092589, `%+d`).
+                if r.kind == 4 {
+                    let bonus = s.value.unwrap_or(0);
+                    return (s.at, strings.get(&10_092_589).map(|t| t.replace("%+d", &fullwidth(&format!("{bonus:+}")))).unwrap_or_default());
+                }
                 (s.at, strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned().unwrap_or_default())
             })
             .collect();
