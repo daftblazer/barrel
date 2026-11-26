@@ -110,8 +110,8 @@ struct Args {
     hud_arrival: f32,
     /// `--mix-sheet ITEM:COUNT[:CLOCK:FRAMES]`: the synthesis's finished card for an item and the number made, CLOCK frames of the animation clock and FRAMES frames into its coming in (docs/ryza/open.md, "Synthesis (P6)").
     mix_sheet: Option<(u16, u32, Option<(f32, f32)>)>,
-    /// `--mix-recipe CURSOR[:AGE[:BAR]]`: the synthesis's Select Recipe screen with the cursor on a row, AGE frames after its first and the help bar BAR frames into its fade.
-    mix_recipe: Option<(usize, f32, f32)>,
+    /// `--mix-recipe CURSOR[:AGE[:BAR]]`: the synthesis's Select Recipe screen with the cursor on a row (-1: no cursor bar), AGE frames after its first and the help bar BAR frames into its fade.
+    mix_recipe: Option<(i32, f32, f32)>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
     mix_complete: Option<(u32, u32, u32, f32)>,
     /// `--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING[:ENTERING]]`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows), LEAVING frames after A sent it out.
@@ -839,7 +839,7 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
 
 /// The synthesis's Select Recipe screen (`--mix-recipe`): the background, the screen's parts and the help bar, as the layers in the order they draw.
 /// STAND-IN: the two recipes the capture's save knows (Craft and Red Supplement); the list comes from the save's known recipes when that is read.
-fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, (cursor, age, bar_age): (usize, f32, f32), container: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, (cursor, age, bar_age): (i32, f32, f32), container: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
     use barrel_ryza::field_page as fp;
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
@@ -860,7 +860,7 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
     // The pictures the panel needs: each item's, and one for each category the recipes ask for.
     let shelf: Vec<fp::ShelfItem> = rows.iter().flat_map(|r| std::iter::once(fp::ShelfItem { image: r.info.image, category: None }).chain(r.info.materials.iter().map(|&(c, _)| fp::ShelfItem { image: r.info.image, category: Some(c) }))).collect();
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
-    let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows, cursor, age }, screen);
+    let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows, cursor: cursor.max(0) as usize, cursor_shown: cursor >= 0, age }, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
     bar.set(gpu, &view.recipe_help(screen, bar_age))?;

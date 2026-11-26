@@ -38,8 +38,10 @@ pub struct RecipeInfo {
 /// What the Select Recipe screen shows.
 pub struct RecipeLook {
     pub rows: Vec<RecipeRow>,
-    /// The row under the cursor.
+    /// The row under the cursor (and whose panel shows).
     pub cursor: usize,
+    /// The cursor's bar is drawn (the tutorial pages hide it).
+    pub cursor_shown: bool,
     /// Frames since the screen's first.
     pub age: f32,
 }
@@ -81,8 +83,8 @@ impl Page {
                 let over = |p: &[&str]| -> Over {
                     match p {
                         ["menu_item"] => Over { show: true, ..Default::default() },
-                        ["menu_item", "__uimenu_cursor_active"] if i == look.cursor => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
-                        ["menu_item", "__uimenu_cursor_active", "add"] if i == look.cursor => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
+                        ["menu_item", "__uimenu_cursor_active"] if i == look.cursor && look.cursor_shown => Over { show: true, paint: Some([base[0], base[1], base[2], 1.0]), ..Default::default() },
+                        ["menu_item", "__uimenu_cursor_active", "add"] if i == look.cursor && look.cursor_shown => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
                         ["menu_item", "bookmark_bg"] => Over { show: true, ..Default::default() },
                         ["menu_item", "__uimenu_cursor_active", ..] | ["menu_item", "bookmark_bg", ..] | ["menu_item", "new_icon"] | ["menu_item", "r_icon"] => hide(),
                         ["menu_item", "name"] => Over { text: string(row.name), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
