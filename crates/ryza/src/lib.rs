@@ -26,6 +26,7 @@ pub mod player;
 pub mod walk;
 pub mod solids;
 pub mod save;
+pub mod rings;
 pub mod item_info;
 pub mod library;
 pub mod party_stats;

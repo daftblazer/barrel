@@ -52,7 +52,8 @@ usage:
       `record/list@OFFSET=HEX`: bytes written at OFFSET in a list record (item/m_unitContainer@396=...: a unit)
   barrel-tool ryza-save-tree INSTALL SAVE  a Ryza DX save's records (name and size, nested) and the story events it has played
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
-  barrel-tool ryza-synth INSTALL SAVE RECIPE PAD.txt FROM TO  the synthesis flow's state machine run on a scenario's pad script (docs/ryza/open.md, Synthesis P6): the screens it passes, her end place, the save's changes; its sounds go to BARREL_TRACE_CUES
+  barrel-tool ryza-synth INSTALL SAVE RECIPE PAD.txt FROM TO [--placements FILE]  the synthesis flow's state machine run on a scenario's pad script (docs/ryza/open.md, Synthesis P6): the screens it passes, her end place, the save's changes; its sounds go to BARREL_TRACE_CUES
+  barrel-tool ryza-rules INSTALL SAVE RECIPE EVENTS [--rings]  the synthesis rules (ring graph, quality) for a file of placements: a row per event
   barrel-tool ryza-mix INSTALL STATE.bin SAVE RECIPE [--steps FILE] [--draws] [--units]  a synthesis from a save: the units its rows take, what it makes, and the draws of a steps file from the generator's dump
   barrel-tool ryza-lockstep INSTALL STATE.bin SCRIPT HOOKS.LOG FROM TO [--save FILE]  a run's draws (gatherings, her clips, free play) from the generator's dump against the game's hook log
       SCRIPT lines: `FRAME gather PLACE`, `FRAME clip` (a hand's voice chance), `FRAME swing` (the staff's clip), `FRAME free TIMERS SPAWN` (`tools/free_play.py`),
@@ -292,8 +293,9 @@ fn main() -> ExitCode {
         ["ryza-file", install, name, out] => ryza_file(Path::new(install), name, Path::new(out)),
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
+        ["ryza-rules", install, save, recipe, events, rest @ ..] => ryza_rules(Path::new(install), Path::new(save), recipe, Path::new(events), rest),
         ["ryza-mix", install, state, save, recipe, rest @ ..] => ryza_mix(Path::new(install), Path::new(state), Path::new(save), recipe, rest),
-        ["ryza-synth", install, save, recipe, pad, from, to] => ryza_synth(Path::new(install), Path::new(save), recipe, Path::new(pad), from, to),
+        ["ryza-synth", install, save, recipe, pad, from, to, rest @ ..] => ryza_synth(Path::new(install), Path::new(save), recipe, Path::new(pad), from, to, rest),
         ["ryza-lockstep", install, state, script, hooks, from, to, rest @ ..] => ryza_lockstep(Path::new(install), Path::new(state), Path::new(script), Path::new(hooks), from, to, rest),
         ["ryza-save-tree", install, file] => ryza_save_tree(Path::new(install), Path::new(file)),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
@@ -1943,7 +1945,7 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
 }
 
 /// `ryza-synth`: the synthesis flow's state machine (`barrel_ryza::synthesis`) run from a pad script, frame `from` to `to`.
-fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str, to: &str) -> Result<()> {
+fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str, to: &str, rest: &[&str]) -> Result<()> {
     let (from, to): (i64, i64) = (from.parse()?, to.parse()?);
     use barrel_ryza::synthesis::{script_pad, Machine, World};
     let game = barrel_ryza::install::Install::open(install)?;
@@ -1959,8 +1961,58 @@ fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str,
     // The enum's array has an entry before item 0.
     let item = pe.enum_names(&tables.recipes[n].tag).and_then(|(_, at)| at.checked_sub(1)).ok_or("the recipe's item")? as u16;
     let world = World { clock: barrel_ryza::save::clock(&data).unwrap_or(0), container: container.clone(), level: barrel_ryza::mix::alchemy(&data).map_or(1, |l| l.0) };
-    // STAND-IN: the made units' quality (the rule is not derived: the key's 49).
-    let maker = move |made: &barrel_ryza::mix::Made| vec![barrel_ryza::save::Worn { item, quality: 49, level: 1, effects: [0xffff; 4], potentials: [290; 3], potential_levels: [0; 3], slots: 0 }; made.count as usize];
+    let fields = barrel_ryza::rings::Rings::read(&game.read("\\saves\\mix\\mixfielddata.xml")?)?;
+    let recipe = &tables.recipes[n];
+    let field = fields.get(&recipe.tag).ok_or_else(|| format!("no field for {}", recipe.tag))?;
+    // STAND-IN: which materials the player put in which rings. With `--placements FILE` (`FRAME place UNIT RING ROW` lines, the form
+    // `ryza-rules` reads) they are the key's; without, each row's units go in the first open ring that takes the row.
+    let placements: Option<Vec<[usize; 3]>> = match rest.iter().position(|a| *a == "--placements") {
+        Some(i) => {
+            let file = rest.get(i + 1).ok_or("--placements FILE")?;
+            let lines = std::fs::read_to_string(file)?;
+            Some(lines.lines().filter_map(|l| {
+                let w: Vec<&str> = l.split('#').next().unwrap_or_default().split_whitespace().collect();
+                let n = |i: usize| w.get(i)?.parse().ok();
+                if w.get(1) == Some(&"place") { Some([n(2)?, n(3)?, n(4)?]) } else { None }
+            }).collect())
+        }
+        None => None,
+    };
+    let outcome = |made: &barrel_ryza::mix::Made| -> barrel_ryza::rings::Outcome {
+        let mut c = barrel_ryza::rings::Cauldron::new(field);
+        let mut put = |unit: usize, ring: Option<usize>, row: usize| {
+            let w = &container[unit];
+            let elements = tables.elements(usize::from(w.item));
+            let rings = ring.map_or(0..field.len(), |r| r..r + 1);
+            // A ring that does not take the unit is skipped, as the screen would not offer it.
+            for r in rings {
+                if c.place(r, row as u32, f32::from(w.quality), elements).is_ok() {
+                    break;
+                }
+            }
+        };
+        match &placements {
+            Some(list) => list.iter().for_each(|&[unit, ring, row]| put(unit, Some(ring), row)),
+            None => {
+                let mut taken = made.taken.iter();
+                for (row, r) in recipe.rows.iter().filter(|r| r.category.is_some()).enumerate() {
+                    for _ in 0..r.need {
+                        if let Some(&unit) = taken.next() {
+                            put(unit, None, row);
+                        }
+                    }
+                }
+            }
+        }
+        c.outcome(false)
+    };
+    let made_last = std::cell::RefCell::new(None);
+    let maker = |made: &barrel_ryza::mix::Made| {
+        let o = outcome(made);
+        let quality = o.quality as u16;
+        *made_last.borrow_mut() = Some(o);
+        vec![barrel_ryza::save::Worn { item, quality, level: 1, effects: [0xffff; 4], potentials: [290; 3], potential_levels: [0; 3], slots: 0 }; made.count as usize]
+    };
     let mut m = Machine::new(&tables, n, world, &maker, barrel_ryza::synthesis::KeyPicks);
     m.start_at(from);
     let script = std::fs::read_to_string(pad)?;
@@ -1976,6 +2028,10 @@ fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str,
     cues.sort_by_key(|c| c.at_frame);
     for c in cues.iter().filter(|c| c.at_frame <= to) {
         barrel_ryza::sound::trace(c);
+    }
+    if let Some(o) = made_last.borrow().as_ref() {
+        let effects: Vec<&str> = (0..4).filter_map(|k| recipe.rows.get(k)?.effects.get(usize::try_from(o.eval.totals.tiers[k]).ok()?).map(String::as_str)).collect();
+        println!("made quality {} (mean {} of {} materials, rings +{}) effects {effects:?}", o.quality, o.mean, o.count, o.eval.totals.bonus());
     }
     println!("her place {:.2} {:.2} facing {:.1} degrees", m.at[0], m.at[1], m.turn.to_degrees());
     let w = m.world();
@@ -2056,6 +2112,49 @@ fn ryza_mix(install: &Path, state: &Path, save: &Path, recipe: &str, rest: &[&st
         }
         if !calls_only {
             println!("generator index {:x}", rng.index());
+        }
+    }
+    Ok(())
+}
+
+/// `ryza-rules`: the synthesis rules for a recipe and a list of events (`FRAME place UNIT RING ROW` puts the save's container unit UNIT into
+/// ring RING as recipe row ROW's material, `FRAME eval` re-evaluates, `FRAME blank` evaluates with the rings' state empty). Each event prints a
+/// row `FRAME q=Q mean=M sum=S count=N a=A tiers=T0,T1,T2,T3` (`--rings`: the 32 state words after it as `FRAME rings W0 ... W31`), the form
+/// `tools/synth_rules_key.py` writes from the game's hook log.
+fn ryza_rules(install: &Path, save: &Path, recipe: &str, events: &Path, rest: &[&str]) -> Result<()> {
+    let rings_too = rest.contains(&"--rings");
+    let game = barrel_ryza::install::Install::open(install)?;
+    let tables = barrel_ryza::mix::Tables::read(&game.read("\\saves\\item\\itemrecipedata.xml")?, &game.read("\\saves\\item\\itemdata.xml")?)?;
+    let fields = barrel_ryza::rings::Rings::read(&game.read("\\saves\\mix\\mixfielddata.xml")?)?;
+    let n = match recipe.parse::<usize>() {
+        Ok(n) => n,
+        Err(_) => tables.recipes.iter().position(|r| r.tag == recipe).ok_or_else(|| format!("no recipe {recipe}"))?,
+    };
+    let tag = &tables.recipes.get(n).ok_or_else(|| format!("no recipe {n}"))?.tag;
+    let field = fields.get(tag).ok_or_else(|| format!("no field for {tag}"))?;
+    let data = barrel_ryza::save::decode(&read(save)?).map_err(|e| format!("{}: {e}", save.display()))?;
+    let (container, _) = barrel_ryza::save::container(&data).ok_or("the save has no container")?;
+    let mut cauldron = barrel_ryza::rings::Cauldron::new(field);
+    for (n, line) in std::fs::read_to_string(events)?.lines().enumerate() {
+        let words: Vec<&str> = line.split('#').next().unwrap_or_default().split_whitespace().collect();
+        let at = |e: String| format!("{}:{}: {e}", events.display(), n + 1);
+        let num = |i: usize| words.get(i).and_then(|w| w.parse::<usize>().ok()).ok_or_else(|| at("a number?".into()));
+        let blank = match words.get(1).copied() {
+            None => continue,
+            Some("place") => {
+                let unit = container.get(num(2)?).ok_or_else(|| at("no such unit".into()))?;
+                cauldron.place(num(3)?, num(4)? as u32, f32::from(unit.quality), tables.elements(usize::from(unit.item))).map_err(at)?;
+                false
+            }
+            Some("eval") => false,
+            Some("blank") => true,
+            Some(other) => return Err(at(format!("{other}?")).into()),
+        };
+        let o = cauldron.outcome(blank);
+        let t = o.eval.totals.tiers;
+        println!("{} q={} mean={} sum={} count={} a={} tiers={},{},{},{}", words[0], o.quality, o.mean, o.sum, o.count, o.eval.totals.bonus(), t[0], t[1], t[2], t[3]);
+        if rings_too {
+            println!("{} rings {}", words[0], o.eval.words().iter().map(i32::to_string).collect::<Vec<_>>().join(" "));
         }
     }
     Ok(())

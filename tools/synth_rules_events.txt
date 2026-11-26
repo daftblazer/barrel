@@ -1,0 +1,14 @@
+# What the synth-rules key's player did (ryza-recomp scenarios/synth-rules, recipe 92): FRAME place UNIT RING ROW | eval | blank.
+# STAND-IN: the units and rings are read off the key (the placed materials' qualities 35, 42, 40 and the ring states); the screens' own
+# cursor and loops that choose them are not modelled. `blank` is the game's empty ring state a loop's press shows for a frame.
+2860 eval
+2921 place 13 0 0
+2980 blank
+2981 eval
+3041 place 14 0 0
+3100 blank
+3101 eval
+3281 place 18 3 1
+3340 blank
+3341 eval
+3535 eval

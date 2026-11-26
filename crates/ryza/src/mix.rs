@@ -46,6 +46,8 @@ pub struct Tables {
     pub recipes: Vec<Recipe>,
     /// For each item of `itemdata.xml`, its categories (`cat_0`, `cat_1`, ...).
     categories: Vec<Vec<String>>,
+    /// For each item, its element values (`elemFire`, `elemIce`, `elemThunder`, `elemAir`): `elemValue` for each element the item names.
+    elements: Vec<[i32; 4]>,
 }
 
 impl Tables {
@@ -67,7 +69,21 @@ impl Tables {
         }
         let items = table::parse(items).map_err(|e| format!("itemdata: {e}"))?;
         let categories = items.children.iter().map(|e| (0..).map_while(|i| e.attr(&format!("cat_{i}"))).map(str::to_string).collect()).collect();
-        Ok(Tables { recipes: out, categories })
+        const NAMES: [&str; 4] = ["elemFire", "elemIce", "elemThunder", "elemAir"];
+        let elements = items
+            .children
+            .iter()
+            .map(|e| {
+                let value = e.attr("elemValue").and_then(|t| t.trim().parse().ok()).unwrap_or(0);
+                NAMES.map(|n| if e.attr(n).is_some() { value } else { 0 })
+            })
+            .collect();
+        Ok(Tables { recipes: out, categories, elements })
+    }
+
+    /// The element values item `item` gives a ring (fire, ice, thunder, air).
+    pub fn elements(&self, item: usize) -> [i32; 4] {
+        self.elements.get(item).copied().unwrap_or_default()
     }
 
     /// Whether item `item` is in `category`.

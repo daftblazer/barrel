@@ -163,7 +163,7 @@ pub struct World {
     pub level: u32,
 }
 
-/// The made item's units, as the caller builds them (their quality and effects are the result's, which is not derived).
+/// The made item's units, as the caller builds them (their quality and effects are the rings' rules: `rings::Cauldron`).
 pub type Maker<'a> = &'a dyn Fn(&mix::Made) -> Vec<Worn>;
 
 pub struct Machine<'a> {
