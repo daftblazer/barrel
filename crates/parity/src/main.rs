@@ -762,7 +762,7 @@ fn compare(s: &Setup, g: &[Q], b: &[Q], mut line: impl FnMut(&str)) -> usize {
                 line(&format!("  same   {}", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}"))));
             } else {
                 bad += 1;
-                line(&format!("  DIFF   {}: {}  [game {}]", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")), d.join("; "), x.how));
+                line(&format!("  DIFF   {}: {}  [game {}] at {:?}", x.text.as_ref().map_or_else(|| tex(&x.tex), |t| format!("{t:?}")), d.join("; "), x.how, x.rect));
             }
             i += 1;
             j += 1;

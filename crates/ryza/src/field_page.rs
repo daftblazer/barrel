@@ -311,6 +311,8 @@ struct MixDocs {
     tabs: Element,
     cabinet: Element,
     cell: Element,
+    /// The screens' caption layout (`uil_a21_mix_caption.xml`: the quantity box and the help plates).
+    caption: Element,
 }
 
 pub struct Page {
@@ -398,7 +400,7 @@ impl Page {
         let mix_sheet = table::parse(&read("ui_en\\a21_mix\\uil_a21_mix_item_sheet.xml")?).map_err(|e| format!("mix item sheet: {e}"))?;
         let mix_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_mix\\{n}"))?).map_err(|e| format!("{n}: {e}"));
         let cab_read = |n: &str| table::parse(&read(&format!("ui_en\\a21_cabinet\\{n}"))?).map_err(|e| format!("{n}: {e}"));
-        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")? };
+        let mix_docs = MixDocs { recipe: mix_read("uil_a21_mix_recipe.xml")?, field: mix_read("uil_a21_mix_field.xml")?, tabs: cab_read("uil_a21_item_tab_mix.xml")?, cabinet: cab_read("uil_a21_cabinet_mix.xml")?, cell: cab_read("uil_a21_cabinet_mix_cell.xml")?, caption: mix_read("uil_a21_mix_caption.xml")? };
         let mut text_styles = HashMap::new();
         for f in ["ui_cmn\\uil_template.xml", "ui_en\\a21_item_info\\uil_a21_item_info_template.xml"] {
             for t in table::parse(&read(f)?).map_err(|e| format!("{f}: {e}"))?.children {
@@ -426,7 +428,7 @@ impl Page {
         // The textures: every style a layout names (a list's every picture, except the long lists of items and figures:
         // only the party's).
         let mut used = BTreeSet::new();
-        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell] {
+        for doc in [&equip, &chara, &status, &caption, &faces, &skill, &item, &targets, &cabinet, &cell, &tabs, &explore, &library_bg, &library_top, &library_items, &library_eff, &mix_sheet, &mix_docs.recipe, &mix_docs.field, &mix_docs.tabs, &mix_docs.cabinet, &mix_docs.cell, &mix_docs.caption] {
             collect_styles(doc, &mut used);
         }
         let mut wanted: BTreeSet<(String, usize)> = BTreeSet::new();
@@ -1076,7 +1078,7 @@ impl Page {
                 return match first {
                     "template_cell" => descend(&self.mix_docs.cell, parts),
                     "template_tab" => descend(&self.mix_docs.tabs, parts),
-                    _ => [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
+                    _ => [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs, &self.mix_docs.caption].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
                 };
             }
             return match first {
@@ -1085,7 +1087,7 @@ impl Page {
                 _ => [&self.targets, &self.item, &self.cabinet].into_iter().find_map(|doc| descend(find(doc, first)?, parts.clone())),
             };
         }
-        let own = [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs, &self.mix_docs.cell];
+        let own = [&self.mix_docs.recipe, &self.mix_docs.field, &self.mix_docs.cabinet, &self.mix_docs.tabs, &self.mix_docs.cell, &self.mix_docs.caption];
         let shared = [&self.explore, &self.equip, &self.status, &self.faces, &self.skill, &self.targets, &self.tabs, &self.cell, &self.library_items, &self.library_eff];
         let docs: Vec<&Element> = if mix { own.into_iter().chain(shared).collect() } else { shared.to_vec() };
         docs.into_iter().find_map(|doc| find_with_children(doc, name))

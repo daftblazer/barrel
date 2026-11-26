@@ -266,7 +266,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -1054,7 +1054,16 @@ enum Entries {
     Next,
     /// The same card's while it comes in: A and "Fast Forward".
     FastForward,
+    /// The synthesis's Select Recipe: select, the table of contents, mark as favorite, check and confirm.
+    Recipe,
 }
+
+/// The synthesis's Select Recipe entries (`synth-atelier` 2790): the cross "Select", the guide, X "Mark as Favorite", Y "Check Tree" and A "Confirm".
+const RECIPE_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 9_961_479), ('\u{4de}', 9_961_550), ('\u{4da}', 4_194_367)];
+
+/// The Select Recipe plate is this much wider (layout pixels) than its words need, and this much short at 0.4 of its opacity. STAND-IN: one sample each.
+const RECIPE_PLATE_EXTRA: f32 = 0.0;
+const RECIPE_BAR_GROW: f32 = 11.3;
 
 /// The synthesis's finished card's entry: A and "Next" (`str_menu_define`).
 const NEXT_ENTRIES: [(char, u32); 1] = [('\u{4da}', 4_194_315)];
@@ -1308,6 +1317,16 @@ impl View {
             (Entries::Next, self.plate_full(&self.help_line(&FAST_FORWARD_ENTRIES), k) - self.plate_full(&self.help_line(&NEXT_ENTRIES), k) + CARD_PLATE_EXTRA)
         };
         self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries });
+        pen.finish().0
+    }
+
+    /// The Select Recipe screen's help bar `age` frames after it began to fade in (15 frames; its plate grows with the opacity).
+    /// STAND-IN: the plate is `RECIPE_BAR_GROW` layout pixels short at the opacity of `synth-atelier` 2700 (0.4), from that one sample.
+    pub fn recipe_help(&self, screen: (u32, u32), age: f32) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let alpha = (age / TOOLS_BAR_FADE).clamp(0.0, 1.0);
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        self.help_bar(&mut pen, Bar { alpha, grow: 1.0, words: true, extra: RECIPE_PLATE_EXTRA - RECIPE_BAR_GROW * (1.0 - alpha) / 0.6, entries: Entries::Recipe });
         pen.finish().0
     }
 
@@ -1724,6 +1743,7 @@ impl View {
             Entries::Tools => &TOOLS_ENTRIES,
             Entries::Next => &NEXT_ENTRIES,
             Entries::FastForward => &FAST_FORWARD_ENTRIES,
+            Entries::Recipe => &RECIPE_ENTRIES,
             Entries::GuideTop => &GUIDE_TOP_ENTRIES,
             Entries::GuideItems => &GUIDE_ITEMS_ENTRIES,
             Entries::GuideEffects => &GUIDE_EFFECTS_ENTRIES,

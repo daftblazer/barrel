@@ -110,8 +110,8 @@ struct Args {
     hud_arrival: f32,
     /// `--mix-sheet ITEM:COUNT[:CLOCK:FRAMES]`: the synthesis's finished card for an item and the number made, CLOCK frames of the animation clock and FRAMES frames into its coming in (docs/ryza/open.md, "Synthesis (P6)").
     mix_sheet: Option<(u16, u32, Option<(f32, f32)>)>,
-    /// `--mix-recipe CURSOR[:AGE]`: the synthesis's Select Recipe screen with the cursor on a row, AGE frames after its first.
-    mix_recipe: Option<(usize, f32)>,
+    /// `--mix-recipe CURSOR[:AGE[:BAR]]`: the synthesis's Select Recipe screen with the cursor on a row, AGE frames after its first and the help bar BAR frames into its fade.
+    mix_recipe: Option<(usize, f32, f32)>,
     /// `--mix-complete LEVEL:NEXT:GAINED[:AGE]`: the "Complete" screen's level panel, AGE frames into the "Level UP!" animation.
     mix_complete: Option<(u32, u32, u32, f32)>,
     /// `--mix-result ITEM:QUALITY:EFFECT,..[:LEAVING[:ENTERING]]`: the "Complete" screen's item card for the made item (the effects as `item_effect.xml` rows), LEAVING frames after A sent it out.
@@ -350,8 +350,8 @@ fn args(args: Vec<String>) -> Result<Args> {
             }
             "--mix-recipe" => {
                 let v = value()?;
-                let (cursor, age) = v.split_once(':').unwrap_or((&v, "0"));
-                a.mix_recipe = Some((cursor.parse()?, age.parse()?));
+                let n: Vec<&str> = v.split(':').collect();
+                a.mix_recipe = Some((n[0].parse()?, n.get(1).unwrap_or(&"0").parse()?, n.get(2).unwrap_or(&"99").parse()?));
             }
             "--mix-sheet" => {
                 let v = value()?;
@@ -839,30 +839,32 @@ fn mix_sheet_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer
 
 /// The synthesis's Select Recipe screen (`--mix-recipe`): the background, the screen's parts and the help bar, as the layers in the order they draw.
 /// STAND-IN: the two recipes the capture's save knows (Craft and Red Supplement); the list comes from the save's known recipes when that is read.
-fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, (cursor, age): (usize, f32), screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, (cursor, age, bar_age): (usize, f32, f32), container: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
     use barrel_ryza::field_page as fp;
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
     let back = mix_back_layer(install, gpu, renderer, screen)?;
     let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let order: Vec<String> = barrel_formats::table::parse(&install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?.children.iter().filter_map(|c| c.attr("category").map(str::to_string)).collect();
-    let rows: Vec<fp::RecipeRow> = [("ITEM_MIX_CRAFT", 239u16, true), ("ITEM_MIX_MATERIAL_NEUTRALIZE_001", 329, false)]
+    let rows: Vec<fp::RecipeRow> = [("ITEM_MIX_CRAFT", 239u16, true, 4u32), ("ITEM_MIX_MATERIAL_NEUTRALIZE_001", 329, false, 3)]
         .iter()
-        .filter_map(|&(tag, item, short)| {
+        .filter_map(|&(tag, item, short, times)| {
             let recipe = recipes.recipes.iter().find(|r| r.tag == tag)?;
             let row = items.row(item)?;
-            let materials = recipe.rows.iter().filter_map(|r| order.iter().position(|o| Some(o) == r.category.as_ref())).collect();
-            // STAND-IN: the second circle's number is the save's alchemy level (1), the rule is not read.
-            let info = fp::RecipeInfo { image: tables.image(item), level: row.level, alchemy: 1, make: recipe.make, elem_value: row.elem_value, elements: row.elements, materials };
+            let materials = recipe.rows.iter().filter_map(|r| Some((order.iter().position(|o| Some(o) == r.category.as_ref())?, r.category.as_ref().is_none_or(|c| container.iter().any(|u| recipes.in_category(usize::from(u.item), c)))))).collect();
+            // STAND-IN: the second circle's number is the save's alchemy level (1) and the quantity box's number the capture's (4 and 3); the rules are not read.
+            let info = fp::RecipeInfo { image: tables.image(item), level: row.level, alchemy: 1, make: recipe.make, elem_value: row.elem_value, elements: row.elements, put: recipe.rows.first().map_or(0, |r| r.need as usize), times, materials };
             Some(fp::RecipeRow { name: barrel_ryza::item_info::NAME_BASE + u32::from(item), count: 0, short, info })
         })
         .collect();
     // The pictures the panel needs: each item's, and one for each category the recipes ask for.
-    let shelf: Vec<fp::ShelfItem> = rows.iter().flat_map(|r| std::iter::once(fp::ShelfItem { image: r.info.image, category: None }).chain(r.info.materials.iter().map(|&c| fp::ShelfItem { image: r.info.image, category: Some(c) }))).collect();
+    let shelf: Vec<fp::ShelfItem> = rows.iter().flat_map(|r| std::iter::once(fp::ShelfItem { image: r.info.image, category: None }).chain(r.info.materials.iter().map(|&(c, _)| fp::ShelfItem { image: r.info.image, category: Some(c) }))).collect();
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
     let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows, cursor, age }, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
-    Ok(vec![back, sheet])
+    let (mut bar, view) = menu_layer(install, gpu, renderer)?;
+    bar.set(gpu, &view.recipe_help(screen, bar_age))?;
+    Ok(vec![back, sheet, bar])
 }
 
 /// The synthesis screens' background layer: the picture (`a21_bg01`, drawn twice as the capture has it) and the field's two bars of the screen
@@ -2525,7 +2527,7 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         _ => None,
     };
     let mix_screen = match (a.mix_sheet, a.mix_complete, a.mix_result.clone()) {
-        _ if a.mix_recipe.is_some() => Some(mix_recipe_layers(&install, &gpu, &renderer, a.mix_recipe.unwrap_or_default(), (width, height))?),
+        _ if a.mix_recipe.is_some() => Some(mix_recipe_layers(&install, &gpu, &renderer, a.mix_recipe.unwrap_or((0, 0.0, 99.0)), &container.0, (width, height))?),
         (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
         (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),
         (None, None, Some((item, quality, effects, leaving, entering))) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Result(quality, effects, leaving, entering), (width, height))?),

@@ -27,8 +27,11 @@ pub struct RecipeInfo {
     pub elem_value: i32,
     /// Fire, ice, bolt and air.
     pub elements: [bool; 4],
-    /// The categories the recipe's rows ask for, by place in the category table (the first loop's rows).
-    pub materials: Vec<usize>,
+    /// The categories the recipe's rows ask for, by place in the category table (the first loop's rows), and whether the container has one.
+    pub materials: Vec<(usize, bool)>,
+    /// The units the first row takes (the quantity box's circles) and the times the recipe can be made (the box's number).
+    pub put: usize,
+    pub times: u32,
 }
 
 /// What the Select Recipe screen shows.
@@ -47,7 +50,7 @@ const ROW_STEP: f32 = 25.13;
 /// The item's picture in the panel is this colour when the recipe cannot be made now (the capture's, `synth-atelier` 2700).
 const SHORT_ICON: [f32; 4] = [0.549, 0.443, 0.349, 1.0];
 /// STAND-IN: the attack recipe's CP and its range ("All"), the capture's Craft at 2700; the table they come from is not read.
-const CP_VALUE: u32 = 1;
+const CP_VALUE: u32 = 2;
 /// The name and the count of a recipe that cannot be made now (the capture's, `synth-atelier` 2700).
 const SHORT_TEXT: [f32; 4] = [1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0];
 /// The tab row's pictures in `gen_a21_mix01_choise` (All, Favourites and the three kinds).
@@ -82,7 +85,7 @@ impl Page {
                         ["menu_item", "bookmark_bg"] => Over { show: true, ..Default::default() },
                         ["menu_item", "__uimenu_cursor_active", ..] | ["menu_item", "bookmark_bg", ..] | ["menu_item", "new_icon"] | ["menu_item", "r_icon"] => hide(),
                         ["menu_item", "name"] => Over { text: string(row.name), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
-                        ["menu_item", "count_bg", "count"] => Over { text: Some(row.count.to_string()), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
+                        ["menu_item", "count_bg", "count"] => Over { text: Some(row.count.to_string()), tint: Some([1.0; 4]), ..Default::default() },
                         _ => Over::default(),
                     }
                 };
@@ -125,13 +128,14 @@ impl Page {
                         match (info.materials.get(k), rest) {
                             (None, _) => hide(),
                             (Some(_), ["item_icon"]) => hide(),
-                            (Some(&c), ["cat_icon"]) => Over { image_no: Some(c), ..Default::default() },
-                            (Some(&c), ["name"]) => Over { text: string(CATEGORY_BASE + c as u32), ..Default::default() },
+                            (Some(&(c, _)), ["cat_icon"]) => Over { image_no: Some(c), ..Default::default() },
+                            (Some(&(c, have)), ["name"]) => Over { text: string(CATEGORY_BASE + c as u32), tint: (!have).then_some(SHORT_TEXT), ..Default::default() },
                             _ => Over::default(),
                         }
                     }
                     ["product_info", "common_info", "alc_lv", "dummy", "value"] => Over { text: Some(info.alchemy.to_string()), ..Default::default() },
-                    ["product_info", "common_info", "lv", "dummy", "value"] => Over { text: Some(info.level.to_string()), ..Default::default() },
+                    ["product_info", "common_info", "lv", "dummy", "value"] => Over { text: Some(info.level.to_string()), tint: Some([1.0; 4]), ..Default::default() },
+                    ["product_info", "common_info", "cp_and_range", ":1", ":1"] => Over { tint: Some([1.0; 4]), ..Default::default() },
                     ["product_info", "common_info", "cp_and_range", "range_type"] => Over { text: string(ALL_WORD), ..Default::default() },
                     ["product_info", "common_info", "cp_and_range", _, "dummy", "cp_value"] => Over { text: Some(CP_VALUE.to_string()), ..Default::default() },
                     ["product_info", "common_info", "element", "dummy", "value"] => Over { text: Some(info.elem_value.to_string()), ..Default::default() },
@@ -148,6 +152,25 @@ impl Page {
                 }
             };
             w.walk(panel, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        }
+        // The quantity box at the bottom (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right.
+        if let (Some(row), Some(box_)) = (look.rows.get(look.cursor), find(&docs.caption, "remain_put_num")) {
+            let at = pair(box_, "pos", [0.0; 2]);
+            let put = row.info.put.min(4);
+            let over = |p: &[&str]| -> Over {
+                match p {
+                    ["remain_put_num"] => Over { show: true, ..Default::default() },
+                    ["remain_put_num", "list", node, ..] if p.len() == 3 => {
+                        let k = node.strip_prefix("node:").and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
+                        // (the circles stand on the right of the row; the game moves each by its place among the shown: 28 across, a quarter down)
+                        if k + put >= 4 && k <= 3 { Over { at: Some([28.0 * k as f32, 0.25 * (k + put - 4) as f32]), ..Default::default() } } else { hide() }
+                    }
+                    ["remain_put_num", "list", _, "light"] => hide(),
+                    ["remain_put_num", "num"] => Over { text: Some(row.info.times.to_string()), ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(box_, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
         self.caption_plate(&mut w, &root, RECIPE_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)
