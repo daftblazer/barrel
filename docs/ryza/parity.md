@@ -38,6 +38,10 @@ particles' textures and are not drawn. `--hud-arrival` is 1730 here, two frames 
 
 | synth-atelier (the synthesis: the room, Select Recipe, Add Materials, the synthesis, the result, Complete and Level UP) | 3830 to 4250, every 10 frames (43 rows) | `--mix-sheet 329:4:CLOCK:FRAMES` (the card coming in: the clock is the capture's, the frames since 3819), `--mix-sheet 329:4` (at rest), `--mix-result 329:49:1333[:LEAVING[:ENTERING]]` (the made item's card, coming in as the finished card goes out, or going out), `--mix-complete 2:3:0:AGE` (AGE frames since 4100) | 0 `res_` quads each | 43 `synth-card-*`, `synth-enter-*`, `synth-result-*`, `synth-complete-*` rows; the 2D quads of the game's `res_*` files, as `gather` |
 
+**synth flow** (part 2): four rows run `barrel-tool ryza-synth` on the key's `pad.txt`: `synth-cues` (the machine's cues against the key's play lines, 1900 to 4400: 65 of 65
+within a frame, 0 extra), `synth-screens` (30 screen changes, the card 3820, the result 4000, Complete 4060, going out 4240, the room 4300), `synth-walk-end` (her end place
+within 10 units of the dump at 2250: fitted, see open.md) and `synth-flow-end` (clock 1193, level 2, 21 units).
+
 **synth**: eight rows are the draws and the rules, not pictures. `synth-draws`, `-index`, `-end-index` run `tools/synth_script.py` and `barrel-tool ryza-lockstep` over the
 whole capture (2250 to 4900: 109 draws, the index right at each of the 26 dumps, 0x285 at the end); `synth-refresh-draws` and `-index` run `barrel-tool ryza-mix ... --steps` from the
 generator of 3535 and diff its calls with the hook log's lines of frames 3535 and 3536 (98 draws: the effect's 48 and the world's pass); `synth-recipe`, `-takes` and

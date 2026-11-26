@@ -3026,6 +3026,33 @@ only the shaders every frame has (`sha654bf1926`, `sh5c84771836`, the 2000 by 24
 frames, and the white silhouette is what it draws in its place (not a missed mirror, and the capture's pixels show it white, not black). It is not among
 the 2D quads the diff lists. Which condition switches the lit model on (3050 has the material list open) is not found.
 
+**Part 2: the flow and its sounds** (the field side, one state machine). `barrel_ryza::synthesis::Machine` (`crates/ryza/src/synthesis.rs`) runs the
+whole flow a frame at a time from the pad's presses: BACK in free play, the Yes / No prompt (its cursor), Yes -> the attic's load and the arrival notice,
+the room (she walks by the stick; the cauldron's prompt is her being in the `MIX` gimmick's box: fixID 8 of `gimmick_fieldmap_s01_i_attic.xml`, centre
+(37.85, 42.63) m, `formParam` 2.3 by 3 m), A -> Select Recipe (its opening, six tutorial pages, the list), DOWN, A -> Add Materials (11 presses), the
+synthesis (`mix::make` takes the units), the result card, the made item's card, Complete / Level UP, B -> the room (clock +14 h = 700 words, the four
+units made for the four taken, `mix_lv` 2). It says which screen is up (`Screen`) and returns the sounds each frame cues (`sound::Cue`). `barrel-tool
+ryza-synth INSTALL SAVE 92 PAD.txt 1900 4400` runs it on the scenario's own `pad.txt` and writes the cues to `BARREL_TRACE_CUES`.
+- **Checked** (rows `synth-cues`, `-screens`, `-walk-end`, `-flow-end`; work/briefs/p6-rows5.txt): the cue log against `tools/ryza_cues.py` of the key's
+  hook log, 1900 to 4400: **65 of 65 within a frame, 0 extra** (including the stops of the footsteps and of the loops' confirms; the idle sounds of the
+  room from 4360 on come from B at 4300); the screens change on the key's frames (Tutorial(1) 2336, the pages 2420 to 2660, the list 2720, DOWN 2800,
+  Add Materials 2860, the card 3820, the made item's card 4000, Complete 4060, going out 4240, the room 4300); the save after it (clock 1193, level 2,
+  21 units: 4 taken, 4 made).
+- **STAND-INs** (named in the code): (1) which sound each of the 11 Add Materials presses makes (`ADD_STEPS`: the key's run of recipe 92 with the first
+  listed material; the game's rule, the sounds following the rows' materials and loops, is not read); (2) the voice picks come from `KeyPicks` (the key's
+  picks) in the run, or from the generator (`Picks for Random`) in a game; only the clips the key shows have hashes; (3) the input locks that decide which
+  of the key's presses are ignored (a tutorial page 30 frames, the synthesis 270, the card 150, the made item's card 30, Complete 130: each between an
+  ignored and a taken press of the key); (4) **the walk is fitted, not checked**: the key's dumps start at 2250, after the walk (2160 to 2220), so the
+  arrival (3637.05, 3609.3) and the room camera's yaw (45.95 degrees) are fitted so that 60 frames of the stick (`walk::lean` and the player's full
+  speed) end at the key's place (3772.95, 4140.70) facing 14.35 degrees; the error is 0.04 by construction. The key's text says she stops by 2200 (a wall or
+  the cauldron's own box may hold her there; walls are not modelled); (5) the made units' quality (49) and effects are the part-1 STAND-IN; (6) the Level UP
+  gain is 1 and the experience rule is not read; (7) the sounds before 2250 (the prompt's click and message at 1960, the arrival's jingle 52 frames on, the
+  notice's 33 after its A) are the key's offsets.
+- **Not done in this part**: Select Recipe and Add Materials in 2D (no `--mix-recipe` form, no `synth-recipe-*` / `synth-add-*` rows: still at the 418 to 920
+  unmatched `res_` quads a frame listed below, the ring graph's pieces and texts not started), the gaps 3820 and 4260 to 4300, the machine drawing its
+  screens in a window (it runs headless; the live run and window shots of each screen wait for the screens), the field side's own 2D (the prompt's and the
+  notice's draws; the capture has none before 2250).
+
 Left.
 
 **Left.**
