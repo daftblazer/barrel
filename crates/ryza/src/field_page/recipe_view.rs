@@ -163,6 +163,19 @@ impl Page {
                             _ => Over::default(),
                         }
                     }
+                    ["product_info", "create_info", "quality", "gauge", gauge] => {
+                        // (each gauge holds a hundred points; the first and the last are drawn even when empty)
+                        let q = add.map_or(0.0, |a| a.quality as f32);
+                        let share = |from: f32| ((q - from) / 100.0).clamp(0.0, 1.0);
+                        match *gauge {
+                            "bar_body" => Over { crop: Some(share(0.0)), ..Default::default() },
+                            "bar_body_1" if q > 100.0 => Over { crop: Some(share(100.0)), ..Default::default() },
+                            "bar_body_2" if q > 200.0 => Over { crop: Some(share(200.0)), ..Default::default() },
+                            "bar_body_3" => Over { crop: Some(share(300.0)), ..Default::default() },
+                            "bar_body_1" | "bar_body_2" => hide(),
+                            _ => Over::default(),
+                        }
+                    }
                     ["product_info", "create_info", "quality", "value"] => Over { text: add.map(|a| a.quality.to_string()), ..Default::default() },
                     ["product_info", "create_info", "page_num", "now_page"] => Over { text: add.map(|a| a.page.0.to_string()), ..Default::default() },
                     ["product_info", "create_info", "page_num", "max_page"] => Over { text: add.map(|a| a.page.1.to_string()), ..Default::default() },

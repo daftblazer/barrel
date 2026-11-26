@@ -879,6 +879,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
     let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let order: Vec<String> = barrel_formats::table::parse(&install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?.children.iter().filter_map(|c| c.attr("category").map(str::to_string)).collect();
+    let strings: std::collections::HashMap<u32, String> = barrel_formats::table::parse(&install.read("\\saves\\text_en\\strcombineall.xml")?)?.children.iter().filter_map(|s| Some((s.attr("String_No")?.parse().ok()?, s.attr("Text")?.to_string()))).collect();
     let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
     let rings = fields.get(TAG).ok_or("no field for the recipe")?;
     let recipe = recipes.recipes.iter().find(|r| r.tag == TAG).ok_or("no recipe")?;
@@ -903,7 +904,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
             }
         })
         .collect();
-    let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(0), category: Some(c) }).collect();
+    let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(329), category: Some(c) }).chain([fp::ShelfItem { image: tables.image(329), category: None }]).collect();
     let back = mix_back_layer(install, gpu, renderer, 1, screen)?;
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
     let item = 329u16;
@@ -920,7 +921,25 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         put: recipe.rows.first().map_or(0, |r| r.need as usize),
         times: 3,
     };
-    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) } };
+    // The popup of the ring under the cursor (the first): its heading and a row for each of its steps.
+    // STAND-IN: the effect numbers of `ITEM_EFF_CREATE_QUALITY_nn` (the enum's table is not read: n + 1332).
+    let popup = rings.first().filter(|r| frame >= 2870.0 && frame < 2930.0).map(|r| {
+        let row = recipe.rows.get(r.restrict as usize);
+        let category = row.and_then(|row| row.category.as_ref()).and_then(|c| order.iter().position(|o| o == c));
+        let title = category.and_then(|c| strings.get(&(barrel_ryza::item_info::CATEGORY_BASE + c as u32))).cloned().unwrap_or_default();
+        let tiers = r
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(t, s)| {
+                let tag = row.and_then(|row| row.effects.get(t)).cloned().unwrap_or_default();
+                let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_").and_then(|n| n.parse::<u32>().ok()).map_or(0, |n| 1332 + n);
+                (s.at, strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned().unwrap_or_default())
+            })
+            .collect();
+        fp::Popup { title, tiers }
+    });
+    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) }, popup };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;

@@ -14,7 +14,7 @@
 mod recipe_view;
 mod ring_view;
 pub use recipe_view::{AddPanel, RecipeInfo, RecipeLook, RecipeRow};
-pub use ring_view::{AddLook, FieldLook, RingShow};
+pub use ring_view::{AddLook, FieldLook, Popup, RingShow};
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -304,6 +304,8 @@ struct Over {
     thumb: Option<[f32; 2]>,
     /// A picture at its style's natural size whatever its node says (the game's code sets it).
     natural: bool,
+    /// A picture's height in layout pixels where the game's code sets it.
+    size_h: Option<f32>,
     /// The picture is one copy of an outline already (`bold_size` makes nine copies of a picture in the synthesis's screens).
     outlined: bool,
 }
@@ -464,6 +466,7 @@ impl Page {
         }
         wanted.insert((texture_path("ui/a21_common.g1t", false), HELP_PLATE));
         wanted.insert((texture_path("ui/sys_alpha_gradation.g1t", false), 0));
+        wanted.insert((texture_path("ui/sys_no_image.g1t", false), 0));
         let wanted: Vec<(String, usize)> = wanted.into_iter().collect();
         let sizes = wanted
             .iter()
@@ -474,6 +477,11 @@ impl Page {
                 Ok((t.width, t.height))
             })
             .collect::<Result<Vec<_>, String>>()?;
+        // The gradation the layouts call `alpha_gradation` is the whole of `ui/sys_alpha_gradation.g1t`.
+        if let Some(slot) = wanted.iter().position(|(p, _)| p.ends_with("sys_alpha_gradation.g1t")) {
+            let (tw, th) = sizes[slot];
+            styles.insert("alpha_gradation".to_string(), vec![Pic { path: wanted[slot].0.clone(), index: 0, uvwh: [0.0, 0.0, tw as f32 * PER_LAYOUT, th as f32 * PER_LAYOUT], per_layout: PER_LAYOUT, over_texture: PER_LAYOUT, edges: None }]);
+        }
         let strings_root = table::parse(&read("text_en\\strcombineall.xml")?).map_err(|e| format!("strcombineall: {e}"))?;
         let strings = strings_root
             .children
@@ -509,6 +517,11 @@ impl Page {
     }
 
     /// The layer's texture of the screens' bars' gradation (`ui/sys_alpha_gradation.g1t`).
+    /// The layer's texture of the stencil masks' placeholder picture (`ui/sys_no_image.g1t`).
+    fn no_image_texture(&self) -> usize {
+        self.wanted.iter().position(|(p, _)| p.ends_with("sys_no_image.g1t")).map_or(WHITE, |i| FIXED + i)
+    }
+
     fn gradation_texture(&self) -> usize {
         self.wanted.iter().position(|(p, _)| p.ends_with("sys_alpha_gradation.g1t")).map_or(WHITE, |i| FIXED + i)
     }
@@ -1582,6 +1595,10 @@ impl Walker<'_> {
                 for (axis, name) in ["pos_ratio_x", "pos_ratio_y"].into_iter().enumerate() {
                     at[axis] += e.attr(name).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0) * self.parent[axis];
                 }
+                // (`pos_ratio="x, y, z"`: the same for both axes in one)
+                if let [rx, ry, ..] = numbers(e, "pos_ratio")[..] {
+                    at = [at[0] + rx * self.parent[0], at[1] + ry * self.parent[1]];
+                }
                 if e.attr("pivot_pos_preset") == Some("center") {
                     // Turned and scaled about the picture's centre: the corner moves so the centre stays.
                     let c = self.node_size(e).map(|v| v / 2.0);
@@ -1646,7 +1663,7 @@ impl Walker<'_> {
     fn node_size(&self, e: &Element) -> [f32; 2] {
         let natural = e.attr("style").and_then(|st| self.page.picture(st, 0)).map_or([0.0; 2], |(_, p, _)| [p.uvwh[2] / p.per_layout, p.uvwh[3] / p.per_layout]);
         let wh = numbers(e, "size_wh");
-        let mut size = [numbers(e, "size_w").first().or(wh.first()).copied().unwrap_or(natural[0]), numbers(e, "size_h").first().or(wh.get(1)).copied().unwrap_or(natural[1])];
+        let mut size = if self.mix && wh.len() >= 2 { [wh[0], wh[1]] } else { [numbers(e, "size_w").first().or(wh.first()).copied().unwrap_or(natural[0]), numbers(e, "size_h").first().or(wh.get(1)).copied().unwrap_or(natural[1])] };
         for (axis, name) in ["parent_size_copy_w", "parent_size_copy_h"].into_iter().enumerate() {
             if e.attr(name) == Some("true") && self.parent[axis] > 0.0 {
                 size[axis] = self.parent[axis];
@@ -1656,6 +1673,14 @@ impl Walker<'_> {
     }
 
     fn image(&mut self, e: &Element, xf: Xf, o: &Over) {
+        // A mask picture with no style of its own (`stencil_mask="create"`) is the placeholder (`sys_no_image`) at the node's size, in the synthesis's screens.
+        if let (true, None, Some("create")) = (self.mix, e.attr("style"), e.attr("stencil_mask")) {
+            let size = self.node_size(e);
+            if size[0] > 0.0 && size[1] > 0.0 {
+                self.piece(xf, [0.0; 2], size, [0.0, 0.0, 1.0, 1.0], [1.0; 4], self.page.no_image_texture());
+            }
+            return;
+        }
         let Some(style) = e.attr("style") else { return };
         // A picture with a `bold_size` is drawn nine times in black at half its opacity round its place, then itself (the synthesis's lock plates).
         if let (true, false, Some(bold)) = (self.mix, o.outlined, e.attr("bold_size").and_then(|v| v.trim().parse::<f32>().ok())) {
@@ -1678,7 +1703,8 @@ impl Walker<'_> {
         let size = {
             let wh = numbers(e, "size_wh");
             let (w, h) = (numbers(e, "size_w").first().copied(), numbers(e, "size_h").first().copied());
-            let mut size = [w.or(wh.first().copied()).unwrap_or(natural[0]), h.or(wh.get(1).copied()).unwrap_or(natural[1])];
+            // (the synthesis's layouts give a node both `size_w` and `size_wh`: the second is the size)
+            let mut size = if self.mix && wh.len() >= 2 { [wh[0], wh[1]] } else { [w.or(wh.first().copied()).unwrap_or(natural[0]), h.or(wh.get(1).copied()).unwrap_or(natural[1])] };
             // (`parent_size_copy_w` and `_h`: the node takes its parent's size)
             for (axis, name) in ["parent_size_copy_w", "parent_size_copy_h"].into_iter().enumerate() {
                 if e.attr(name) == Some("true") && self.parent[axis] > 0.0 {
@@ -1687,6 +1713,9 @@ impl Walker<'_> {
             }
             if o.natural {
                 size = natural;
+            }
+            if let Some(h) = o.size_h {
+                size[1] = h;
             }
             size
         };

@@ -6,7 +6,7 @@ use super::*;
 
 /// The graph's centre in layout pixels (`field_root` (660, 360) and `center` (-20, 0)) and the grid's steps for a unit of a ring's `x` and `y`
 /// (the half of the width and the third of the height between two neighbours: `docs/ryza/open.md`, Synthesis part 3).
-const CENTRE: [f32; 2] = [640.0, 360.0];
+const CENTRE: [f32; 2] = [641.9, 361.9];
 const GRID: [f32; 2] = [142.15, 82.07];
 /// The rings are drawn at this zoom (`synth-atelier` 2900: a ring's picture is 189 pixels of 1080 lines where the layout's is 168 layout pixels).
 const ZOOM: f32 = 0.75;
@@ -242,7 +242,11 @@ impl Page {
             };
             w.walk(desc, root.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
+        // (the layout's `mix_param` comes between them, and the ring's own `ring_info` over the panel's frame and the quantity box)
         self.product_panel(&mut w, &root, &look.row, Some(&look.panel));
+        if let (Some(popup), Some(ring)) = (&look.popup, look.field.rings.get(look.field.cursor)) {
+            self.ring_popup(&mut w, &root, [CENTRE[0] + look.field.shift[0] + ring.at[0] as f32 * GRID[0], CENTRE[1] + look.field.shift[1] + ring.at[1] as f32 * GRID[1] + POPUP_BELOW], ring, popup);
+        }
         self.quantity_box(&mut w, &root, &look.row.info);
         self.caption_plate(&mut w, &root, ADD_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)
@@ -255,7 +259,19 @@ pub struct AddLook {
     /// The recipe's row and the panel's numbers.
     pub row: RecipeRow,
     pub panel: AddPanel,
+    /// The tiers of the ring under the cursor (`ring_info`), up while a ring is looked at.
+    pub popup: Option<Popup>,
 }
+
+/// What a ring's popup says: its heading and a row for each tier.
+pub struct Popup {
+    pub title: String,
+    /// The element value each tier needs (the number of lights on its row) and what it gives.
+    pub tiers: Vec<(i32, String)>,
+}
+
+/// The popup stands this far below the ring's centre (layout pixels: `ring_info` at (640, 454) under the ring at (640.75, 360) in `synth-atelier` 2900).
+const POPUP_BELOW: f32 = 94.0;
 
 /// The ring descriptions' strings: "Effect 1 will appear or grow based on Material Loop level." and the rest by the ring's kind.
 const DESC_BASE: u32 = 10_092_605;
@@ -275,3 +291,58 @@ impl Walker<'_> {
         self.additive = self.additive.iter().filter_map(|&a| moved.get(a).copied().flatten()).collect();
     }
 }
+
+impl Page {
+    /// The popup of a ring (`ring_info`'s `normal`): the heading, and a row for each tier with a light for each point of the element it needs.
+    /// (The layout holds the first row; the game's code copies it for the others.)
+    fn ring_popup(&self, w: &mut Walker, root: &Xf, at: [f32; 2], ring: &RingShow, popup: &Popup) {
+        let Some(info) = find(&self.mix_docs.recipe, "ring_info") else { return };
+        let hide = || Over { hide: true, ..Default::default() };
+        let n = |s: &str, p: &str| s.strip_prefix(p).and_then(|k| k.parse::<usize>().ok()).unwrap_or(0);
+        // A row's parts by its path below `node_0`.
+        let row_over = |k: usize, rest: &[&str]| -> Over {
+            let Some((lights, desc)) = popup.tiers.get(k) else { return hide() };
+            match rest {
+                ["exp", icon, tail @ ..] => {
+                    if n(icon, "icon_") >= *lights as usize {
+                        return hide();
+                    }
+                    match tail {
+                        ["dummy", "off"] => Over { image_no: Some(ring.elem), ..Default::default() },
+                        ["dummy", "dummy_1", ..] => hide(),
+                        _ => Over::default(),
+                    }
+                }
+                ["dummy", _, "desc"] => Over { text: Some(desc.clone()), ..Default::default() },
+                _ => Over::default(),
+            }
+        };
+        let over = |p: &[&str]| -> Over {
+            match p {
+                ["ring_info"] | ["ring_info", "normal"] => Over { show: true, ..Default::default() },
+                ["ring_info", "recipe", ..] => hide(),
+                // (the frame is 201 layout pixels high for six rows, 22.5 less for each row fewer)
+                ["ring_info", "normal", "frame"] => Over { size_h: Some(201.0 - 22.5 * (6 - popup.tiers.len().min(6)) as f32), ..Default::default() },
+                ["ring_info", "normal", "type"] => Over { text: Some(popup.title.clone()), ..Default::default() },
+                ["ring_info", "normal", "list", "node_0", rest @ ..] => row_over(0, rest),
+                ["ring_info", "normal", "list", node, ..] if n(node, "node_") > 0 => hide(),
+                _ => Over::default(),
+            }
+        };
+        w.walk(info, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        if let Some(row) = find(info, "node_0") {
+            for k in 1..popup.tiers.len().min(6) {
+                let over = |p: &[&str]| -> Over {
+                    match p {
+                        ["node_0", rest @ ..] => row_over(k, rest),
+                        _ => Over::default(),
+                    }
+                };
+                w.walk(row, root.node([at[0] - 162.0, at[1] + 38.0 + ROW_STEP_POPUP * k as f32], 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+            }
+        }
+    }
+}
+
+/// The popup's rows stand this far apart (layout pixels: `ring_info`'s `node_1` at 21.78).
+const ROW_STEP_POPUP: f32 = 21.78;
