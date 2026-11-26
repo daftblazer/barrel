@@ -23,6 +23,8 @@ const EDGE_WIDTH: f32 = 40.0;
 /// rings are in which set is the capture's: the slots 0, 1, 2 and 4 are in the first).
 const GLOW_FRAMES: f32 = 480.0;
 const GLOW_SET_LAG: f32 = 142.4;
+/// The second light's start after the first's (`synth-atelier` 2910: 0.07 of its opacity at 253.6 frames of the first).
+const GLOW_SECOND_LAG: f32 = 243.0;
 const GLOW_FIRST_SET: [usize; 4] = [0, 1, 2, 4];
 /// The glow's size in layout pixels before the ring's zoom (520 style pixels).
 const GLOW_SIZE: f32 = 520.0 / 3.0;
@@ -138,24 +140,31 @@ impl Page {
             let (dark, rim) = tint(r.elem);
             let dim = if r.open { 1.0 } else { 0.5 };
             let v = variant(r);
-            // The light behind it.
-            let t = (look.clock - 2656.4 + if GLOW_FIRST_SET.contains(&k) { 0.0 } else { -GLOW_SET_LAG }).rem_euclid(GLOW_FRAMES);
-            let half = GLOW_FRAMES / 2.0;
-            let alpha = if t < half { out_sine(t / half) } else { out_sine((GLOW_FRAMES - t) / half) };
-            let p = out_sine(t / GLOW_FRAMES);
-            let scale = [0.95 + 0.15 * p, 0.95 + 0.2 * p];
+            // The light behind it, and a second light (the first's picture turned over) that starts 243 frames after the first on its second cycle.
+            let run = look.clock - 2656.4 + if GLOW_FIRST_SET.contains(&k) { 0.0 } else { -GLOW_SET_LAG };
             let center = ring_xf(r).apply([1.0, 0.0]);
-            let size = [GLOW_SIZE * ZOOM * scale[0] * w.screen_k, GLOW_SIZE * ZOOM * scale[1] * w.screen_k];
-            let angle = (30.0 * t / GLOW_FRAMES).to_radians();
-            let glow = Xf { a: angle.cos(), b: angle.sin(), c: -angle.sin(), d: angle.cos(), x: center[0], y: center[1] };
-            let corners = [[-size[0] / 2.0, -size[1] / 2.0], [size[0] / 2.0, -size[1] / 2.0], [size[0] / 2.0, size[1] / 2.0], [-size[0] / 2.0, size[1] / 2.0]].map(|c| glow.apply(c));
-            let (x0, x1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
-            let (y0, y1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
-            if let Some((texture, pic, (aw, ah))) = self.picture("gen_a21_mix01_ring_eff", r.elem).map(|(t, p, a)| (t, p, (a[0], a[1]))) {
-                let uv = [pic.uvwh[0] / aw, pic.uvwh[1] / ah, (pic.uvwh[0] + pic.uvwh[2]) / aw, (pic.uvwh[1] + pic.uvwh[3]) / ah];
-                let before = w.out.len();
-                w.out.push(Quad { turn: false, spin: Some(Spin::Corners(corners)), rect: [x0, y0, x1, y1], uv, color: [dim, dim, dim, alpha], texture });
-                w.additive.push(before);
+            let lights = [(run.rem_euclid(GLOW_FRAMES), false, 1.0), ((run - GLOW_SECOND_LAG).rem_euclid(GLOW_FRAMES), true, 0.9)];
+            for (n, (t, turned, shrink)) in lights.into_iter().enumerate() {
+                if n == 1 && (run <= GLOW_SECOND_LAG || out_sine(t / (GLOW_FRAMES / 2.0)) * 255.0 < 1.5) {
+                    continue;
+                }
+                let half = GLOW_FRAMES / 2.0;
+                let alpha = if t < half { out_sine(t / half) } else { out_sine((GLOW_FRAMES - t) / half) };
+                let p = out_sine(t / GLOW_FRAMES);
+                let scale = [shrink * (0.95 + 0.15 * p), shrink * (0.95 + 0.2 * p)];
+                let size = [GLOW_SIZE * ZOOM * scale[0] * w.screen_k, GLOW_SIZE * ZOOM * scale[1] * w.screen_k];
+                let angle = (30.0 * t / GLOW_FRAMES).to_radians();
+                let glow = Xf { a: angle.cos(), b: angle.sin(), c: -angle.sin(), d: angle.cos(), x: center[0], y: center[1] };
+                let corners = [[-size[0] / 2.0, -size[1] / 2.0], [size[0] / 2.0, -size[1] / 2.0], [size[0] / 2.0, size[1] / 2.0], [-size[0] / 2.0, size[1] / 2.0]].map(|c| glow.apply(c));
+                let (x0, x1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
+                let (y0, y1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+                if let Some((texture, pic, (aw, ah))) = self.picture("gen_a21_mix01_ring_eff", r.elem).map(|(t, p, a)| (t, p, (a[0], a[1]))) {
+                    let (v0, v1) = (pic.uvwh[1] / ah, (pic.uvwh[1] + pic.uvwh[3]) / ah);
+                    let uv = [pic.uvwh[0] / aw, if turned { v1 } else { v0 }, (pic.uvwh[0] + pic.uvwh[2]) / aw, if turned { v0 } else { v1 }];
+                    let before = w.out.len();
+                    w.out.push(Quad { turn: false, spin: Some(Spin::Corners(corners)), rect: [x0, y0, x1, y1], uv, color: [dim, dim, dim, alpha], texture });
+                    w.additive.push(before);
+                }
             }
             let over = |p: &[&str]| -> Over {
                 match p {
