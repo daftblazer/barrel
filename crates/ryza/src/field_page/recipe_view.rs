@@ -48,6 +48,8 @@ pub struct RecipeLook {
     pub graph: Option<FieldLook>,
     /// The tutorial page up over the screen.
     pub tutorial: Option<Tutorial>,
+    /// The frames since the screen began to come in (its parts slide in over 30: the list from the left, the panel from the right, the box from below, the title from above).
+    pub opening: Option<f32>,
 }
 
 /// A tutorial page: its number (0 to 4), the frames since the box came up and the arrow's clock.
@@ -83,16 +85,17 @@ impl Page {
             w.cull_outside(screen);
             self.bars(&mut w, &root);
         }
-        self.recipe_list(&mut w, &root, look);
+        let slide = |from: [f32; 2]| look.opening.map_or(Slide::NONE, |age| Slide::in_from(age, from));
+        w.slid(slide([-40.0, 0.0]), |w| self.recipe_list(w, &root, look));
         // The panel on the right.
         if let Some(row) = look.rows.get(look.cursor) {
-            self.product_panel(&mut w, &root, row, None);
+            w.slid(slide([40.0, 0.0]), |w| self.product_panel(w, &root, row, None));
         }
         // The quantity box at the bottom (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right.
         if let Some(row) = look.rows.get(look.cursor) {
-            self.quantity_box(&mut w, &root, &row.info);
+            w.slid(slide([0.0, 40.0]), |w| self.quantity_box(w, &root, &row.info));
         }
-        self.caption_plate(&mut w, &root, RECIPE_TITLE, Slide::NONE);
+        self.caption_plate(&mut w, &root, RECIPE_TITLE, slide([0.0, -30.0]));
         if let Some(t) = &look.tutorial {
             self.tutorial_box(&mut w, &root, t);
         }
