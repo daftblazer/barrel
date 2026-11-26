@@ -266,7 +266,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || ADD_RING_ENTRIES.iter().any(|(_, w)| w == n) || ADD_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || ADD_RING_ENTRIES.iter().any(|(_, w)| w == n) || ADD_ENTRIES.iter().any(|(_, w)| w == n) || ADD_PAIR_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -1058,8 +1058,12 @@ enum Entries {
     Recipe,
     /// Add Materials while a ring is looked at: the pad's lines for the ring graph.
     AddRing,
-    /// Add Materials with the materials' list up: the one entry.
+    /// Add Materials with the materials' list up.
     Add,
+    /// Add Materials' bar between the ring's and the list's: two entries.
+    AddPair,
+    /// Add Materials with the list gone and the cursor not yet on a ring: the one entry.
+    AddOne,
 }
 
 /// The synthesis's Select Recipe entries (`synth-atelier` 2790): the cross "Select", the guide, X "Mark as Favorite", Y "Check Tree" and A "Confirm".
@@ -1068,8 +1072,22 @@ const RECIPE_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', TA
 /// Add Materials' entries while a ring is looked at (`synth-atelier` 2900): select, hide the loop's info, auto-add, zoom (two buttons: the entry with no word
 /// of its own is joined to the next without a space), the guide, change display, back and confirm.
 const ADD_RING_ENTRIES: [(char, u32); 9] = [('\u{4f2}', 4_194_366), ('\u{4e3}', 9_961_611), ('\u{4e7}', 9_961_604), ('\u{4e6}', 0), ('\u{4ea}', 9_961_551), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 4_194_450), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
-/// Its entry with the materials' list up (`synth-atelier` 3000).
-const ADD_ENTRIES: [(char, u32); 1] = [('\u{4dc}', 4_194_450)];
+/// Its entries with the materials' list up (`synth-atelier` 2940, glyphs read off the capture's font quads): select, hide the loop's info, select the
+/// material, the guide, change display, the submenu, back and confirm.
+const ADD_ENTRIES: [(char, u32); 8] = [('\u{4e0}', 4_194_366), ('\u{4e3}', 9_961_611), ('\u{4e7}', 9_961_613), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 4_194_450), ('\u{4de}', 4_194_317), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+
+/// The bar of the frames between the ring's bar and the list's (`synth-atelier` 2930, 3050, 3290): hide the loop's info and change display.
+/// Its one entry once the list is gone.
+const ADD_ONE_ENTRIES: [(char, u32); 1] = [('\u{4dc}', 4_194_450)];
+const ADD_PAIR_ENTRIES: [(char, u32); 2] = [('\u{4e3}', 9_961_611), ('\u{4dc}', 4_194_450)];
+/// Which words Add Materials' bar shows (`add_help_at`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum AddEntries {
+    Ring,
+    Pair,
+    List,
+    One,
+}
 
 /// The Add Materials bar's plate grows from Select Recipe's width in this many frames after A (`synth-atelier` 2870: 0.875 of the way, out cubic over 20).
 const ADD_BAR_GROW_FRAMES: f32 = 20.0;
@@ -1110,9 +1128,6 @@ const SHELF_ENTRIES: [(char, u32); 5] = [('\u{4e0}', 4_194_366), ('\u{4ec}', TAB
 /// The Container page's plate is this much wider than its five entries need (layout pixels: 0.67 of 1080 lines, `field-menu-pages` 2110).
 /// STAND-IN, as `STATUS_PLATE_EXTRA`.
 const SHELF_PLATE_EXTRA: f32 = 0.67 / 1.5;
-/// The plate of Add Materials' one-entry bar (a layout pixel is 1.5 pixels of 1080 lines): 35 pixels wider than the entry's own width.
-// STAND-IN: measured on `synth-atelier` 3000 to 3500 (the plate's left edge 35 pixels left of Barrel's); the rule that sets it is not read.
-const ADD_PLATE_EXTRA: f32 = 35.0 / 1.5;
 
 /// The Guide page's entries (`field-menu-pages` 3250): B "Back" and A "Confirm".
 const GUIDE_TOP_ENTRIES: [(char, u32); 2] = [('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
@@ -1346,9 +1361,9 @@ impl View {
         pen.finish().0
     }
 
-    /// The Add Materials screen's help bar (`ring`: while a ring is looked at, else with the materials' list up), `since_a` frames after A on Select Recipe:
-    /// the Select Recipe's bar on that frame, then the new words on a plate that grows from the old one's width to its own over 20 frames (out cubic).
-    pub fn add_help(&self, screen: (u32, u32), ring: bool, since_a: f32) -> Vec<Quad> {
+    /// The Add Materials screen's help bar while a ring is looked at (`since_a` frames after A on Select Recipe: the Select Recipe's bar on that frame, then the new
+    /// words on a plate that grows from the old one's width to its own over 20 frames, out cubic).
+    pub fn add_help(&self, screen: (u32, u32), since_a: f32) -> Vec<Quad> {
         if since_a <= 0.0 {
             return self.recipe_help(screen, 99.0);
         }
@@ -1356,8 +1371,31 @@ impl View {
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         let e = 1.0 - (1.0 - (since_a / ADD_BAR_GROW_FRAMES).clamp(0.0, 1.0)).powi(3);
         let (from, to) = (self.plate_full(&self.help_line(&RECIPE_ENTRIES), k), self.plate_full(&self.help_line(&ADD_RING_ENTRIES), k));
-        let extra = if ring { -(1.0 - e) * (to - from) } else { ADD_PLATE_EXTRA };
-        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries: if ring { Entries::AddRing } else { Entries::Add } });
+        let extra = -(1.0 - e) * (to - from);
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra, entries: Entries::AddRing });
+        pen.finish().0
+    }
+
+    /// The Add Materials bar after the first list: `entries` (the ring's, the pair's, the list's or the one) on a plate whose left edge stands `left` pixels of a 1920 x 1080
+    /// screen from the screen's left (the plate's width is `left`'s mirror: the words stay at the right).
+    pub fn add_help_at(&self, screen: (u32, u32), entries: AddEntries, left: f32) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        let entries = match entries {
+            AddEntries::Ring => Entries::AddRing,
+            AddEntries::Pair => Entries::AddPair,
+            AddEntries::List => Entries::Add,
+            AddEntries::One => Entries::AddOne,
+        };
+        let full = self.plate_full(&self.help_line(match entries {
+            Entries::AddRing => &ADD_RING_ENTRIES[..],
+            Entries::AddPair => &ADD_PAIR_ENTRIES[..],
+            Entries::Add => &ADD_ENTRIES[..],
+            _ => &ADD_ONE_ENTRIES[..],
+        }), k);
+        // (the plate's left edge on a screen of 1080 lines is 1.5 pixels to the layout pixel; its right cap ends at 1911.5)
+        let width = 1280.0 - left / 1.5;
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra: width - full, entries });
         pen.finish().0
     }
 
@@ -1788,6 +1826,8 @@ impl View {
             Entries::Recipe => &RECIPE_ENTRIES,
             Entries::AddRing => &ADD_RING_ENTRIES,
             Entries::Add => &ADD_ENTRIES,
+            Entries::AddPair => &ADD_PAIR_ENTRIES,
+            Entries::AddOne => &ADD_ONE_ENTRIES,
             Entries::GuideTop => &GUIDE_TOP_ENTRIES,
             Entries::GuideItems => &GUIDE_ITEMS_ENTRIES,
             Entries::GuideEffects => &GUIDE_EFFECTS_ENTRIES,

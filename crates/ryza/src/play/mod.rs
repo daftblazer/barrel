@@ -1045,8 +1045,50 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
-    bar.set(gpu, &view.add_help(screen, frame < 2921.0, frame - 2860.0))?;
+    let quads = if frame < 2921.0 {
+        view.add_help(screen, frame - 2860.0)
+    } else {
+        let (entries, left) = add_bar(frame);
+        view.add_help_at(screen, entries, left)
+    };
+    bar.set(gpu, &quads)?;
     Ok(vec![back, sheet, bar])
+}
+
+/// Add Materials' help bar from the first list on: the words and the plate's left edge (pixels of a 1080-line screen) on `frame`.
+/// The plate eases (out cubic over `BAR_EASE` frames) to the words' width; the one-word bar turns into the ring's from `ADD_BAR_RING_AT` frames on, A on a ring
+/// shows the pair of words for `BAR_PAIR` frames and then the list's, and A on a material the one word.
+// STAND-IN: read off the capture's plates on the sampled frames (`synth-atelier` 2930 to 3350: ring 298, pair 1258, list 342, one 1544; the ring's plate starts to grow at
+// 3037.8 and 3255.6, the pair's frames end between 10 and 20 after A): the rules that move them are not read.
+fn add_bar(frame: f32) -> (crate::field_menu::AddEntries, f32) {
+    use crate::field_menu::AddEntries;
+    const RING: f32 = 298.0;
+    const PAIR: f32 = 1258.0;
+    const LIST: f32 = 342.0;
+    const ONE: f32 = 1544.0;
+    const BAR_EASE: f32 = 15.0;
+    const BAR_PAIR: f32 = 15.0;
+    const ADD_BAR_RING_AT: [f32; 3] = [f32::NEG_INFINITY, 3037.8, 3255.6];
+    let ease = |t: f32| 1.0 - (1.0 - (t / BAR_EASE).clamp(0.0, 1.0)).powi(3);
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * ease(t);
+    // The plate before A on list `i`: settled on the ring's, or on its way there from the one word's.
+    let ring_plate = |i: usize, f: f32| if i == 0 { RING } else { lerp(ONE, RING, f - ADD_BAR_RING_AT[i]) };
+    let mut state = (AddEntries::One, ONE);
+    for (i, &(a, out, ..)) in ADD_LISTS.iter().enumerate() {
+        if frame >= ADD_BAR_RING_AT[i] && frame <= a {
+            return (AddEntries::Ring, ring_plate(i, frame));
+        }
+        if frame > a && frame < a + BAR_PAIR {
+            return (AddEntries::Pair, lerp(ring_plate(i, a), PAIR, frame - a));
+        }
+        if frame >= a + BAR_PAIR && frame <= out + 1.0 {
+            return (AddEntries::List, LIST);
+        }
+        if frame > out + 1.0 {
+            state = (AddEntries::One, ONE);
+        }
+    }
+    state
 }
 
 /// The synthesis screens' background layer: the picture (`a21_bg01`, drawn twice as the capture has it) and the field's two bars of the screen
