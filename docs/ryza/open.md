@@ -3140,6 +3140,31 @@ synthesis templates first in `clone_child_tree` (`Page::template(name, mix)`), `
   matches at 3000 (2 `res_` quads of 159 left, the rest the list and the item panel on the left), 2930 has 556, 2940 646, 2950 704. The help bar with the list up is one entry
   (`Entries::Add`), not checked. (3) The gaps 3820 to 3830 and 4260 to 4300 are not started. (4) The silhouette of her model (white in the capture) is not drawn.
 
+**Part 5: Add Materials' material phase** (`crates/ryza/src/field_page/material_view.rs`; `--mix-add FRAME` now draws 2930 to 3520; rows `synth-add-FRAME` in the local checks
+file for the frames at 10 or fewer, each pinning its count, not 0: see Left). The key's three materials and lists are the capture's (STAND-INs below); the rules decide the rest.
+- **The flow in the capture**: A on a ring (2920, 3040, 3280) opens the material list (it slides in from the left over 30 frames, out cubic: x 22.5 / alpha 1 when in), A on a material
+  (2980, 3100, 3340) places it and the list slides out (`Slide::in_from(30 - (frame - out))`, out = the frame before A); the cursor ring's glow turns again from 30 frames after
+  that A. The list holds the units of the ring's recipe row category (the container's places 13 to 17 for the flowers, 18 to 20 for the water) less those placed; the panel
+  under it (`uil_a21_mix_simple_item_info`: picture, quality, the four elements, empty Effect and Trait rows) and the grid (`uil_a21_cabinet_mix`: seven columns, the cell's
+  one element icon at the middle of the four places, the count, the cursor's colours, the item's name in the header) share the slide. The panel is drawn before the grid.
+- **The numbers**: the quality number on the right panel is a preview while a list is up (the cauldron plus the material under the cursor: 35, 38, 49) and the gauge fills to
+  the placed materials' only (0 at 2930). The effect rows show the highest tier each effect ring reached (preview included), green (0, 135, 10 bytes). The quantity box shows
+  "2 / 1 / 0 times" in the three lists (3 outside), its circles lit by the placed count and the whole box moves with the graph's pan. The rings' lit states are
+  `rings::Cauldron` after the placed materials; the popup of the ring under the cursor stays up with the list.
+- **Help bar**: between a list and the next ring the one-entry bar's plate is 35 pixels wider than its entry (`ADD_PLATE_EXTRA`, fitted).
+- **STAND-INs** (named in the code): `ADD_RUN` and `ADD_LISTS` (the capture's units, rings, rows and the frames of the A presses; `tools/synth_rules_events.txt` has the same run on
+  the rules key's own clock), the grid's slider height (239 layout pixels), the element icon's place (`ICON_AT`), `ADD_PLATE_EXTRA`, the glow's restart (`s.1 + 30.5`).
+- **Frames at 0**: 2870 to 2920 (part 4). Frames left, with the unmatched `res_` quads: 2930 30, 2940 to 2970 120, 2980 358 (the frame of the A: the game draws another
+  state), 2990 224, 3000 9, 3010 to 3030 4, 3040 386, 3050 38, 3060 to 3090 129, 3100 351, 3110 224, 3120 10, 3130 6, 3140 4, 3150 and 3160 8, 3170 to 3190 6,
+  3200 to 3240 4, 3250 to 3280 about 340 (the loop's frames), 3290 110, 3300 200, 3310 to 3330 150, 3340 294, 3350 184, 3360 10, 3370 to 3490 2, 3500 41, 3510 96, 3520 87.
+- **Left, by size**: (1) the help bar with a list up (2940 to 2970, 3060 to 3090, 3310 to 3330: about 100 quads each): the capture's plate starts at x 342 (Barrel's ring bar at 501);
+  its entries are the ring bar's with the cross's "Select" (glyph 0x4e0) and "Select Material" (string 9961613); a bar of those with and without the zoom entries was tried (119 to
+  101 and 105 at 2950) and the plate is still narrower than the capture's: an entry (the Y one behind the silhouette) is missing. (2) The frames of the A presses (2980, 3040, 3100,
+  3280, 3340: 290 to 390) and the loops' (3250 to 3280): the game draws the swapped (blank) ring state then. (3) The second light of the ring at grid (1, 3 to 5): one quad (two at 3140 to 3240) whose
+  phase is off (the capture's rotates 0.0625 degrees a frame from about 90 degrees at 3200 and its alpha falls from 0.5 at 3370 to 0.06 at 3470; Barrel's cycle gives 9.9 degrees).
+  (4) The green `a21_battle#1` quad (1 on every list frame) and the six element quads of the panel's nodes 1 to 3, which the capture draws after the item picture's text on the list-in frames.
+  (5) 3820 to 3830, 4260 to 4300, the leftovers 2310, 2800, 2860, and the `Machine`-driven `--mix-run`: not started.
+
 Left.
 
 **Left.**

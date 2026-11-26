@@ -43,6 +43,9 @@ opening) and `synth-add-FRAME` (`--mix-add FRAME`) diff Select Recipe and the ri
 every 10 frames (the tutorial pages, 2660 to 2790 the list) and 2810 to 2850 (with the ring graph); Add Materials 2870 to 2920. Left: 2310 (13: the autosave spinner), 2800 and 2860
 (1 each: a screen-sized quad of the font on the frame of the key), and 2930 to 3520 (the material list and the rest: 640 to 920 a frame: open.md, "Synthesis", part 4). The rows
 are in the checks file as `synth-recipe-*` and `synth-add-*`.
+Part 5 (the material phase, 2930 to 3520): the count fell from 556 to 1013 a frame to 2 to 10 on the quiet frames (3000 to 3030, 3120 to 3240, 3360 to 3490) and 30 to 390 on the
+list and press frames (open.md, "Synthesis", part 5). Its `synth-add-FRAME` rows for the frames at 10 or fewer pin the count (`^res_ mismatches: N$`), not 0: a regression guard until
+the rest is drawn.
 
 **synth flow** (part 2): four rows run `barrel-tool ryza-synth` on the key's `pad.txt`: `synth-cues` (the machine's cues against the key's play lines, 1900 to 4400: 65 of 65
 within a frame, 0 extra), `synth-screens` (30 screen changes, the card 3820, the result 4000, Complete 4060, going out 4240, the room 4300), `synth-walk-end` (her end place
