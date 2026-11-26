@@ -114,6 +114,8 @@ struct Args {
     mix_recipe: Option<(i32, f32, f32, Option<f32>)>,
     /// `--mix-add FRAME`: the synthesis's Add Materials screen at a frame of the capture's run.
     mix_add: Option<f32>,
+    /// `--mix-run PAD FRAME`: Add Materials on FRAME with the presses `synthesis::Machine` makes of the pad script PAD.
+    mix_run: Option<(String, f32)>,
     /// `--mix-tutorial PAGE:AGE:CLOCK`: a tutorial page over Select Recipe (its number, the frames since the box came up, the arrow's clock).
     mix_tutorial: Option<(usize, f32, f32)>,
     /// `--mix-opening AGE`: Select Recipe coming in, AGE frames after it began.
@@ -225,7 +227,7 @@ fn args(args: Vec<String>) -> Result<Args> {
     let mut it = args.into_iter();
     let usage = "usage: barrel-ryza INSTALL FIELD OUT.png [--size WxH] [--telop N] [--event NAME --at T] [--yaw DEG] [--pitch DEG] [--look-at X,Y,Z] [--distance D] [--time T] [--weather W]";
     let (install, field, out) = (it.next().ok_or(usage)?, it.next().ok_or(usage)?, it.next().ok_or(usage)?);
-    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, mix_recipe: None, mix_add: None, mix_tutorial: None, mix_opening: None, mix_complete: None, mix_result: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let mut a = Args { install, field, out, size: (1280, 720), yaw: 0.0, pitch: 30.0, look_at: None, distance: None, time: Time::Noon, weather: Weather::Sunny, hide: Vec::new(), unseen: Vec::new(), story: Default::default(), save: None, hud: false, basket: None, no_banner: false, menu_keys: Vec::new(), save_hour: None, hud_at: 0.0, hud_arrival: 0.0, mix_sheet: None, mix_recipe: None, mix_add: None, mix_run: None, mix_tutorial: None, mix_opening: None, mix_complete: None, mix_result: None, hud_stick: Vec::new(), hud_slips: Vec::new(), gather: None, swing: None, spent: Vec::new(), learned: Vec::new(), camera_yaw: None, camera_length: None, camera_target: None, camera_pitch: None, no_skyline: false, no_occluders: false, ryza: None, no_shadows: false, fov: None, draw_ranges: "auto".into(), window: false, preset: None, setting_ini: None, fullscreen: false, timings: false, frames: None, walk_from: None, lean: [0.0; 2], telop: None, event: None, opening: false, opening_at: barrel_ryza::opening::START, title: false, title_input: Default::default(), saves: None, title_at: std::env::var("BARREL_TITLE_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0), into_field: false, settings_as_game: false, boot: false, boot_at: std::env::var("BARREL_BOOT_AT").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) };
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -355,6 +357,10 @@ fn args(args: Vec<String>) -> Result<Args> {
                 a.mix_complete = Some((level as u32, next as u32, gained as u32, age));
             }
             "--mix-add" => a.mix_add = Some(value()?.parse()?),
+            "--mix-run" => {
+                let pad = value()?;
+                a.mix_run = Some((pad.to_string(), value()?.parse()?));
+            }
             "--mix-opening" => a.mix_opening = Some(value()?.parse()?),
             "--mix-tutorial" => {
                 let v = value()?;
@@ -913,48 +919,104 @@ fn ring_shows(rings: &[barrel_ryza::rings::Ring], recipe: &barrel_ryza::mix::Rec
         .collect()
 }
 
+/// When the key's presses on Add Materials fall: the A that opened it (on Select Recipe) and the 11 of `synthesis::ADD_PRESS_ROLES`, in frames of the capture's run. The frames
+/// the screen's other motions start are fixed counts from these (STAND-INs below, each read off the capture's sampled frames of the key).
+#[derive(Clone, Copy)]
+struct AddTimeline {
+    recipe_press: f32,
+    presses: [f32; 11],
+}
+
+impl AddTimeline {
+    /// The key's own (`synth-atelier`'s pad: A on 2860, then every 60 frames from 2920).
+    const KEY: AddTimeline = AddTimeline { recipe_press: 2860.0, presses: [2920.0, 2980.0, 3040.0, 3100.0, 3160.0, 3220.0, 3280.0, 3340.0, 3400.0, 3460.0, 3520.0] };
+
+    /// The timeline a `synthesis::Machine` made of a pad script: its presses.
+    fn from_machine(m: &barrel_ryza::synthesis::Machine) -> Result<AddTimeline> {
+        let presses: Vec<f32> = m.add_presses().iter().map(|&f| f as f32).collect();
+        Ok(AddTimeline { recipe_press: m.recipe_press().ok_or("the pad never reaches Add Materials")? as f32, presses: presses.try_into().map_err(|_| "the pad does not make the 11 presses of Add Materials")? })
+    }
+
+    /// The presses that open a list and place a material: `(frame of the A that opens it, the frame before the A that takes it away, ring, recipe row, materials placed before)`.
+    // STAND-IN: the rings and rows of the key's three materials (`tools/synth_rules_events.txt`); the lists open on the roles' `Ring` presses.
+    fn lists(&self) -> [(f32, f32, usize, u32, usize); 3] {
+        let p = &self.presses;
+        [(p[0], p[1] - 1.0, 0, 0, 0), (p[2], p[3] - 1.0, 0, 0, 1), (p[6], p[7] - 1.0, 3, 1, 2)]
+    }
+
+    /// The key's three materials, as `(the frame their rings light, container unit, ring, recipe row)`: the first flower, the second, the water.
+    // STAND-IN: read off the capture (the units placed by the A on a material: `tools/synth_rules_events.txt`).
+    fn run(&self) -> [(f32, usize, usize, u32); 3] {
+        let p = &self.presses;
+        [(p[1] + 1.0, 13, 0, 0), (p[3] + 1.0, 14, 0, 0), (p[7] + 1.0, 18, 3, 1)]
+    }
+}
+
+/// The timeline of Add Materials a `synthesis::Machine` makes of the pad script `pad` (`FRAME BUTTON HOLD` lines, the key's `pad.txt`): the machine runs from 1900, as the
+/// `ryza-synth` check does, to the last of its Add Materials presses.
+fn timeline_from_pad(install: &barrel_ryza::install::Install, pad: &str, container: &[barrel_ryza::save::Worn]) -> Result<AddTimeline> {
+    use barrel_ryza::synthesis::{script_pad, Machine, World};
+    const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
+    let tables = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let recipe = tables.recipes.iter().position(|r| r.tag == TAG).ok_or("no recipe")?;
+    let script = std::fs::read_to_string(pad)?;
+    let maker = |_: &barrel_ryza::mix::Made| Vec::new();
+    let world = World { clock: 0, container: container.to_vec(), level: 1, exp: 0 };
+    let mut machine = Machine::new(&tables, recipe, world, &maker, barrel_ryza::synthesis::KeyPicks);
+    machine.start_at(1900);
+    // (the screens' flow ends at the 11th press: later frames only make the item)
+    for frame in 1900..4000 {
+        machine.step(script_pad(&script, frame));
+        if machine.add_presses().len() >= barrel_ryza::synthesis::ADD_PRESS_ROLES.len() {
+            break;
+        }
+    }
+    AddTimeline::from_machine(&machine)
+}
+
 /// How far the capture's ring graph is panned on frame `frame`, in layout pixels. STAND-IN: the capture's: 105 pixels of 1080 lines to the right (70) while the material list has the
 /// pad (from 9 frames after A on 2920, 3040 and 3280, to 9 after the next press), and two grid steps up (164.1) in 12 frames from 3246.
-fn ring_graph_pan(frame: f32) -> [f32; 2] {
-    const LIST_HAS_PAD: [(f32, f32); 3] = [(2929.0, 2989.0), (3049.0, 3109.0), (3289.0, 3349.0)];
-    let x = if LIST_HAS_PAD.iter().any(|&(from, to)| frame >= from && frame < to) { 70.0 } else { 0.0 };
-    [x, -164.14 * ((frame - 3246.0) / 12.0).clamp(0.0, 1.0)]
+fn ring_graph_pan(frame: f32, tl: &AddTimeline) -> [f32; 2] {
+    let x = if tl.lists().iter().any(|&(a, out, ..)| frame >= a + 9.0 && frame < out + 10.0) { 70.0 } else { 0.0 };
+    [x, -164.14 * ((frame - (tl.presses[6] - 34.0)) / 12.0).clamp(0.0, 1.0)]
 }
 
 /// The frames the ring's description has risen into place on `frame` (it rises again each time the cursor is back on a ring, and goes out as that played backwards from
 /// the frame before A).
-// STAND-IN: the starts are read off the capture's alphas and offsets of the plate (`synth-atelier` 2870: 0.49, 3040: 0.349, 3250: 0.188, 3260: 0.784; 30 layout pixels to rise): 2863.5, 3034 and 3248.
-fn desc_age(frame: f32) -> f32 {
-    const RISES_FROM: [f32; 3] = [2863.5, 3034.0, 3248.0];
-    let (rise, &(a, ..)) = RISES_FROM.iter().zip(ADD_LISTS.iter()).rev().find(|&(&from, _)| frame >= from).unwrap_or((&RISES_FROM[0], &ADD_LISTS[0]));
+// STAND-IN: the starts are read off the capture's alphas and offsets of the plate (`synth-atelier` 2870: 0.49, 3040: 0.349, 3250: 0.188, 3260: 0.784; 30 layout pixels to rise): 2863.5 after A on Select Recipe, 3034 and 3248 (6 frames before the second list's A, 32 before the third's).
+fn desc_age(frame: f32, tl: &AddTimeline) -> f32 {
+    let lists = tl.lists();
+    let rises_from = [tl.recipe_press + 3.5, tl.presses[2] - 6.0, tl.presses[6] - 32.0];
+    let (rise, &(a, ..)) = rises_from.iter().zip(lists.iter()).rev().find(|&(&from, _)| frame >= from).unwrap_or((&rises_from[0], &lists[0]));
     let at_a = ((a - 1.0) - rise).min(30.0);
     if frame >= a { at_a - (frame - (a - 1.0)) } else { frame - rise }
 }
 
-/// The frame from which the synthesis is running and Add Materials shows only its ring graph and the bars.
+/// The frames after the last A (the one that makes the item) from which the synthesis is running and Add Materials shows only its ring graph and the bars.
 // STAND-IN: `synth-atelier`: 1008 quads on 3530, 968 on 3540, 152 on 3550 and 40 from 3600 on (the panels fade over those frames: the fade is not drawn).
-const SYNTHESIS_RUNS_AT: f32 = 3545.0;
+const SYNTHESIS_RUNS_AFTER: f32 = 25.0;
 
-/// The frame the cursor leaves the first ring for the third list's (the popup of the new ring starts to fade in).
+/// The frames before the third list's A at which the cursor leaves the first ring for the water's (the popup of the new ring starts to fade in).
 // STAND-IN: `synth-atelier` 3260: the popup of the new ring has one third of its opacity (5 frames of 15), 3250: the old ring's has two frames' worth.
-const CURSOR_MOVES_AT: f32 = 3255.0;
+const CURSOR_MOVES_BEFORE: f32 = 25.0;
 
 /// The opacity of the ring popup on `frame`: whole from the ring phase and while a list is up, fading in over `POPUP_FADE` frames before the ring is chosen again and out
 /// over as many after A on a material.
 // STAND-IN: the capture's alphas on the sampled frames (`synth-atelier` 2990 and 3110 and 3350: one third, 3040: 0.4, 3260: one third) give the fade's 15 frames and the
 // starts at 3034 and 3255; the rule behind them is not read.
-fn popup_alpha(frame: f32) -> f32 {
+fn popup_alpha(frame: f32, tl: &AddTimeline) -> f32 {
     const POPUP_FADE: f32 = 15.0;
-    const SHOWN_FROM: [f32; 3] = [f32::NEG_INFINITY, 3034.0, 3248.0];
-    if frame < 2870.0 {
+    let shown_from = [f32::NEG_INFINITY, tl.presses[2] - 6.0, tl.presses[6] - 32.0];
+    let moves_at = tl.presses[6] - CURSOR_MOVES_BEFORE;
+    if frame < tl.recipe_press + 10.0 {
         return 0.0;
     }
-    SHOWN_FROM
+    shown_from
         .iter()
-        .zip(ADD_LISTS.iter())
+        .zip(tl.lists().iter())
         .enumerate()
         .map(|(i, (&from, &(_, out, ..)))| {
-            let from = if i == 2 && frame >= CURSOR_MOVES_AT { CURSOR_MOVES_AT } else { from };
+            let from = if i == 2 && frame >= moves_at { moves_at } else { from };
             let on = ((frame - from) / POPUP_FADE).clamp(0.0, 1.0);
             let off = 1.0 - ((frame - (out + 1.0)) / POPUP_FADE).clamp(0.0, 1.0);
             if frame < from { 0.0 } else { on * off }
@@ -962,17 +1024,14 @@ fn popup_alpha(frame: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// The key's three materials, as `(the frame their rings light, container unit, ring, recipe row)`: the first flower, the second, the water.
-// STAND-IN: read off the capture (`synth-atelier`: A on a material at 2980, 3100 and 3340; `tools/synth_rules_events.txt` has the units and rings).
-const ADD_RUN: [(f32, usize, usize, u32); 3] = [(2981.0, 13, 0, 0), (3101.0, 14, 0, 0), (3341.0, 18, 3, 1)];
-/// The key's three material lists as `(frame of the A that opens it, frame of the A that takes it away, ring, recipe row, materials placed before)`.
-// STAND-IN: the same capture (A at 2920, 3040 and 3280 on a ring; 2980, 3100 and 3340 on a material, the list going out from the frame after).
-const ADD_LISTS: [(f32, f32, usize, u32, usize); 3] = [(2920.0, 2979.0, 0, 0, 0), (3040.0, 3099.0, 0, 0, 1), (3280.0, 3339.0, 3, 1, 2)];
 
 /// The synthesis's Add Materials screen (`--mix-add FRAME`): the background, then the screen's parts. STAND-IN: the capture's recipe (Red Supplement); the
 /// rings' states are the start's (the first ring open) until the rules' placements are wired in.
-fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, units: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
+fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: &Renderer, frame: f32, tl: &AddTimeline, units: &[barrel_ryza::save::Worn], screen: (u32, u32)) -> Result<Vec<text::Layer>> {
     use barrel_ryza::field_page as fp;
+    let (lists, run) = (tl.lists(), tl.run());
+    let runs_at = tl.presses[10] + SYNTHESIS_RUNS_AFTER;
+    let moves_at = tl.presses[6] - CURSOR_MOVES_BEFORE;
     const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
@@ -982,7 +1041,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
     let rings = fields.get(TAG).ok_or("no field for the recipe")?;
     let recipe = recipes.recipes.iter().find(|r| r.tag == TAG).ok_or("no recipe")?;
-    // The materials placed by now (the key's three: `ADD_RUN`) and the rings they leave lit; a list that is up also previews the material under its cursor.
+    // The materials placed by now (the key's three: `AddTimeline::run`) and the rings they leave lit; a list that is up also previews the material under its cursor.
     let item_row = |u: &barrel_ryza::save::Worn| items.row(u.item).cloned().unwrap_or_default();
     let place = |cauldron: &mut barrel_ryza::rings::Cauldron, unit: usize, ring: usize, row: u32| -> Result<()> {
         let u = units.get(unit).ok_or("no unit")?;
@@ -990,27 +1049,27 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         Ok(cauldron.place(ring, row, f32::from(u.quality), [0, 1, 2, 3].map(|k| if r.elements[k] { r.elem_value } else { 0 }))?)
     };
     let mut cauldron = barrel_ryza::rings::Cauldron::new(rings);
-    for &(_, unit, ring, row) in ADD_RUN.iter().filter(|r| frame >= r.0) {
+    for &(_, unit, ring, row) in run.iter().filter(|r| frame >= r.0) {
         place(&mut cauldron, unit, ring, row)?;
     }
     let placed_now = cauldron.placed().len();
-    let session = ADD_LISTS.iter().find(|s| frame > s.0 && frame < s.1 + 30.0).copied();
+    let session = lists.iter().find(|s| frame > s.0 && frame < s.1 + 30.0).copied();
     let mut preview = barrel_ryza::rings::Cauldron::new(rings);
-    for &(_, unit, ring, row) in &ADD_RUN[..placed_now] {
+    for &(_, unit, ring, row) in &run[..placed_now] {
         place(&mut preview, unit, ring, row)?;
     }
     if let Some((_, out, ring, row, placed)) = session.filter(|s| frame < s.1 + 1.5) {
         let _ = out;
-        let (_, unit, _, _) = ADD_RUN[placed];
+        let (_, unit, _, _) = run[placed];
         place(&mut preview, unit, ring, row)?;
     }
     let outcome = preview.outcome(false);
     let lit = cauldron.outcome(false).eval.cells;
     let shown = ring_shows(rings, recipe, &order, |i| lit.get(i).is_some_and(|c| c.1));
-    // (the cursor moves down to the water's ring while the graph pans, from `CURSOR_MOVES_AT`)
-    let cursor = if frame >= CURSOR_MOVES_AT { ADD_LISTS[2].2 } else { session.map_or(0, |s| s.2) };
+    // (the cursor moves down to the water's ring while the graph pans, `CURSOR_MOVES_BEFORE` frames before the third list's A)
+    let cursor = if frame >= moves_at { lists[2].2 } else { session.map_or(0, |s| s.2) };
     // The glow's turn starts again when the list is gone (30 frames after A on a material).
-    let focus_zero = ADD_LISTS.iter().rev().find(|s| frame >= s.1 + 30.0).map_or(fp::FOCUS_ZERO_AT, |s| s.1 + 30.5);
+    let focus_zero = lists.iter().rev().find(|s| frame >= s.1 + 30.0).map_or(fp::FOCUS_ZERO_AT, |s| s.1 + 30.5);
     let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(329), category: Some(c) }).chain([fp::ShelfItem { image: tables.image(329), category: None }]).chain(units.iter().map(|u| fp::ShelfItem { image: tables.image(u.item), category: None })).collect();
     let back = mix_back_layer(install, gpu, renderer, 1, screen)?;
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
@@ -1030,7 +1089,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     };
     // The popup of the ring under the cursor: its heading and a row for each of its steps.
     // STAND-IN: the effect numbers of `ITEM_EFF_CREATE_QUALITY_nn` (the enum's table is not read: n + 1332).
-    let popup_alpha = popup_alpha(frame);
+    let popup_alpha = popup_alpha(frame, tl);
     let popup = rings.get(cursor).filter(|_| popup_alpha > 0.0).map(|r| {
         let row = recipe.rows.get(r.restrict as usize);
         let category = row.and_then(|row| row.category.as_ref()).and_then(|c| order.iter().position(|o| o == c));
@@ -1060,13 +1119,13 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         (fp::RecipeLook { rows, cursor: 1, cursor_shown: frame < 2860.0, age: frame - 2799.0, graph: None, tutorial: None, opening: None }, frame - 2859.0)
     });
     // The material list: the session whose slide is running (up from A on the ring, out from A on the material).
-    let materials = ADD_LISTS.iter().find_map(|&(start, out, ring, row, placed)| {
+    let materials = lists.iter().find_map(|&(start, out, ring, row, placed)| {
         let slide = if frame >= out { 30.0 - (frame - out) } else { frame - start };
         if frame < start || slide <= 0.0 {
             return None;
         }
         let category = recipe.rows.get(row as usize).and_then(|r| r.category.as_ref()).and_then(|c| order.iter().position(|o| o == c));
-        let items_here: Vec<(usize, &barrel_ryza::save::Worn)> = units.iter().enumerate().filter(|(i, u)| item_row(u).category == category && category.is_some() && !ADD_RUN[..placed].iter().any(|r| r.1 == *i)).collect();
+        let items_here: Vec<(usize, &barrel_ryza::save::Worn)> = units.iter().enumerate().filter(|(i, u)| item_row(u).category == category && category.is_some() && !run[..placed].iter().any(|r| r.1 == *i)).collect();
         let (_, first) = *items_here.first()?;
         let r = item_row(first);
         let _ = ring;
@@ -1087,14 +1146,14 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
         let id = tag.strip_prefix("ITEM_EFF_CREATE_QUALITY_")?.parse::<u32>().ok()? + 1332;
         strings.get(&(barrel_ryza::item_info::EFFECT_BASE + id)).cloned()
     });
-    let look = fp::AddLook { bare: frame >= SYNTHESIS_RUNS_AT, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame), focus_zero, quiet: frame >= SYNTHESIS_RUNS_AT }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame) };
+    let look = fp::AddLook { bare: frame >= runs_at, materials, lit: placed_now, field: fp::FieldLook { rings: shown, cursor, clock: frame, shift: ring_graph_pan(frame, tl), focus_zero, quiet: frame >= runs_at }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: outcome.quality, gauge: cauldron.outcome(false).quality, page: (1, 2), effects }, popup, list_out, desc_age: desc_age(frame, tl) };
     let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     let (mut bar, view) = menu_layer(install, gpu, renderer)?;
-    let quads = if frame < 2921.0 {
-        view.add_help(screen, frame - 2860.0)
+    let quads = if frame < tl.presses[0] + 1.0 {
+        view.add_help(screen, frame - tl.recipe_press)
     } else {
-        let (entries, left) = add_bar(frame);
+        let (entries, left) = add_bar(frame, tl);
         view.add_help_at(screen, entries, left)
     };
     bar.set(gpu, &quads)?;
@@ -1102,36 +1161,35 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
 }
 
 /// Add Materials' help bar from the first list on: the words and the plate's left edge (pixels of a 1080-line screen) on `frame`.
-/// The plate eases (out cubic over `BAR_EASE` frames) to the words' width; the one-word bar turns into the ring's from `ADD_BAR_RING_AT` frames on, A on a ring
+/// The plate eases (out cubic over `BAR_EASE` frames) to the words' width; the one-word bar turns into the ring's from fixed counts before the lists' A, A on a ring
 /// shows the pair of words for `BAR_PAIR` frames and then the list's, and A on a material the one word.
 // STAND-IN: read off the capture's plates on the sampled frames (`synth-atelier` 2930 to 3350: ring 298, pair 1258, list 342, one 1544; the ring's plate starts to grow at
 // 3037.8 and 3255.6, the pair's frames end between 10 and 20 after A): the rules that move them are not read.
-fn add_bar(frame: f32) -> (crate::field_menu::AddEntries, f32) {
+fn add_bar(frame: f32, tl: &AddTimeline) -> (crate::field_menu::AddEntries, f32) {
     use crate::field_menu::AddEntries;
     const RING: f32 = 298.0;
     const PAIR: f32 = 1258.0;
     const LIST: f32 = 342.0;
     const ONE: f32 = 1544.0;
     const PROMPT: f32 = 1219.0;
-    const PROMPT_AT: f32 = 3505.0;
-    const FAST_FORWARD_AT: f32 = 3555.0;
     const BAR_EASE: f32 = 15.0;
     const BAR_PAIR: f32 = 15.0;
-    const ADD_BAR_RING_AT: [f32; 3] = [f32::NEG_INFINITY, 3037.8, 3255.6];
+    let (prompt_at, fast_forward_at) = (tl.presses[10] - 15.0, tl.presses[10] + 35.0);
+    let ring_at = [f32::NEG_INFINITY, tl.presses[2] - 2.2, tl.presses[6] - 24.4];
     let ease = |t: f32| 1.0 - (1.0 - (t / BAR_EASE).clamp(0.0, 1.0)).powi(3);
     let lerp = |a: f32, b: f32, t: f32| a + (b - a) * ease(t);
     // The plate before A on list `i`: settled on the ring's, or on its way there from the one word's.
-    let ring_plate = |i: usize, f: f32| if i == 0 { RING } else { lerp(ONE, RING, f - ADD_BAR_RING_AT[i]) };
+    let ring_plate = |i: usize, f: f32| if i == 0 { RING } else { lerp(ONE, RING, f - ring_at[i]) };
     // The prompt before the synthesis (3510 and 3520 sampled), then the synthesis's fast forward from 3555.
-    if frame > PROMPT_AT && frame < PROMPT_AT + 25.0 {
+    if frame > prompt_at && frame < prompt_at + 25.0 {
         return (AddEntries::Prompt, PROMPT);
     }
-    if frame >= FAST_FORWARD_AT {
+    if frame >= fast_forward_at {
         return (AddEntries::Fast, ONE);
     }
     let mut state = (AddEntries::One, ONE);
-    for (i, &(a, out, ..)) in ADD_LISTS.iter().enumerate() {
-        if frame >= ADD_BAR_RING_AT[i] && frame <= a {
+    for (i, &(a, out, ..)) in tl.lists().iter().enumerate() {
+        if frame >= ring_at[i] && frame <= a {
             return (AddEntries::Ring, ring_plate(i, frame));
         }
         if frame > a && frame < a + BAR_PAIR {
@@ -2807,7 +2865,11 @@ fn run_once(mut raw: Vec<String>, chosen: Option<locate::Resolved>, carry: Carry
         _ => None,
     };
     let mix_screen = match (a.mix_sheet, a.mix_complete, a.mix_result.clone()) {
-        _ if a.mix_add.is_some() => Some(mix_add_layers(&install, &gpu, &renderer, a.mix_add.unwrap_or(0.0), &container.0, (width, height))?),
+        _ if a.mix_add.is_some() => Some(mix_add_layers(&install, &gpu, &renderer, a.mix_add.unwrap_or(0.0), &AddTimeline::KEY, &container.0, (width, height))?),
+        _ if a.mix_run.is_some() => {
+            let (pad, frame) = a.mix_run.clone().unwrap_or_default();
+            Some(mix_add_layers(&install, &gpu, &renderer, frame, &timeline_from_pad(&install, &pad, &container.0)?, &container.0, (width, height))?)
+        }
         _ if a.mix_recipe.is_some() => Some(mix_recipe_layers(&install, &gpu, &renderer, a.mix_recipe.unwrap_or((0, 0.0, 99.0, None)), a.mix_tutorial.map(|(page, age, clock)| barrel_ryza::field_page::Tutorial { page, age, clock }), a.mix_opening, &container.0, (width, height))?),
         (Some((item, count, clock)), _, _) => Some(mix_sheet_layers(&install, &gpu, &renderer, item, MixShown::Card(count, clock), (width, height))?),
         (None, Some((level, next, gained, age)), _) => Some(mix_sheet_layers(&install, &gpu, &renderer, 0, MixShown::Complete(level, next, gained, age), (width, height))?),

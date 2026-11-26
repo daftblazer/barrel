@@ -107,6 +107,34 @@ enum Sound {
 
 use Sound::{Effect, Stop, Voice};
 
+/// What each A on Add Materials does, by its number since the screen opened (the 11 of `ADD_STEPS`): the first three loops open the materials' list with A on a ring and
+/// place the material under its cursor with the next A; the rest are the loops' own presses.
+// STAND-IN: read off the key (`synth-atelier` 2920 to 3520: the lists open on the 1st, 3rd and 7th press); the game's rule for the roles is not read.
+pub const ADD_PRESS_ROLES: [PressRole; 11] = [
+    PressRole::Ring,
+    PressRole::Material,
+    PressRole::Ring,
+    PressRole::Material,
+    PressRole::Loop,
+    PressRole::Loop,
+    PressRole::Ring,
+    PressRole::Material,
+    PressRole::Loop,
+    PressRole::Loop,
+    PressRole::Loop,
+];
+
+/// What an A on Add Materials does to the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PressRole {
+    /// Opens the materials' list on the ring under the cursor.
+    Ring,
+    /// Places the material under the list's cursor (the list goes out).
+    Material,
+    /// One of the loops' own presses.
+    Loop,
+}
+
 /// What each A in Add Materials does, by its number since the screen opened, as `(frames after the press, sound)`.
 // STAND-IN: the key's 12 presses of the loops (`synth-atelier` 2920 to 3520) with the sounds each made: the sounds follow the recipe's
 // rows (a material added, a loop's ring lighting and closing), but the game's rule for which press does which is not read; this is
@@ -199,6 +227,9 @@ pub struct Machine<'a> {
     made: Option<mix::Made>,
     /// The frame the room was reached from the Complete screen (her idle sounds count from it).
     idle_from: Option<i64>,
+    /// The frames of each A on Add Materials, and of the A on Select Recipe that opens it (`recipe_press`).
+    presses: Vec<i64>,
+    recipe_press: Option<i64>,
 }
 
 /// Where she arrives in the attic and which way the room's camera looks, for the walk (game units, degrees).
@@ -211,7 +242,7 @@ pub const ROOM_YAW: f32 = 45.95;
 
 impl<'a> Machine<'a> {
     pub fn new(tables: &'a mix::Tables, recipe: usize, world: World, maker: Maker<'a>, picks: impl Picks + 'a) -> Machine<'a> {
-        Machine { screen: Screen::Field, since: 0, frame: 0, picks: Box::new(picks), world, tables, recipe, maker, alchemy: None, at: ARRIVAL, turn: 0.0, walk_from: None, steps_cued: 0, made: None, idle_from: None }
+        Machine { screen: Screen::Field, since: 0, frame: 0, picks: Box::new(picks), world, tables, recipe, maker, alchemy: None, at: ARRIVAL, turn: 0.0, walk_from: None, steps_cued: 0, made: None, idle_from: None, presses: Vec::new(), recipe_press: None }
     }
 
     /// The experience rule for the Level UP (without it the level goes up `LEVEL_GAIN`).
@@ -224,6 +255,16 @@ impl<'a> Machine<'a> {
     pub fn start_at(&mut self, frame: i64) {
         self.frame = frame;
         self.since = frame;
+    }
+
+    /// The frames of the A presses made on Add Materials so far, in order (what each does is `ADD_PRESS_ROLES`).
+    pub fn add_presses(&self) -> &[i64] {
+        &self.presses
+    }
+
+    /// The frame of the A on Select Recipe that opened Add Materials.
+    pub fn recipe_press(&self) -> Option<i64> {
+        self.recipe_press
     }
 
     pub fn screen(&self) -> Screen {
@@ -344,6 +385,7 @@ impl<'a> Machine<'a> {
                     self.cue(&mut out, 0, Voice(4, 5));
                     let recipe = &self.tables.recipes[self.recipe];
                     self.made = mix::make(self.tables, recipe, &self.world.container);
+                    self.recipe_press = Some(self.frame);
                     self.go(Screen::Materials { step: 0 });
                 } else if pad.b {
                     self.cue(&mut out, 0, Effect(CANCEL));
@@ -352,6 +394,7 @@ impl<'a> Machine<'a> {
             }
             Screen::Materials { step } => {
                 if pad.a {
+                    self.presses.push(self.frame);
                     for &(after, sound) in ADD_STEPS[step.min(ADD_STEPS.len() - 1)] {
                         self.cue(&mut out, after, sound);
                     }
