@@ -876,6 +876,7 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     use barrel_ryza::field_page as fp;
     const TAG: &str = "ITEM_MIX_MATERIAL_NEUTRALIZE_001";
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
     let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let order: Vec<String> = barrel_formats::table::parse(&install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?.children.iter().filter_map(|c| c.attr("category").map(str::to_string)).collect();
     let fields = barrel_ryza::rings::Rings::read(&install.read("\\saves\\mix\\mixfielddata.xml")?)?;
@@ -905,9 +906,26 @@ fn mix_add_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, renderer: 
     let shelf: Vec<fp::ShelfItem> = shown.iter().filter_map(|r| r.restrict).map(|c| fp::ShelfItem { image: tables.image(0), category: Some(c) }).collect();
     let back = mix_back_layer(install, gpu, renderer, 1, screen)?;
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
-    let (quads, additive, clips) = page.add_quads(&fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, screen);
+    let item = 329u16;
+    let row = items.row(item).ok_or("no item")?;
+    let info = fp::RecipeInfo {
+        image: tables.image(item),
+        level: row.level,
+        alchemy: 1,
+        make: recipe.make,
+        attack: false,
+        elem_value: row.elem_value,
+        elements: row.elements,
+        materials: Vec::new(),
+        put: recipe.rows.first().map_or(0, |r| r.need as usize),
+        times: 3,
+    };
+    let look = fp::AddLook { field: fp::FieldLook { rings: shown, cursor: 0, clock: frame, shift: [0.0; 2] }, row: fp::RecipeRow { name: 0, count: 0, short: true, info }, panel: fp::AddPanel { quality: 0, page: (1, 2) } };
+    let (quads, additive, clips) = page.add_quads(&look, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
-    Ok(vec![back, sheet])
+    let (mut bar, view) = menu_layer(install, gpu, renderer)?;
+    bar.set(gpu, &view.add_help(screen, frame < 2921.0))?;
+    Ok(vec![back, sheet, bar])
 }
 
 /// The synthesis screens' background layer: the picture (`a21_bg01`, drawn twice as the capture has it) and the field's two bars of the screen

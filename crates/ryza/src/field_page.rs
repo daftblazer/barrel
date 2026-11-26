@@ -13,8 +13,8 @@
 
 mod recipe_view;
 mod ring_view;
-pub use recipe_view::{RecipeInfo, RecipeLook, RecipeRow};
-pub use ring_view::{FieldLook, RingShow};
+pub use recipe_view::{AddPanel, RecipeInfo, RecipeLook, RecipeRow};
+pub use ring_view::{AddLook, FieldLook, RingShow};
 
 use std::collections::{BTreeSet, HashMap};
 

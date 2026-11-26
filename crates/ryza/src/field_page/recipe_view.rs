@@ -119,15 +119,56 @@ impl Page {
             }
         }
         // The panel on the right.
-        if let (Some(row), Some(panel)) = (look.rows.get(look.cursor), find(&docs.recipe, "product_info")) {
+        if let Some(row) = look.rows.get(look.cursor) {
+            self.product_panel(&mut w, &root, row, None);
+        }
+        // The quantity box at the bottom (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right.
+        if let Some(row) = look.rows.get(look.cursor) {
+            self.quantity_box(&mut w, &root, &row.info);
+        }
+        self.caption_plate(&mut w, &root, RECIPE_TITLE, Slide::NONE);
+        (w.out, w.additive, w.clips)
+    }
+}
+
+/// What the Add Materials screen's panel adds to Select Recipe's (`create_info`: the quality gauge and the effects it gives).
+pub struct AddPanel {
+    /// The quality the placed materials give.
+    pub quality: u32,
+    /// The page of the effects list and the number of pages.
+    pub page: (u32, u32),
+}
+
+impl Page {
+    /// The panel on the right (`product_info`) of Select Recipe (`add`: None) or of Add Materials, whose `create_info` takes the place of the list of materials.
+    pub(super) fn product_panel(&self, w: &mut Walker, root: &Xf, row: &RecipeRow, add: Option<&AddPanel>) {
+        let string = |n: u32| self.strings.get(&n).cloned();
+        let hide = || Over { hide: true, ..Default::default() };
+        if let Some(panel) = find(&self.mix_docs.recipe, "product_info") {
             let info = &row.info;
             let at = pair(panel, "pos", [0.0; 2]);
             let n = |s: &str, p: &str| s.strip_prefix(p).and_then(|k| k.parse::<usize>().ok()).unwrap_or(0);
             let over = |p: &[&str]| -> Over {
                 match p {
-                    ["product_info"] | ["product_info", "mix_mat_info"] => Over { show: true, ..Default::default() },
-                    ["product_info", "common_info", "cp_and_range"] if info.attack => Over { show: true, ..Default::default() },
-                    ["product_info", "common_info", "mix_make_num"] if !info.attack => Over { show: true, ..Default::default() },
+                    ["product_info"] => Over { show: true, ..Default::default() },
+                    ["product_info", "mix_mat_info"] if add.is_none() => Over { show: true, ..Default::default() },
+                    ["product_info", "create_info"] | ["product_info", "create_info", "frame"] | ["product_info", "create_info", "quality"] if add.is_some() => Over { show: true, ..Default::default() },
+                    ["product_info", "create_info", "mix_eff"] if add.is_some() => Over { show: true, ..Default::default() },
+                    ["product_info", "create_info", "mix_eff", "list", node, rest @ ..] => {
+                        let k = n(node, "node_");
+                        match (k < 3, rest) {
+                            (false, _) => hide(),
+                            (true, ["cap_text"]) => Over { text: string(EFFECT_CAPS[k]), ..Default::default() },
+                            (true, ["name"]) => Over { text: Some(String::new()), ..Default::default() },
+                            _ => Over::default(),
+                        }
+                    }
+                    ["product_info", "create_info", "quality", "value"] => Over { text: add.map(|a| a.quality.to_string()), ..Default::default() },
+                    ["product_info", "create_info", "page_num", "now_page"] => Over { text: add.map(|a| a.page.0.to_string()), ..Default::default() },
+                    ["product_info", "create_info", "page_num", "max_page"] => Over { text: add.map(|a| a.page.1.to_string()), ..Default::default() },
+                    ["product_info", "create_info", ..] if add.is_none() => hide(),
+                    ["product_info", "common_info", "cp_and_range"] if info.attack && add.is_none() => Over { show: true, ..Default::default() },
+                    ["product_info", "common_info", "mix_make_num"] if !info.attack || add.is_some() => Over { show: true, ..Default::default() },
                     ["product_info", "mix_mat_info", "list", node, rest @ ..] => {
                         let k = n(node, "node_");
                         match (info.materials.get(k), rest) {
@@ -153,16 +194,25 @@ impl Page {
                         }
                     }
                     ["product_info", "common_info", "item", "icon"] => Over { image_no: Some(info.image), paint: row.short.then_some(SHORT_ICON), ..Default::default() },
-                    ["product_info", "warning"] | ["product_info", "warning", "lack_mix_lv"] if row.short => Over { show: true, ..Default::default() },
+                    ["product_info", "warning"] | ["product_info", "warning", "lack_mix_lv"] if row.short && add.is_none() => Over { show: true, ..Default::default() },
                     _ => Over::default(),
                 }
             };
             w.walk(panel, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
-        // The quantity box at the bottom (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right.
-        if let (Some(row), Some(box_)) = (look.rows.get(look.cursor), find(&docs.caption, "remain_put_num")) {
+    }
+}
+
+/// The effect rows' captions ("Effect 1" to "Effect 3", `str_ui`: STR_UI_0351 and the three after the second).
+const EFFECT_CAPS: [u32; 3] = [6_619_488, 6_619_491, 6_619_492];
+
+impl Page {
+    /// The box at the bottom of the synthesis screens (`remain_put_num` of the caption layout): a circle for each unit the first row takes, on the right, and the number of times.
+    pub(super) fn quantity_box(&self, w: &mut Walker, root: &Xf, info: &RecipeInfo) {
+        let hide = || Over { hide: true, ..Default::default() };
+        if let Some(box_) = find(&self.mix_docs.caption, "remain_put_num") {
             let at = pair(box_, "pos", [0.0; 2]);
-            let put = row.info.put.min(4);
+            let put = info.put.min(4);
             let over = |p: &[&str]| -> Over {
                 match p {
                     ["remain_put_num"] => Over { show: true, ..Default::default() },
@@ -172,13 +222,11 @@ impl Page {
                         if k + put >= 4 && k <= 3 { Over { at: Some([112.0 / put as f32 + 28.0 * (k + put - 4) as f32, 0.25 * (k + put - 4) as f32]), ..Default::default() } } else { hide() }
                     }
                     ["remain_put_num", "list", _, "light"] => hide(),
-                    ["remain_put_num", "num"] => Over { text: Some(row.info.times.to_string()), ..Default::default() },
+                    ["remain_put_num", "num"] => Over { text: Some(info.times.to_string()), ..Default::default() },
                     _ => Over::default(),
                 }
             };
             w.walk(box_, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
-        self.caption_plate(&mut w, &root, RECIPE_TITLE, Slide::NONE);
-        (w.out, w.additive, w.clips)
     }
 }

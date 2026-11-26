@@ -266,7 +266,7 @@ impl View {
             .children
             .iter()
             .filter_map(|s| Some((s.attr("String_No")?.parse::<u32>().ok()?, s.attr("Text")?.to_string())))
-            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
+            .filter(|(n, _)| (CHARACTER_NAMES..CHARACTER_NAMES + CHARACTERS).contains(n) || MENU_WORDS.contains(n) || PICK_ENTRIES.iter().any(|(_, w)| w == n) || NEXT_ENTRIES.iter().any(|(_, w)| w == n) || FAST_FORWARD_ENTRIES.iter().any(|(_, w)| w == n) || PAGE_GUIDE_ENTRIES.iter().any(|(_, w)| w == n) || SHELF_ENTRIES.iter().any(|(_, w)| w == n) || TOOLS_ENTRIES.iter().any(|(_, w)| w == n) || RECIPE_ENTRIES.iter().any(|(_, w)| w == n) || ADD_RING_ENTRIES.iter().any(|(_, w)| w == n) || ADD_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_TOP_ENTRIES.iter().any(|(_, w)| w == n) || GUIDE_ITEMS_ENTRIES.iter().any(|(_, w)| w == n) || crate::field_hud::HELP_ENTRIES.iter().any(|(_, w)| w == n))
             .collect();
         let missing = |what: &str| format!("uil_a21_main_menu: no {what}");
         fn named<'a>(e: &'a Element, name: &str) -> Result<(&'a Element, [f32; 2]), String> {
@@ -1056,10 +1056,20 @@ enum Entries {
     FastForward,
     /// The synthesis's Select Recipe: select, the table of contents, mark as favorite, check and confirm.
     Recipe,
+    /// Add Materials while a ring is looked at: the pad's lines for the ring graph.
+    AddRing,
+    /// Add Materials with the materials' list up: the one entry.
+    Add,
 }
 
 /// The synthesis's Select Recipe entries (`synth-atelier` 2790): the cross "Select", the guide, X "Mark as Favorite", Y "Check Tree" and A "Confirm".
 const RECIPE_ENTRIES: [(char, u32); 5] = [('\u{4e1}', 4_194_366), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 9_961_479), ('\u{4de}', 9_961_550), ('\u{4da}', 4_194_367)];
+
+/// Add Materials' entries while a ring is looked at (`synth-atelier` 2900): select, hide the loop's info, auto-add, zoom (two buttons: the entry with no word
+/// of its own is joined to the next without a space), the guide, change display, back and confirm.
+const ADD_RING_ENTRIES: [(char, u32); 9] = [('\u{4f2}', 4_194_366), ('\u{4e3}', 9_961_611), ('\u{4e7}', 9_961_604), ('\u{4e6}', 0), ('\u{4ea}', 9_961_551), ('\u{4ec}', TABLE_OF_CONTENTS), ('\u{4dc}', 4_194_450), ('\u{4d8}', 4_194_368), ('\u{4da}', 4_194_367)];
+/// Its entry with the materials' list up (`synth-atelier` 3000).
+const ADD_ENTRIES: [(char, u32); 1] = [('\u{4dc}', 4_194_450)];
 
 /// The Select Recipe plate is this much wider (layout pixels) than its words need, and this much short at 0.4 of its opacity. STAND-IN: one sample each.
 const RECIPE_PLATE_EXTRA: f32 = 0.0;
@@ -1327,6 +1337,14 @@ impl View {
         let alpha = (age / TOOLS_BAR_FADE).clamp(0.0, 1.0);
         let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
         self.help_bar(&mut pen, Bar { alpha, grow: 1.0, words: true, extra: RECIPE_PLATE_EXTRA - RECIPE_BAR_GROW * (1.0 - alpha) / 0.6, entries: Entries::Recipe });
+        pen.finish().0
+    }
+
+    /// The Add Materials screen's help bar (`ring`: while a ring is looked at, else with the materials' list up), whole.
+    pub fn add_help(&self, screen: (u32, u32), ring: bool) -> Vec<Quad> {
+        let k = screen.1 as f32 / LAYOUT_HEIGHT;
+        let mut pen = Pen { v: self, k, left: (screen.0 as f32 - 1280.0 * k) * 0.5, out: Vec::new(), additive: Vec::new(), hidden: Vec::new() };
+        self.help_bar(&mut pen, Bar { alpha: 1.0, grow: 1.0, words: true, extra: 0.0, entries: if ring { Entries::AddRing } else { Entries::Add } });
         pen.finish().0
     }
 
@@ -1715,7 +1733,18 @@ impl View {
 
     /// The bar's line: each entry's button glyph and word, one space between.
     fn help_line(&self, entries: &[(char, u32)]) -> String {
-        entries.iter().map(|&(glyph, n)| format!("{glyph}{}", self.word(n))).collect::<Vec<_>>().join(" ")
+        // (an entry with no word, 0, is a button joined to the next one's)
+        let mut line = String::new();
+        for (i, &(glyph, n)) in entries.iter().enumerate() {
+            line.push(glyph);
+            if n != 0 {
+                line.push_str(&self.word(n));
+            }
+            if n != 0 && i + 1 < entries.len() {
+                line.push(' ');
+            }
+        }
+        line
     }
 
     /// The plate's full width in layout pixels for `line` on a screen `k` times the layout.
@@ -1744,6 +1773,8 @@ impl View {
             Entries::Next => &NEXT_ENTRIES,
             Entries::FastForward => &FAST_FORWARD_ENTRIES,
             Entries::Recipe => &RECIPE_ENTRIES,
+            Entries::AddRing => &ADD_RING_ENTRIES,
+            Entries::Add => &ADD_ENTRIES,
             Entries::GuideTop => &GUIDE_TOP_ENTRIES,
             Entries::GuideItems => &GUIDE_ITEMS_ENTRIES,
             Entries::GuideEffects => &GUIDE_EFFECTS_ENTRIES,

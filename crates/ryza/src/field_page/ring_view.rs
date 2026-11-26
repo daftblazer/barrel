@@ -221,18 +221,44 @@ impl Page {
         w.piece(root.node([0.0, 656.0], 0.0, [1.0; 2]), [0.0; 2], [1280.0, 64.0], [0.0, 0.0, 1.0, 1.0], [1.0; 4], gradation);
     }
 
-    /// The Add Materials screen's quads on a `screen` of pixels: the ring graph, then (STAND-IN, as far as built) the bars over it.
-    pub fn add_quads(&self, look: &FieldLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
+    /// The Add Materials screen's quads on a `screen` of pixels: the ring graph, the bars over it, then the description of the ring under the cursor,
+    /// the panel on the right, the quantity box and the title plate.
+    pub fn add_quads(&self, look: &AddLook, screen: (u32, u32)) -> (Vec<Quad>, Vec<usize>, Vec<Clip>) {
         let k = screen.1 as f32 / LAYOUT_HEIGHT;
         let mut w = Walker { page: self, screen_k: k, out: Vec::new(), additive: Vec::new(), parent: [0.0; 2], card: true, ordinal: 0, mask: None, clips: Vec::new(), mix: true, bold_scale: 1.0 };
         let root = Xf { a: k, b: 0.0, c: 0.0, d: k, x: (screen.0 as f32 - 1280.0 * k) / 2.0, y: 0.0 };
-        self.ring_graph(&mut w, &root, look);
+        self.ring_graph(&mut w, &root, &look.field);
         w.cull_outside(screen);
         self.bars(&mut w, &root);
+        // The description of the ring under the cursor.
+        if let (Some(ring), Some(desc)) = (look.field.rings.get(look.field.cursor), find(&self.mix_docs.recipe, "ring_desc")) {
+            let text = self.strings.get(&(DESC_BASE + ring.kind.min(5))).cloned();
+            let over = |p: &[&str]| -> Over {
+                match p {
+                    ["ring_desc"] => Over { show: true, ..Default::default() },
+                    ["ring_desc", "body", "desc"] => Over { text: text.clone(), ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(desc, root.node(pair(desc, "pos", [0.0; 2]), 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
+        }
+        self.product_panel(&mut w, &root, &look.row, Some(&look.panel));
+        self.quantity_box(&mut w, &root, &look.row.info);
         self.caption_plate(&mut w, &root, ADD_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)
     }
 }
+
+/// What the Add Materials screen shows.
+pub struct AddLook {
+    pub field: FieldLook,
+    /// The recipe's row and the panel's numbers.
+    pub row: RecipeRow,
+    pub panel: AddPanel,
+}
+
+/// The ring descriptions' strings: "Effect 1 will appear or grow based on Material Loop level." and the rest by the ring's kind.
+const DESC_BASE: u32 = 10_092_605;
 
 /// The title plate's string ("Add Materials", `str_menu_define`).
 const ADD_TITLE: u32 = 9_961_591;
