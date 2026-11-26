@@ -57,6 +57,7 @@ pub mod music;
 pub mod random;
 pub mod gather;
 pub mod mix;
+pub mod synthesis;
 pub mod sound;
 
 // The game's play (its program: `barrel-ryza`, and `barrel`, which picks the game).

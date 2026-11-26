@@ -52,6 +52,7 @@ usage:
       `record/list@OFFSET=HEX`: bytes written at OFFSET in a list record (item/m_unitContainer@396=...: a unit)
   barrel-tool ryza-save-tree INSTALL SAVE  a Ryza DX save's records (name and size, nested) and the story events it has played
   barrel-tool ryza-file INSTALL NAME OUT  write one file of the game's archives (a name like \\saves\\x.xml) out as it is
+  barrel-tool ryza-synth INSTALL SAVE RECIPE PAD.txt FROM TO  the synthesis flow's state machine run on a scenario's pad script (docs/ryza/open.md, Synthesis P6): the screens it passes, her end place, the save's changes; its sounds go to BARREL_TRACE_CUES
   barrel-tool ryza-mix INSTALL STATE.bin SAVE RECIPE [--steps FILE] [--draws] [--units]  a synthesis from a save: the units its rows take, what it makes, and the draws of a steps file from the generator's dump
   barrel-tool ryza-lockstep INSTALL STATE.bin SCRIPT HOOKS.LOG FROM TO [--save FILE]  a run's draws (gatherings, her clips, free play) from the generator's dump against the game's hook log
       SCRIPT lines: `FRAME gather PLACE`, `FRAME clip` (a hand's voice chance), `FRAME swing` (the staff's clip), `FRAME free TIMERS SPAWN` (`tools/free_play.py`),
@@ -292,6 +293,7 @@ fn main() -> ExitCode {
         ["ryza-save", file, out] => ryza_save(Path::new(file), Path::new(out)),
         ["ryza-gather", install, state, place, rest @ ..] => ryza_gather(Path::new(install), Path::new(state), place, rest),
         ["ryza-mix", install, state, save, recipe, rest @ ..] => ryza_mix(Path::new(install), Path::new(state), Path::new(save), recipe, rest),
+        ["ryza-synth", install, save, recipe, pad, from, to] => ryza_synth(Path::new(install), Path::new(save), recipe, Path::new(pad), from, to),
         ["ryza-lockstep", install, state, script, hooks, from, to, rest @ ..] => ryza_lockstep(Path::new(install), Path::new(state), Path::new(script), Path::new(hooks), from, to, rest),
         ["ryza-save-tree", install, file] => ryza_save_tree(Path::new(install), Path::new(file)),
         ["ryza-save-events", install, file, out, events @ ..] => ryza_save_events(Path::new(install), Path::new(file), Path::new(out), events),
@@ -1937,6 +1939,47 @@ fn ryza_lockstep(install: &Path, state: &Path, script: &Path, hooks: &Path, from
         println!("{o}");
     }
     println!("generator index {:x}", rng.index());
+    Ok(())
+}
+
+/// `ryza-synth`: the synthesis flow's state machine (`barrel_ryza::synthesis`) run from a pad script, frame `from` to `to`.
+fn ryza_synth(install: &Path, save: &Path, recipe: &str, pad: &Path, from: &str, to: &str) -> Result<()> {
+    let (from, to): (i64, i64) = (from.parse()?, to.parse()?);
+    use barrel_ryza::synthesis::{script_pad, Machine, World};
+    let game = barrel_ryza::install::Install::open(install)?;
+    let tables = barrel_ryza::mix::Tables::read(&game.read("\\saves\\item\\itemrecipedata.xml")?, &game.read("\\saves\\item\\itemdata.xml")?)?;
+    let n = match recipe.parse::<usize>() {
+        Ok(n) => n,
+        Err(_) => tables.recipes.iter().position(|r| r.tag == recipe).ok_or_else(|| format!("no recipe {recipe}"))?,
+    };
+    let data = barrel_ryza::save::decode(&read(save)?).map_err(|e| format!("{}: {e}", save.display()))?;
+    let (container, _) = barrel_ryza::save::container(&data).ok_or("the save has no container")?;
+    let exe = read(&install.join("Atelier_Ryza_DX.exe"))?;
+    let pe = barrel_formats::pe::Pe::parse(&exe)?;
+    // The enum's array has an entry before item 0.
+    let item = pe.enum_names(&tables.recipes[n].tag).and_then(|(_, at)| at.checked_sub(1)).ok_or("the recipe's item")? as u16;
+    let world = World { clock: barrel_ryza::save::clock(&data).unwrap_or(0), container: container.clone(), level: barrel_ryza::mix::alchemy(&data).map_or(1, |l| l.0) };
+    // STAND-IN: the made units' quality (the rule is not derived: the key's 49).
+    let maker = move |made: &barrel_ryza::mix::Made| vec![barrel_ryza::save::Worn { item, quality: 49, level: 1, effects: [0xffff; 4], potentials: [290; 3], potential_levels: [0; 3], slots: 0 }; made.count as usize];
+    let mut m = Machine::new(&tables, n, world, &maker, barrel_ryza::synthesis::KeyPicks);
+    m.start_at(from);
+    let script = std::fs::read_to_string(pad)?;
+    let mut last = None;
+    let mut cues = Vec::new();
+    for frame in from..=to {
+        cues.extend(m.step(script_pad(&script, frame)));
+        if last != Some(m.screen()) {
+            println!("frame {frame}: {:?}", m.screen());
+            last = Some(m.screen());
+        }
+    }
+    cues.sort_by_key(|c| c.at_frame);
+    for c in cues.iter().filter(|c| c.at_frame <= to) {
+        barrel_ryza::sound::trace(c);
+    }
+    println!("her place {:.2} {:.2} facing {:.1} degrees", m.at[0], m.at[1], m.turn.to_degrees());
+    let w = m.world();
+    println!("clock {} level {} container {} units", w.clock, w.level, w.container.len());
     Ok(())
 }
 
