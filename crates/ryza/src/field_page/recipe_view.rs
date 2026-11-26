@@ -11,6 +11,24 @@ pub struct RecipeRow {
     pub count: u32,
     /// The row's text is the colour of a recipe that cannot be made now.
     pub short: bool,
+    /// What the panel on the right says of the recipe when the cursor is on the row.
+    pub info: RecipeInfo,
+}
+
+/// The panel on the right of Select Recipe (`product_info`): the item the recipe makes and what it needs.
+pub struct RecipeInfo {
+    /// The item's big picture (`etc_a21_item_l`).
+    pub image: usize,
+    pub level: i32,
+    /// The alchemy level the panel's second circle shows.
+    pub alchemy: u32,
+    /// Units one synthesis makes.
+    pub make: u32,
+    pub elem_value: i32,
+    /// Fire, ice, bolt and air.
+    pub elements: [bool; 4],
+    /// The categories the recipe's rows ask for, by place in the category table (the first loop's rows).
+    pub materials: Vec<usize>,
 }
 
 /// What the Select Recipe screen shows.
@@ -26,6 +44,12 @@ pub struct RecipeLook {
 const MENU_AT: [f32; 2] = [2.0, 149.0];
 /// The distance from one row to the next (the game's code places them; the capture's rows are 25.13 layout pixels apart: STAND-IN).
 const ROW_STEP: f32 = 25.13;
+/// The item's picture in the panel is this colour when the recipe cannot be made now (the capture's, `synth-atelier` 2700).
+const SHORT_ICON: [f32; 4] = [0.549, 0.443, 0.349, 1.0];
+/// STAND-IN: the attack recipe's CP and its range ("All"), the capture's Craft at 2700; the table they come from is not read.
+const CP_VALUE: u32 = 1;
+/// The name and the count of a recipe that cannot be made now (the capture's, `synth-atelier` 2700).
+const SHORT_TEXT: [f32; 4] = [1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0];
 /// The tab row's pictures in `gen_a21_mix01_choise` (All, Favourites and the three kinds).
 const TAB_PICTURES: [usize; 5] = [0, 1, 6, 7, 8];
 /// The title plate's string ("Select Recipe", `str_menu_define`).
@@ -57,8 +81,8 @@ impl Page {
                         ["menu_item", "__uimenu_cursor_active", "add"] if i == look.cursor => Over { paint: Some([both[0], both[1], both[2], (191.0 * f).round() / 255.0]), ..Default::default() },
                         ["menu_item", "bookmark_bg"] => Over { show: true, ..Default::default() },
                         ["menu_item", "__uimenu_cursor_active", ..] | ["menu_item", "bookmark_bg", ..] | ["menu_item", "new_icon"] | ["menu_item", "r_icon"] => hide(),
-                        ["menu_item", "name"] => Over { text: string(row.name), ..Default::default() },
-                        ["menu_item", "count_bg", "count"] => Over { text: Some(row.count.to_string()), ..Default::default() },
+                        ["menu_item", "name"] => Over { text: string(row.name), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
+                        ["menu_item", "count_bg", "count"] => Over { text: Some(row.count.to_string()), tint: row.short.then_some(SHORT_TEXT), ..Default::default() },
                         _ => Over::default(),
                     }
                 };
@@ -87,6 +111,43 @@ impl Page {
                 let t = pair(name, "pos", [0.0; 2]);
                 w.walk(name, root.node([at[0] + t[0], at[1] + t[1]], 0.0, [1.0; 2]), &mut Vec::new(), &|_: &[&str]| Over { text: string(ALL_WORD), ..Default::default() }, &HashMap::new());
             }
+        }
+        // The panel on the right.
+        if let (Some(row), Some(panel)) = (look.rows.get(look.cursor), find(&docs.recipe, "product_info")) {
+            let info = &row.info;
+            let at = pair(panel, "pos", [0.0; 2]);
+            let n = |s: &str, p: &str| s.strip_prefix(p).and_then(|k| k.parse::<usize>().ok()).unwrap_or(0);
+            let over = |p: &[&str]| -> Over {
+                match p {
+                    ["product_info"] | ["product_info", "mix_mat_info"] | ["product_info", "common_info", "cp_and_range"] => Over { show: true, ..Default::default() },
+                    ["product_info", "mix_mat_info", "list", node, rest @ ..] => {
+                        let k = n(node, "node_");
+                        match (info.materials.get(k), rest) {
+                            (None, _) => hide(),
+                            (Some(_), ["item_icon"]) => hide(),
+                            (Some(&c), ["cat_icon"]) => Over { image_no: Some(c), ..Default::default() },
+                            (Some(&c), ["name"]) => Over { text: string(CATEGORY_BASE + c as u32), ..Default::default() },
+                            _ => Over::default(),
+                        }
+                    }
+                    ["product_info", "common_info", "alc_lv", "dummy", "value"] => Over { text: Some(info.alchemy.to_string()), ..Default::default() },
+                    ["product_info", "common_info", "lv", "dummy", "value"] => Over { text: Some(info.level.to_string()), ..Default::default() },
+                    ["product_info", "common_info", "cp_and_range", "range_type"] => Over { text: string(ALL_WORD), ..Default::default() },
+                    ["product_info", "common_info", "cp_and_range", _, "dummy", "cp_value"] => Over { text: Some(CP_VALUE.to_string()), ..Default::default() },
+                    ["product_info", "common_info", "element", "dummy", "value"] => Over { text: Some(info.elem_value.to_string()), ..Default::default() },
+                    ["product_info", "common_info", "element", "list", node, part, ..] => {
+                        let lit = info.elements.get(n(node, "node_")).copied().unwrap_or(false);
+                        match (*part, lit) {
+                            ("off", true) | ("dummy", false) => hide(),
+                            _ => Over::default(),
+                        }
+                    }
+                    ["product_info", "common_info", "item", "icon"] => Over { image_no: Some(info.image), paint: row.short.then_some(SHORT_ICON), ..Default::default() },
+                    ["product_info", "warning"] | ["product_info", "warning", "lack_mix_lv"] if row.short => Over { show: true, ..Default::default() },
+                    _ => Over::default(),
+                }
+            };
+            w.walk(panel, root.node(at, 0.0, [1.0; 2]), &mut Vec::new(), &over, &HashMap::new());
         }
         self.caption_plate(&mut w, &root, RECIPE_TITLE, Slide::NONE);
         (w.out, w.additive, w.clips)

@@ -12,7 +12,7 @@
 //! slides and fades of the page's coming and going (docs/ryza/open.md, "Field menu, part 7").
 
 mod recipe_view;
-pub use recipe_view::{RecipeLook, RecipeRow};
+pub use recipe_view::{RecipeInfo, RecipeLook, RecipeRow};
 
 use std::collections::{BTreeSet, HashMap};
 

@@ -844,10 +844,23 @@ fn mix_recipe_layers(install: &barrel_ryza::install::Install, gpu: &Gpu, rendere
     let tables = barrel_ryza::party_stats::Tables::read(&install.read("\\saves\\party\\party_param.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
     let items = barrel_ryza::item_info::Items::read(&install.read("\\saves\\item\\itemdata.xml")?, &install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?;
     let back = mix_back_layer(install, gpu, renderer, screen)?;
-    let shelf: Vec<fp::ShelfItem> = [199u16].iter().map(|&i| fp::ShelfItem { image: tables.image(i), category: items.row(i).and_then(|r| r.category) }).collect();
+    let recipes = barrel_ryza::mix::Tables::read(&install.read("\\saves\\item\\itemrecipedata.xml")?, &install.read("\\saves\\item\\itemdata.xml")?)?;
+    let order: Vec<String> = barrel_formats::table::parse(&install.read("\\saves\\fieldmix\\fieldmixcat.xml")?)?.children.iter().filter_map(|c| c.attr("category").map(str::to_string)).collect();
+    let rows: Vec<fp::RecipeRow> = [("ITEM_MIX_CRAFT", 239u16, true), ("ITEM_MIX_MATERIAL_NEUTRALIZE_001", 329, false)]
+        .iter()
+        .filter_map(|&(tag, item, short)| {
+            let recipe = recipes.recipes.iter().find(|r| r.tag == tag)?;
+            let row = items.row(item)?;
+            let materials = recipe.rows.iter().filter_map(|r| order.iter().position(|o| Some(o) == r.category.as_ref())).collect();
+            // STAND-IN: the second circle's number is the save's alchemy level (1), the rule is not read.
+            let info = fp::RecipeInfo { image: tables.image(item), level: row.level, alchemy: 1, make: recipe.make, elem_value: row.elem_value, elements: row.elements, materials };
+            Some(fp::RecipeRow { name: barrel_ryza::item_info::NAME_BASE + u32::from(item), count: 0, short, info })
+        })
+        .collect();
+    // The pictures the panel needs: each item's, and one for each category the recipes ask for.
+    let shelf: Vec<fp::ShelfItem> = rows.iter().flat_map(|r| std::iter::once(fp::ShelfItem { image: r.info.image, category: None }).chain(r.info.materials.iter().map(|&c| fp::ShelfItem { image: r.info.image, category: Some(c) }))).collect();
     let (mut sheet, page) = page_layer(install, gpu, renderer, &[], &tables, &shelf)?;
-    let rows = [(239u32, true), (329, false)].map(|(item, short)| fp::RecipeRow { name: barrel_ryza::item_info::NAME_BASE + item, count: 0, short });
-    let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows: rows.into(), cursor, age }, screen);
+    let (quads, additive, clips) = page.recipe_quads(&fp::RecipeLook { rows, cursor, age }, screen);
     sheet.set_blended_by(gpu, &quads, &clips, &|i| additive.contains(&i))?;
     Ok(vec![back, sheet])
 }
